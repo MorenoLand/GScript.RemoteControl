@@ -31,3 +31,7 @@ else()
     set_target_properties(RemoteControl3 PROPERTIES BUILD_RPATH "$ORIGIN" INSTALL_RPATH "$ORIGIN")
     add_custom_command(TARGET RemoteControl3 POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_FILE:grclib>" "$<TARGET_FILE_DIR:RemoteControl3>")
 endif()
+
+foreach(assetDirectory images language-specs sounds)
+    add_custom_command(TARGET RemoteControl3 POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/original/rc3_win_dark/${assetDirectory}" "$<TARGET_FILE_DIR:RemoteControl3>/${assetDirectory}")
+endforeach()
