@@ -570,6 +570,14 @@ void TRemoteFrame::appendChannelMessage(const std::string& channel, const std::s
         gtk_window_set_urgency_hint(GTK_WINDOW(window), true);
         gdk_beep();
     }
+    GtkTextIter scrollEnd;
+    gtk_text_buffer_get_end_iter(buffer, &scrollEnd);
+    gtk_text_view_scroll_to_iter(GTK_TEXT_VIEW(field), &scrollEnd, 0.0, false, 0.0, 1.0);
+    GtkWidget* scrolled = gtk_widget_get_parent(field);
+    if (GTK_IS_SCROLLED_WINDOW(scrolled)) {
+        GtkAdjustment* adjustment = gtk_scrolled_window_get_vadjustment(GTK_SCROLLED_WINDOW(scrolled));
+        gtk_adjustment_set_value(adjustment, gtk_adjustment_get_upper(adjustment) - gtk_adjustment_get_page_size(adjustment));
+    }
 }
 
 bool TRemoteFrame::applyAlertTag(std::string& message) {
