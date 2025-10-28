@@ -5,7 +5,7 @@
 #include <string>
 
 class TPlayerList;
-class TFileBrowser;
+class TFileBrowserTree;
 
 class TRemoteFrame {
 public:
@@ -37,5 +37,5 @@ private:
     void* connection = nullptr;
     guint eventSource = 0;
     TPlayerList* playerList = nullptr;
-    TFileBrowser* fileBrowser = nullptr;
+    TFileBrowserTree* fileBrowser = nullptr;
 };

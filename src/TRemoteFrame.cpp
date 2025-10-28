@@ -1,5 +1,5 @@
 #include "TRemoteFrame.h"
-#include "TFileBrowser.h"
+#include "TFileBrowserTree.h"
 #include "TPlayerList.h"
 
 #include <grclib.h>
@@ -97,7 +97,7 @@ void TRemoteFrame::onPlayerList(GtkMenuItem*, gpointer data) {
 void TRemoteFrame::onFileBrowser(GtkMenuItem*, gpointer data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
     if (frame->connection == nullptr) return;
-    if (frame->fileBrowser == nullptr) frame->fileBrowser = new TFileBrowser();
+    if (frame->fileBrowser == nullptr) frame->fileBrowser = new TFileBrowserTree();
     frame->fileBrowser->open(frame->connection);
 }
 
