@@ -323,7 +323,11 @@ void TFileBrowserTree::showTextEditor(const char* path, const void* content, int
     g_object_unref(sourceBuffer);
     GtkWidget* scrolled = gtk_scrolled_window_new(nullptr, nullptr);
     gtk_container_add(GTK_CONTAINER(scrolled), editor);
-    gtk_box_pack_start(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), scrolled, true, true, 0);
+    GtkWidget* contentArea = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
+    gtk_container_set_border_width(GTK_CONTAINER(contentArea), 0);
+    gtk_box_set_spacing(GTK_BOX(contentArea), 0);
+    gtk_widget_set_margin_top(scrolled, 0);
+    gtk_box_pack_start(GTK_BOX(contentArea), scrolled, true, true, 0);
     auto* state = new EditorState{this, path, editor};
     g_signal_connect(editor, "key-press-event", G_CALLBACK(+[](GtkWidget*, GdkEventKey* event, gpointer responseDialog) {
         if ((event->state & GDK_CONTROL_MASK) == 0 || (event->keyval != GDK_KEY_s && event->keyval != GDK_KEY_S)) return static_cast<gboolean>(FALSE);
