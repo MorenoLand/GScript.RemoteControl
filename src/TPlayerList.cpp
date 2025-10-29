@@ -1,4 +1,5 @@
 #include "TPlayerList.h"
+#include "TAccountsWindow.h"
 #include "TLocalBanWindow.h"
 
 #include <grclib.h>
@@ -244,7 +245,7 @@ TPlayerList::TPlayerList(const std::filesystem::path& nextApplicationDirectory) 
     g_signal_connect(window, "delete-event", G_CALLBACK(onDelete), this);
 }
 
-TPlayerList::~TPlayerList() { if (pmBlinkSource != 0) g_source_remove(pmBlinkSource); delete localBanWindow; if (onlineIcon != nullptr) g_object_unref(onlineIcon); if (channelIcon != nullptr) g_object_unref(channelIcon); if (channelClosedIcon != nullptr) g_object_unref(channelClosedIcon); if (pmNormalIcon != nullptr) g_object_unref(pmNormalIcon); if (pmGuildIcon != nullptr) g_object_unref(pmGuildIcon); if (pmAdminIcon != nullptr) g_object_unref(pmAdminIcon); if (pmMassIcon != nullptr) g_object_unref(pmMassIcon); if (window != nullptr) gtk_widget_destroy(window); }
+TPlayerList::~TPlayerList() { if (pmBlinkSource != 0) g_source_remove(pmBlinkSource); delete localBanWindow; delete accountEditor; if (onlineIcon != nullptr) g_object_unref(onlineIcon); if (channelIcon != nullptr) g_object_unref(channelIcon); if (channelClosedIcon != nullptr) g_object_unref(channelClosedIcon); if (pmNormalIcon != nullptr) g_object_unref(pmNormalIcon); if (pmGuildIcon != nullptr) g_object_unref(pmGuildIcon); if (pmAdminIcon != nullptr) g_object_unref(pmAdminIcon); if (pmMassIcon != nullptr) g_object_unref(pmMassIcon); if (window != nullptr) gtk_widget_destroy(window); }
 void TPlayerList::open(void* nextConnection) { connection = nextConnection; rc_on_pm_servers_updated(connection, onPMServers, this); rc_on_pm_guilds_updated(connection, onPMGuilds, this); rc_on_pm_server_players(connection, onPMServerPlayers, this); rc_on_ban_data(connection, onBanData, this); rc_on_ban_list_data(connection, onBanListData, this); rc_on_player_rights(connection, onPlayerRights, this); rc_on_player_attributes(connection, onPlayerAttributes, this); rc_on_player_text_data(connection, onPlayerText, this); refresh(); gtk_widget_show_all(window); gtk_window_present(GTK_WINDOW(window)); }
 void TPlayerList::onRefresh(GtkButton*, gpointer data) { static_cast<TPlayerList*>(data)->refresh(); }
 void TPlayerList::onMassPM(GtkButton*, gpointer data) { static_cast<TPlayerList*>(data)->sendMassPM(); }
@@ -284,6 +285,7 @@ gboolean TPlayerList::onButtonPress(GtkWidget* widget, GdkEventButton* event, gp
     GtkWidget* profile = gtk_menu_item_new_with_label("Profile");
     GtkWidget* disconnect = gtk_menu_item_new_with_label("Disconnect");
     GtkWidget* reset = gtk_menu_item_new_with_label("Reset");
+    GtkWidget* editAccount = gtk_menu_item_new_with_label("Edit Account");
     GtkWidget* warp = gtk_menu_item_new_with_label("Warp");
     GtkWidget* adminMessage = gtk_menu_item_new_with_label("Admin Message");
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), privateMessage);
@@ -301,6 +303,7 @@ gboolean TPlayerList::onButtonPress(GtkWidget* widget, GdkEventButton* event, gp
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), disconnect);
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), reset);
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), gtk_separator_menu_item_new());
+    gtk_menu_shell_append(GTK_MENU_SHELL(menu), editAccount);
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), warp);
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), adminMessage);
     g_signal_connect(privateMessage, "activate", G_CALLBACK(onPrivateMessageMenu), data);
@@ -312,6 +315,7 @@ gboolean TPlayerList::onButtonPress(GtkWidget* widget, GdkEventButton* event, gp
     g_signal_connect(comments, "activate", G_CALLBACK(+[](GtkMenuItem*, gpointer userData) { static_cast<TPlayerList*>(userData)->editComments(); }), data);
     g_signal_connect(disconnect, "activate", G_CALLBACK(onDisconnectPlayer), data);
     g_signal_connect(reset, "activate", G_CALLBACK(onResetPlayer), data);
+    g_signal_connect(editAccount, "activate", G_CALLBACK(+[](GtkMenuItem*, gpointer userData) { static_cast<TPlayerList*>(userData)->editAccount(); }), data);
     g_signal_connect(warp, "activate", G_CALLBACK(+[](GtkMenuItem*, gpointer userData) { static_cast<TPlayerList*>(userData)->warpSelectedPlayer(); }), data);
     g_signal_connect(adminMessage, "activate", G_CALLBACK(+[](GtkMenuItem*, gpointer userData) { static_cast<TPlayerList*>(userData)->adminMessageSelectedPlayer(); }), data);
     gtk_widget_show_all(menu);
@@ -408,9 +412,14 @@ void TPlayerList::onPlayerAttributes(const char* account, const char*, const cha
 }
 void TPlayerList::onPlayerText(const char* type, const char* account, const char* content, void* data) {
     if (type == nullptr || account == nullptr) return;
-    const std::string dataType(type);
-    if (dataType != "comments" && dataType != "profile") return;
     TPlayerList* list = static_cast<TPlayerList*>(data);
+    const std::string dataType(type);
+    if (dataType == "account") {
+        if (list->accountEditor == nullptr) list->accountEditor = new TAccountsWindow();
+        list->accountEditor->showEditor(account, content);
+        return;
+    }
+    if (dataType != "comments" && dataType != "profile") return;
     struct TextState { TPlayerList* list; std::string account; std::string type; GtkWidget* text; };
     const std::string title = (dataType == "profile" ? "Profile of " : "Edit Comments of ") + std::string(account);
     GtkWidget* dialog = gtk_dialog_new_with_buttons(title.c_str(), GTK_WINDOW(list->window), GTK_DIALOG_DESTROY_WITH_PARENT, "Cancel", GTK_RESPONSE_CANCEL, "Save", GTK_RESPONSE_ACCEPT, nullptr);
@@ -705,6 +714,15 @@ void TPlayerList::editProfile() {
     gchar* account = nullptr;
     gtk_tree_model_get(model, &row, PlayerAccountColumn, &account, -1);
     if (account != nullptr && *account != '\0') rc_request_player_profile(connection, account);
+    g_free(account);
+}
+void TPlayerList::editAccount() {
+    GtkTreeModel* model = nullptr;
+    GtkTreeIter row;
+    if (!gtk_tree_selection_get_selected(gtk_tree_view_get_selection(GTK_TREE_VIEW(tree)), &model, &row)) return;
+    gchar* account = nullptr;
+    gtk_tree_model_get(model, &row, PlayerAccountColumn, &account, -1);
+    if (account != nullptr && *account != '\0') rc_request_player_account(connection, account);
     g_free(account);
 }
 

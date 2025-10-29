@@ -47,6 +47,7 @@ private:
     void editAttributes();
     void editComments();
     void editProfile();
+    void editAccount();
     void openSelectedPrivateMessage();
     void openSelectedHistory();
     void disconnectSelectedPlayer();
@@ -73,6 +74,7 @@ private:
     GdkPixbuf* pmAdminIcon = nullptr;
     GdkPixbuf* pmMassIcon = nullptr;
     class TLocalBanWindow* localBanWindow = nullptr;
+    class TAccountsWindow* accountEditor = nullptr;
     std::map<std::string, std::vector<std::string>> serverPlayers;
     std::map<int, std::string> pmTypes;
     std::map<int, std::pair<std::string, std::string>> pmPlayers;

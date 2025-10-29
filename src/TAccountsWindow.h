@@ -9,6 +9,7 @@ public:
     ~TAccountsWindow();
     void open(void* connection);
     void setAccounts(const char* accounts);
+    void showEditor(const std::string& account, const char* content);
 private:
     static void onGetList(GtkButton*, gpointer data);
     static void onGetAccounts(GtkButton*, gpointer data);
