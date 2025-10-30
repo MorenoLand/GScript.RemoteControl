@@ -4,6 +4,8 @@
 #include <functional>
 #include <string>
 
+class TPlayerList;
+
 class TRemoteFrame {
 public:
     explicit TRemoteFrame(std::function<void()> onClose);
@@ -13,6 +15,7 @@ public:
 
 private:
     static void onSend(GtkButton*, gpointer data);
+    static void onPlayerList(GtkMenuItem*, gpointer data);
     static gboolean onEditKey(GtkWidget*, GdkEventKey*, gpointer data);
     static gboolean onDelete(GtkWidget*, GdkEvent*, gpointer data);
     static gboolean processEvents(gpointer data);
@@ -31,4 +34,5 @@ private:
     GtkWidget* playersLabel = nullptr;
     void* connection = nullptr;
     guint eventSource = 0;
+    TPlayerList* playerList = nullptr;
 };

@@ -1,4 +1,5 @@
 #include "TRemoteFrame.h"
+#include "TPlayerList.h"
 
 #include <grclib.h>
 
@@ -16,6 +17,11 @@ TRemoteFrame::TRemoteFrame(std::function<void()> onClose) : onCloseCallback(std:
     for (const char* menuName : menuNames) {
         GtkWidget* item = gtk_menu_item_new_with_label(menuName);
         GtkWidget* menu = gtk_menu_new();
+        if (std::string(menuName) == "Players") {
+            GtkWidget* playerListItem = gtk_menu_item_new_with_label("Playerlist");
+            gtk_menu_shell_append(GTK_MENU_SHELL(menu), playerListItem);
+            g_signal_connect(playerListItem, "activate", G_CALLBACK(onPlayerList), this);
+        }
         gtk_menu_item_set_submenu(GTK_MENU_ITEM(item), menu);
         gtk_menu_shell_append(GTK_MENU_SHELL(menuBar), item);
     }
@@ -58,6 +64,7 @@ TRemoteFrame::TRemoteFrame(std::function<void()> onClose) : onCloseCallback(std:
 TRemoteFrame::~TRemoteFrame() {
     if (eventSource != 0) g_source_remove(eventSource);
     if (window != nullptr) gtk_widget_destroy(window);
+    delete playerList;
 }
 
 void TRemoteFrame::open(void* nextConnection) {
@@ -73,6 +80,13 @@ void TRemoteFrame::open(void* nextConnection) {
 }
 
 void TRemoteFrame::onSend(GtkButton*, gpointer data) { static_cast<TRemoteFrame*>(data)->send(); }
+
+void TRemoteFrame::onPlayerList(GtkMenuItem*, gpointer data) {
+    TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
+    if (frame->connection == nullptr) return;
+    if (frame->playerList == nullptr) frame->playerList = new TPlayerList();
+    frame->playerList->open(frame->connection);
+}
 
 gboolean TRemoteFrame::onEditKey(GtkWidget*, GdkEventKey* event, gpointer data) {
     if (event->keyval != GDK_KEY_Return && event->keyval != GDK_KEY_KP_Enter) return false;
