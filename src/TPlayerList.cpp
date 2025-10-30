@@ -416,7 +416,7 @@ void TPlayerList::onPlayerText(const char* type, const char* account, const char
     const std::string dataType(type);
     if (dataType == "account") {
         if (list->accountEditor == nullptr) list->accountEditor = new TAccountsWindow();
-        list->accountEditor->showEditor(account, content);
+        list->accountEditor->showEditor(list->connection, account, content);
         return;
     }
     if (dataType != "comments" && dataType != "profile") return;

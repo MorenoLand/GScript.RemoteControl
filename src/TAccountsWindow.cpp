@@ -159,7 +159,7 @@ TAccountsWindow::~TAccountsWindow() { if (queryWindow != nullptr) gtk_widget_des
 void TAccountsWindow::open(void* nextConnection) { connection = nextConnection; rc_on_player_text_data(connection, onPlayerTextData, this); gtk_widget_show_all(listWindow); gtk_window_present(GTK_WINDOW(listWindow)); }
 void TAccountsWindow::openQuery() { gtk_widget_show_all(queryWindow); gtk_window_present(GTK_WINDOW(queryWindow)); gtk_widget_grab_focus(accountField); }
 void TAccountsWindow::setAccounts(const char* accounts) { gtk_list_store_clear(store); std::istringstream input(accounts == nullptr ? "" : accounts); for (std::string account; std::getline(input, account);) { GtkTreeIter row; gtk_list_store_append(store, &row); gtk_list_store_set(store, &row, 0, account.c_str(), -1); } gtk_widget_show_all(listWindow); gtk_window_present(GTK_WINDOW(listWindow)); }
-void TAccountsWindow::showEditor(const std::string& account, const char* content) { openEditor(account, content); }
+void TAccountsWindow::showEditor(void* nextConnection, const std::string& account, const char* content) { connection = nextConnection; openEditor(account, content); }
 void TAccountsWindow::openEditor(const std::string& account, const char* content) {
     editingAccount = account;
     const std::map<std::string, std::string> values = valuesFromText(content);
