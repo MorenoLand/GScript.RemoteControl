@@ -156,7 +156,7 @@ TAccountsWindow::TAccountsWindow() {
 }
 
 TAccountsWindow::~TAccountsWindow() { if (queryWindow != nullptr) gtk_widget_destroy(queryWindow); if (listWindow != nullptr) gtk_widget_destroy(listWindow); if (editorWindow != nullptr) gtk_widget_destroy(editorWindow); }
-void TAccountsWindow::open(void* nextConnection) { connection = nextConnection; rc_on_player_text_data(connection, onPlayerTextData, this); gtk_widget_show_all(listWindow); gtk_window_present(GTK_WINDOW(listWindow)); }
+void TAccountsWindow::open(void* nextConnection) { connection = nextConnection; gtk_widget_show_all(listWindow); gtk_window_present(GTK_WINDOW(listWindow)); }
 void TAccountsWindow::openQuery() { gtk_widget_show_all(queryWindow); gtk_window_present(GTK_WINDOW(queryWindow)); gtk_widget_grab_focus(accountField); }
 void TAccountsWindow::setAccounts(const char* accounts) { gtk_list_store_clear(store); std::istringstream input(accounts == nullptr ? "" : accounts); for (std::string account; std::getline(input, account);) { GtkTreeIter row; gtk_list_store_append(store, &row); gtk_list_store_set(store, &row, 0, account.c_str(), -1); } gtk_widget_show_all(listWindow); gtk_window_present(GTK_WINDOW(listWindow)); }
 void TAccountsWindow::showEditor(void* nextConnection, const std::string& account, const char* content) { connection = nextConnection; openEditor(account, content); }
@@ -194,4 +194,3 @@ void TAccountsWindow::onAccountActivated(GtkTreeView* tree, GtkTreePath*, GtkTre
 void TAccountsWindow::onApply(GtkButton*, gpointer data) { TAccountsWindow* window = static_cast<TAccountsWindow*>(data); const std::string content = window->accountText(); if (window->editingAccount.empty()) rc_add_player_account(window->connection, content.c_str()); else rc_set_player_account(window->connection, window->editingAccount.c_str(), content.c_str()); }
 void TAccountsWindow::onClose(GtkButton* button, gpointer) { gtk_widget_hide(gtk_widget_get_toplevel(GTK_WIDGET(button))); }
 gboolean TAccountsWindow::onDelete(GtkWidget* widget, GdkEvent*, gpointer) { gtk_widget_hide(widget); return true; }
-void TAccountsWindow::onPlayerTextData(const char* type, const char* account, const char* content, void* data) { if (type != nullptr && std::string(type) == "account") static_cast<TAccountsWindow*>(data)->openEditor(account == nullptr ? "" : account, content); }

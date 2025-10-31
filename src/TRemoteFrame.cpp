@@ -193,6 +193,7 @@ void TRemoteFrame::open(void* nextConnection, const std::string& serverName) {
     rc_on_private_message_ex(connection, onPrivateMessage, this);
     rc_on_server_data(connection, onServerData, this);
     rc_on_account_list(connection, onAccountList, this);
+    rc_on_player_text_data(connection, onPlayerText, this);
     if (serverLabel != nullptr) gtk_label_set_text(GTK_LABEL(serverLabel), (options.labelservers + " " + serverName).c_str());
     if (eventSource == 0) eventSource = g_timeout_add(50, processEvents, this);
     gtk_widget_show_all(window);
@@ -239,6 +240,17 @@ void TRemoteFrame::onRCOptions(GtkMenuItem*, gpointer data) {
 }
 
 void TRemoteFrame::onAccountList(const char* accounts, void* data) { TRemoteFrame* frame = static_cast<TRemoteFrame*>(data); if (frame->accountsWindow != nullptr) frame->accountsWindow->setAccounts(accounts); }
+void TRemoteFrame::onPlayerText(const char* type, const char* account, const char* content, void* data) {
+    TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
+    if (type == nullptr || account == nullptr) return;
+    if (std::string(type) == "account") {
+        if (frame->accountsWindow == nullptr) frame->accountsWindow = new TAccountsWindow();
+        frame->accountsWindow->showEditor(frame->connection, account, content);
+        return;
+    }
+    if (frame->playerList == nullptr) frame->playerList = new TPlayerList(frame->applicationDirectory);
+    frame->playerList->handlePlayerText(type, account, content);
+}
 
 void TRemoteFrame::onFileBrowser(GtkMenuItem*, gpointer data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);

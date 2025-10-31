@@ -11,6 +11,7 @@ public:
     explicit TPlayerList(const std::filesystem::path& applicationDirectory);
     ~TPlayerList();
     void open(void* connection);
+    void handlePlayerText(const char* type, const char* account, const char* content);
     void notePrivateMessage(int playerId, const char* account, const char* nick, const char* message, const char* type);
     bool openLatestPrivateMessage();
 private:
@@ -28,7 +29,6 @@ private:
     static void onBanListData(const char* type, const char* account, const char* content, void* data);
     static void onPlayerRights(const char* account, int rights, const char* ipRange, const char* folderAccess, void* data);
     static void onPlayerAttributes(const char* account, const char* properties, const char* editorText, void* data);
-    static void onPlayerText(const char* type, const char* account, const char* content, void* data);
     static gboolean onPMBlink(gpointer data);
     static void onPMServers(int count, void* data);
     static void onPMGuilds(int count, void* data);
@@ -74,7 +74,6 @@ private:
     GdkPixbuf* pmAdminIcon = nullptr;
     GdkPixbuf* pmMassIcon = nullptr;
     class TLocalBanWindow* localBanWindow = nullptr;
-    class TAccountsWindow* accountEditor = nullptr;
     std::map<std::string, std::vector<std::string>> serverPlayers;
     std::map<int, std::string> pmTypes;
     std::map<int, std::pair<std::string, std::string>> pmPlayers;

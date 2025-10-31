@@ -18,7 +18,6 @@ private:
     static void onApply(GtkButton*, gpointer data);
     static void onClose(GtkButton*, gpointer data);
     static gboolean onDelete(GtkWidget*, GdkEvent*, gpointer data);
-    static void onPlayerTextData(const char* type, const char* account, const char* content, void* data);
     void openQuery();
     void openEditor(const std::string& account, const char* content);
     std::string accountText() const;

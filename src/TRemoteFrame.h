@@ -34,6 +34,7 @@ private:
     static void onAccounts(GtkMenuItem*, gpointer data);
     static void onRCOptions(GtkMenuItem*, gpointer data);
     static void onAccountList(const char* accounts, void* data);
+    static void onPlayerText(const char* type, const char* account, const char* content, void* data);
     static void onFileBrowser(GtkMenuItem*, gpointer data);
     static void onClasses(GtkMenuItem*, gpointer data);
     static void onWeapons(GtkMenuItem*, gpointer data);

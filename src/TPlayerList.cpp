@@ -1,5 +1,4 @@
 #include "TPlayerList.h"
-#include "TAccountsWindow.h"
 #include "TLocalBanWindow.h"
 
 #include <grclib.h>
@@ -245,8 +244,8 @@ TPlayerList::TPlayerList(const std::filesystem::path& nextApplicationDirectory) 
     g_signal_connect(window, "delete-event", G_CALLBACK(onDelete), this);
 }
 
-TPlayerList::~TPlayerList() { if (pmBlinkSource != 0) g_source_remove(pmBlinkSource); delete localBanWindow; delete accountEditor; if (onlineIcon != nullptr) g_object_unref(onlineIcon); if (channelIcon != nullptr) g_object_unref(channelIcon); if (channelClosedIcon != nullptr) g_object_unref(channelClosedIcon); if (pmNormalIcon != nullptr) g_object_unref(pmNormalIcon); if (pmGuildIcon != nullptr) g_object_unref(pmGuildIcon); if (pmAdminIcon != nullptr) g_object_unref(pmAdminIcon); if (pmMassIcon != nullptr) g_object_unref(pmMassIcon); if (window != nullptr) gtk_widget_destroy(window); }
-void TPlayerList::open(void* nextConnection) { connection = nextConnection; rc_on_pm_servers_updated(connection, onPMServers, this); rc_on_pm_guilds_updated(connection, onPMGuilds, this); rc_on_pm_server_players(connection, onPMServerPlayers, this); rc_on_ban_data(connection, onBanData, this); rc_on_ban_list_data(connection, onBanListData, this); rc_on_player_rights(connection, onPlayerRights, this); rc_on_player_attributes(connection, onPlayerAttributes, this); rc_on_player_text_data(connection, onPlayerText, this); refresh(); gtk_widget_show_all(window); gtk_window_present(GTK_WINDOW(window)); }
+TPlayerList::~TPlayerList() { if (pmBlinkSource != 0) g_source_remove(pmBlinkSource); delete localBanWindow; if (onlineIcon != nullptr) g_object_unref(onlineIcon); if (channelIcon != nullptr) g_object_unref(channelIcon); if (channelClosedIcon != nullptr) g_object_unref(channelClosedIcon); if (pmNormalIcon != nullptr) g_object_unref(pmNormalIcon); if (pmGuildIcon != nullptr) g_object_unref(pmGuildIcon); if (pmAdminIcon != nullptr) g_object_unref(pmAdminIcon); if (pmMassIcon != nullptr) g_object_unref(pmMassIcon); if (window != nullptr) gtk_widget_destroy(window); }
+void TPlayerList::open(void* nextConnection) { connection = nextConnection; rc_on_pm_servers_updated(connection, onPMServers, this); rc_on_pm_guilds_updated(connection, onPMGuilds, this); rc_on_pm_server_players(connection, onPMServerPlayers, this); rc_on_ban_data(connection, onBanData, this); rc_on_ban_list_data(connection, onBanListData, this); rc_on_player_rights(connection, onPlayerRights, this); rc_on_player_attributes(connection, onPlayerAttributes, this); refresh(); gtk_widget_show_all(window); gtk_window_present(GTK_WINDOW(window)); }
 void TPlayerList::onRefresh(GtkButton*, gpointer data) { static_cast<TPlayerList*>(data)->refresh(); }
 void TPlayerList::onMassPM(GtkButton*, gpointer data) { static_cast<TPlayerList*>(data)->sendMassPM(); }
 void TPlayerList::onAdminMessage(GtkButton*, gpointer data) { static_cast<TPlayerList*>(data)->sendAdminMessage(); }
@@ -410,23 +409,17 @@ void TPlayerList::onPlayerAttributes(const char* account, const char*, const cha
     g_signal_connect(dialog, "destroy", G_CALLBACK(+[](GtkWidget*, gpointer userData) { delete static_cast<AttributeState*>(userData); }), state);
     gtk_widget_show_all(dialog);
 }
-void TPlayerList::onPlayerText(const char* type, const char* account, const char* content, void* data) {
+void TPlayerList::handlePlayerText(const char* type, const char* account, const char* content) {
     if (type == nullptr || account == nullptr) return;
-    TPlayerList* list = static_cast<TPlayerList*>(data);
     const std::string dataType(type);
-    if (dataType == "account") {
-        if (list->accountEditor == nullptr) list->accountEditor = new TAccountsWindow();
-        list->accountEditor->showEditor(list->connection, account, content);
-        return;
-    }
     if (dataType != "comments" && dataType != "profile") return;
     struct TextState { TPlayerList* list; std::string account; std::string type; GtkWidget* text; };
     const std::string title = (dataType == "profile" ? "Profile of " : "Edit Comments of ") + std::string(account);
-    GtkWidget* dialog = gtk_dialog_new_with_buttons(title.c_str(), GTK_WINDOW(list->window), GTK_DIALOG_DESTROY_WITH_PARENT, "Cancel", GTK_RESPONSE_CANCEL, "Save", GTK_RESPONSE_ACCEPT, nullptr);
+    GtkWidget* dialog = gtk_dialog_new_with_buttons(title.c_str(), GTK_WINDOW(window), GTK_DIALOG_DESTROY_WITH_PARENT, "Cancel", GTK_RESPONSE_CANCEL, "Save", GTK_RESPONSE_ACCEPT, nullptr);
     GtkWidget* text = gtk_text_view_new();
     gtk_text_buffer_set_text(gtk_text_view_get_buffer(GTK_TEXT_VIEW(text)), content == nullptr ? "" : content, -1);
     gtk_box_pack_start(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), text, true, true, 0);
-    auto* state = new TextState{list, account, dataType, text};
+    auto* state = new TextState{this, account, dataType, text};
     g_signal_connect(dialog, "response", G_CALLBACK(+[](GtkDialog* responseDialog, gint response, gpointer userData) { auto* state = static_cast<TextState*>(userData); if (response == GTK_RESPONSE_ACCEPT) { GtkTextIter start; GtkTextIter end; GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(state->text)); gtk_text_buffer_get_bounds(buffer, &start, &end); gchar* value = gtk_text_buffer_get_text(buffer, &start, &end, false); if (state->type == "profile") rc_set_player_profile(state->list->connection, state->account.c_str(), value == nullptr ? "" : value); else rc_set_player_comments(state->list->connection, state->account.c_str(), value == nullptr ? "" : value); g_free(value); } else gtk_widget_destroy(GTK_WIDGET(responseDialog)); }), state);
     g_signal_connect(dialog, "destroy", G_CALLBACK(+[](GtkWidget*, gpointer userData) { delete static_cast<TextState*>(userData); }), state);
     gtk_widget_show_all(dialog);
