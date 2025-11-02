@@ -14,6 +14,11 @@ add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../grclib" "${CMAKE_BINARY_DIR}/gr
 add_library(rc3_options src/RCOptions.cpp)
 target_include_directories(rc3_options PUBLIC src)
 
+enable_testing()
+add_executable(RCOptionsTests tests/RCOptionsTests.cpp)
+target_link_libraries(RCOptionsTests PRIVATE rc3_options)
+add_test(NAME RCOptionsTests COMMAND RCOptionsTests)
+
 add_executable(RemoteControl3 src/main.cpp)
 target_link_libraries(RemoteControl3 PRIVATE rc3_options grclib PkgConfig::GTK3 PkgConfig::GTKSOURCEVIEW3)
 set_target_properties(RemoteControl3 PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/bin")
