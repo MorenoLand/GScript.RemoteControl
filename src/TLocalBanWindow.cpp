@@ -104,6 +104,8 @@ void TLocalBanWindow::open(void* nextConnection, const std::string& nextAccount,
         }
         const auto release = fields.find("releasetime");
         if (release != fields.end()) gtk_entry_set_text(GTK_ENTRY(scope.release), release->second.c_str());
+        const auto reason = fields.find("reason");
+        if (reason != fields.end()) gtk_entry_set_text(GTK_ENTRY(scope.reason), reason->second.c_str());
     }
     gtk_widget_show_all(window);
     gtk_window_present(GTK_WINDOW(window));
