@@ -6,11 +6,16 @@
 #include <array>
 #include <filesystem>
 #include <memory>
+#include <vector>
 #include <gtk/gtk.h>
 #include <gtksourceview/gtksource.h>
 
 #ifdef _WIN32
 #include <windows.h>
+#elif defined(__APPLE__)
+#include <mach-o/dyld.h>
+#else
+#include <unistd.h>
 #endif
 
 GtkStatusIcon* pmTrayIcon = nullptr;
@@ -77,6 +82,16 @@ namespace {
         std::array<wchar_t, 32768> executablePath;
         const DWORD length = GetModuleFileNameW(nullptr, executablePath.data(), static_cast<DWORD>(executablePath.size()));
         if (length != 0 && length < executablePath.size()) return std::filesystem::path(executablePath.data()).parent_path();
+#elif defined(__APPLE__)
+        uint32_t length = 0;
+        if (_NSGetExecutablePath(nullptr, &length) == -1 && length != 0) {
+            std::vector<char> executablePath(length);
+            if (_NSGetExecutablePath(executablePath.data(), &length) == 0) return std::filesystem::weakly_canonical(std::filesystem::path(executablePath.data())).parent_path();
+        }
+#else
+        std::array<char, 4096> executablePath = {};
+        const ssize_t length = readlink("/proc/self/exe", executablePath.data(), executablePath.size() - 1);
+        if (length > 0 && static_cast<std::size_t>(length) < executablePath.size()) return std::filesystem::path(executablePath.data()).parent_path();
 #endif
         return std::filesystem::current_path();
     }
