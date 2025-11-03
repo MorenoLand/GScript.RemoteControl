@@ -5,6 +5,7 @@
 
 #include <array>
 #include <filesystem>
+#include <memory>
 #include <gtk/gtk.h>
 #include <gtksourceview/gtksource.h>
 
@@ -52,8 +53,11 @@ int main(int argc, char** argv) {
     copySyntaxFiles(applicationDirectory);
     RC3::loadRCOptions(options, applicationDirectory);
     TStartFrame* startFrame = nullptr;
-    TRemoteFrame remoteFrame([&] { startFrame->show(); });
-    TServerList serverList([&] { startFrame->show(); }, [&](void* connection) { remoteFrame.open(connection); });
+    std::unique_ptr<TRemoteFrame> remoteFrame;
+    TServerList serverList([&] { startFrame->show(); }, [&](void* connection) {
+        remoteFrame = std::make_unique<TRemoteFrame>(options, applicationDirectory, [&] { startFrame->show(); });
+        remoteFrame->open(connection);
+    });
     TStartFrame frame(options, applicationDirectory, [&](const std::string& account, const std::string& password) { serverList.open(account, password); });
     startFrame = &frame;
     frame.show();
