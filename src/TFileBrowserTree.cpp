@@ -19,6 +19,8 @@ namespace {
     constexpr int FileRightsColumn = 2;
     constexpr int FileSizeColumn = 3;
     constexpr int FileModifiedColumn = 4;
+    constexpr int FileSizeSortColumn = 5;
+    constexpr int FileModifiedSortColumn = 6;
     struct FileMenuItem { TFileBrowserTree* browser; std::string path; };
     void destroyFileMenuItem(gpointer data, GClosure*) { delete static_cast<FileMenuItem*>(data); }
 
@@ -75,7 +77,7 @@ TFileBrowserTree::TFileBrowserTree() {
     gtk_scrolled_window_set_shadow_type(GTK_SCROLLED_WINDOW(folderScrolled), GTK_SHADOW_IN);
     gtk_scrolled_window_set_shadow_type(GTK_SCROLLED_WINDOW(fileScrolled), GTK_SHADOW_IN);
     folders = gtk_tree_store_new(4, GDK_TYPE_PIXBUF, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING);
-    files = gtk_list_store_new(5, GDK_TYPE_PIXBUF, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING);
+    files = gtk_list_store_new(7, GDK_TYPE_PIXBUF, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_INT, G_TYPE_INT);
     folderView = gtk_tree_view_new_with_model(GTK_TREE_MODEL(folders));
     fileView = gtk_tree_view_new_with_model(GTK_TREE_MODEL(files));
     gtk_tree_selection_set_mode(gtk_tree_view_get_selection(GTK_TREE_VIEW(fileView)), GTK_SELECTION_MULTIPLE);
@@ -97,13 +99,13 @@ TFileBrowserTree::TFileBrowserTree() {
     gtk_tree_view_column_set_fixed_width(nameColumn, 290);
     gtk_tree_view_column_set_sort_column_id(nameColumn, FilePathColumn);
     gtk_tree_view_append_column(GTK_TREE_VIEW(fileView), nameColumn);
-    const struct { const char* name; int column; int width; } columns[] = {{"Rights", FileRightsColumn, 60}, {"Size", FileSizeColumn, 60}, {"Modified", FileModifiedColumn, 145}};
+    const struct { const char* name; int column; int sortColumn; int width; } columns[] = {{"Rights", FileRightsColumn, FileRightsColumn, 60}, {"Size", FileSizeColumn, FileSizeSortColumn, 60}, {"Modified", FileModifiedColumn, FileModifiedSortColumn, 145}};
     for (const auto& column : columns) {
         text = gtk_cell_renderer_text_new();
         GtkTreeViewColumn* viewColumn = gtk_tree_view_column_new_with_attributes(column.name, text, "text", column.column, nullptr);
         gtk_tree_view_column_set_resizable(viewColumn, true);
         gtk_tree_view_column_set_fixed_width(viewColumn, column.width);
-        gtk_tree_view_column_set_sort_column_id(viewColumn, column.column);
+        gtk_tree_view_column_set_sort_column_id(viewColumn, column.sortColumn);
         gtk_tree_view_append_column(GTK_TREE_VIEW(fileView), viewColumn);
     }
     gtk_tree_sortable_set_sort_column_id(GTK_TREE_SORTABLE(files), FilePathColumn, GTK_SORT_ASCENDING);
@@ -474,7 +476,7 @@ void TFileBrowserTree::refreshFiles(const char* folder) {
         gtk_list_store_append(files, &row);
         const std::string modified = formatModified(entries[index].modified);
         const std::string size = entries[index].size == 0 ? "" : std::to_string(entries[index].size);
-        gtk_list_store_set(files, &row, FileIconColumn, fileIcon(entries[index], textFileIcon, nwFileIcon, graalFileIcon, gmapFileIcon), FilePathColumn, entries[index].path == nullptr ? "" : entries[index].path, FileRightsColumn, entries[index].rights == nullptr ? "" : entries[index].rights, FileSizeColumn, size.c_str(), FileModifiedColumn, modified.c_str(), -1);
+        gtk_list_store_set(files, &row, FileIconColumn, fileIcon(entries[index], textFileIcon, nwFileIcon, graalFileIcon, gmapFileIcon), FilePathColumn, entries[index].path == nullptr ? "" : entries[index].path, FileRightsColumn, entries[index].rights == nullptr ? "" : entries[index].rights, FileSizeColumn, size.c_str(), FileModifiedColumn, modified.c_str(), FileSizeSortColumn, entries[index].size, FileModifiedSortColumn, entries[index].modified, -1);
     }
     rc_free_filebrowser_files(entries, count);
 }
