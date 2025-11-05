@@ -48,9 +48,6 @@ int main(int argc, char** argv) {
     std::filesystem::current_path(applicationDirectory);
     configureGtkRuntime(applicationDirectory);
     gtk_init(&argc, &argv);
-    GError* iconError = nullptr;
-    gtk_window_set_default_icon_from_file((applicationDirectory / "RemoteControl3.ico").string().c_str(), &iconError);
-    if (iconError != nullptr) g_error_free(iconError);
     RC3::RCOptions options;
     copySyntaxFiles(applicationDirectory);
     RC3::loadRCOptions(options, applicationDirectory);

@@ -1,4 +1,5 @@
 #include "TRemoteFrame.h"
+#include "TFileBrowser.h"
 #include "TPlayerList.h"
 
 #include <grclib.h>
@@ -21,6 +22,10 @@ TRemoteFrame::TRemoteFrame(std::function<void()> onClose) : onCloseCallback(std:
             GtkWidget* playerListItem = gtk_menu_item_new_with_label("Playerlist");
             gtk_menu_shell_append(GTK_MENU_SHELL(menu), playerListItem);
             g_signal_connect(playerListItem, "activate", G_CALLBACK(onPlayerList), this);
+        } else if (std::string(menuName) == "Files") {
+            GtkWidget* fileBrowserItem = gtk_menu_item_new_with_label("File Browser");
+            gtk_menu_shell_append(GTK_MENU_SHELL(menu), fileBrowserItem);
+            g_signal_connect(fileBrowserItem, "activate", G_CALLBACK(onFileBrowser), this);
         }
         gtk_menu_item_set_submenu(GTK_MENU_ITEM(item), menu);
         gtk_menu_shell_append(GTK_MENU_SHELL(menuBar), item);
@@ -65,6 +70,7 @@ TRemoteFrame::~TRemoteFrame() {
     if (eventSource != 0) g_source_remove(eventSource);
     if (window != nullptr) gtk_widget_destroy(window);
     delete playerList;
+    delete fileBrowser;
 }
 
 void TRemoteFrame::open(void* nextConnection) {
@@ -86,6 +92,13 @@ void TRemoteFrame::onPlayerList(GtkMenuItem*, gpointer data) {
     if (frame->connection == nullptr) return;
     if (frame->playerList == nullptr) frame->playerList = new TPlayerList();
     frame->playerList->open(frame->connection);
+}
+
+void TRemoteFrame::onFileBrowser(GtkMenuItem*, gpointer data) {
+    TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
+    if (frame->connection == nullptr) return;
+    if (frame->fileBrowser == nullptr) frame->fileBrowser = new TFileBrowser();
+    frame->fileBrowser->open(frame->connection);
 }
 
 gboolean TRemoteFrame::onEditKey(GtkWidget*, GdkEventKey* event, gpointer data) {

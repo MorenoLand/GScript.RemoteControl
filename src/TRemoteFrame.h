@@ -5,6 +5,7 @@
 #include <string>
 
 class TPlayerList;
+class TFileBrowser;
 
 class TRemoteFrame {
 public:
@@ -16,6 +17,7 @@ public:
 private:
     static void onSend(GtkButton*, gpointer data);
     static void onPlayerList(GtkMenuItem*, gpointer data);
+    static void onFileBrowser(GtkMenuItem*, gpointer data);
     static gboolean onEditKey(GtkWidget*, GdkEventKey*, gpointer data);
     static gboolean onDelete(GtkWidget*, GdkEvent*, gpointer data);
     static gboolean processEvents(gpointer data);
@@ -35,4 +37,5 @@ private:
     void* connection = nullptr;
     guint eventSource = 0;
     TPlayerList* playerList = nullptr;
+    TFileBrowser* fileBrowser = nullptr;
 };
