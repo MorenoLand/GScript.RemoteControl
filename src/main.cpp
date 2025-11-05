@@ -5,6 +5,7 @@
 
 #include <array>
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <vector>
 #include <gtk/gtk.h>
@@ -12,6 +13,7 @@
 
 #ifdef _WIN32
 #include <windows.h>
+#include <gdk/gdkwin32.h>
 #elif defined(__APPLE__)
 #include <mach-o/dyld.h>
 #else
@@ -23,11 +25,24 @@ std::string pmTrayNormalIcon;
 std::string pmTrayAlertIcon;
 guint pmTrayBlinkSource = 0;
 bool pmTrayAlertVisible = false;
+std::function<void()> trayServerListOpen;
 
 namespace {
 
     TStartFrame* trayStartFrame = nullptr;
     TRemoteFrame* trayRemoteFrame = nullptr;
+
+#ifdef _WIN32
+    constexpr int ServerListHotkeyId = 0x5243;
+    GdkFilterReturn onWindowsMessage(GdkXEvent* event, GdkEvent*, gpointer) {
+        MSG* message = static_cast<MSG*>(event);
+        if (message->message == WM_HOTKEY && message->wParam == ServerListHotkeyId) {
+            if (trayServerListOpen) trayServerListOpen();
+            return GDK_FILTER_REMOVE;
+        }
+        return GDK_FILTER_CONTINUE;
+    }
+#endif
 
     gboolean onTrayPMBlink(gpointer) {
         pmTrayAlertVisible = !pmTrayAlertVisible;
@@ -151,7 +166,16 @@ int main(int argc, char** argv) {
     TStartFrame frame(options, applicationDirectory, [&](const std::string& account, const std::string& password) { serverList.open(account, password); });
     startFrame = &frame;
     trayStartFrame = startFrame;
+    trayServerListOpen = [&] { serverList.reopen(); };
+#ifdef _WIN32
+    gdk_window_add_filter(nullptr, onWindowsMessage, nullptr);
+    RegisterHotKey(nullptr, ServerListHotkeyId, MOD_NOREPEAT, VK_F8);
+#endif
     frame.show();
     gtk_main();
+#ifdef _WIN32
+    UnregisterHotKey(nullptr, ServerListHotkeyId);
+    gdk_window_remove_filter(nullptr, onWindowsMessage, nullptr);
+#endif
     return 0;
 }
