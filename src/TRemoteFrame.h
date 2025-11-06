@@ -1,6 +1,7 @@
 #pragma once
 
 #include <gtk/gtk.h>
+#include <array>
 #include <filesystem>
 #include <functional>
 #include <string>
@@ -16,7 +17,7 @@ public:
     TRemoteFrame(const RC3::RCOptions& options, const std::filesystem::path& applicationDirectory, std::function<void()> onClose);
     ~TRemoteFrame();
 
-    void open(void* connection);
+    void open(void* connection, const std::string& serverName);
 
 private:
     static void onSend(GtkButton*, gpointer data);
@@ -33,6 +34,7 @@ private:
 
     void appendChat(const std::string& message);
     void appendChannelMessage(const std::string& channel, const std::string& message);
+    bool applyAlertTag(std::string& message);
     void send();
     void addMenuItem(GtkWidget* menu, const char* label, GCallback callback = nullptr);
     void graphicalAction(int index);
@@ -41,9 +43,11 @@ private:
     GtkWidget* window = nullptr;
     GtkWidget* chatField = nullptr;
     GtkWidget* notebook = nullptr;
+    GtkWidget* graphicalFixed = nullptr;
     GtkWidget* editField = nullptr;
     GtkWidget* serverLabel = nullptr;
     GtkWidget* playersLabel = nullptr;
+    std::array<GtkWidget*, 12> graphicalButtons{};
     void* connection = nullptr;
     guint eventSource = 0;
     TPlayerList* playerList = nullptr;

@@ -54,9 +54,9 @@ int main(int argc, char** argv) {
     RC3::loadRCOptions(options, applicationDirectory);
     TStartFrame* startFrame = nullptr;
     std::unique_ptr<TRemoteFrame> remoteFrame;
-    TServerList serverList([&] { startFrame->show(); }, [&](void* connection) {
+    TServerList serverList([&] { startFrame->show(); }, [&](void* connection, const std::string& serverName) {
         remoteFrame = std::make_unique<TRemoteFrame>(options, applicationDirectory, [&] { startFrame->show(); });
-        remoteFrame->open(connection);
+        remoteFrame->open(connection, serverName);
     });
     TStartFrame frame(options, applicationDirectory, [&](const std::string& account, const std::string& password) { serverList.open(account, password); });
     startFrame = &frame;
