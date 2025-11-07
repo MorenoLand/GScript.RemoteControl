@@ -18,6 +18,11 @@ TServerTextEditor::TServerTextEditor(Kind nextKind, const char* title) : kind(ne
     g_object_unref(sourceBuffer);
     buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(text));
     gtk_text_view_set_monospace(GTK_TEXT_VIEW(text), true);
+    g_signal_connect(text, "key-press-event", G_CALLBACK(+[](GtkWidget*, GdkEventKey* event, gpointer data) {
+        if ((event->state & GDK_CONTROL_MASK) == 0 || (event->keyval != GDK_KEY_s && event->keyval != GDK_KEY_S)) return static_cast<gboolean>(FALSE);
+        static_cast<TServerTextEditor*>(data)->save();
+        return static_cast<gboolean>(TRUE);
+    }), this);
     gtk_container_add(GTK_CONTAINER(scrolled), text);
     gtk_box_pack_start(GTK_BOX(root), scrolled, true, true, 0);
     GtkWidget* buttons = gtk_button_box_new(GTK_ORIENTATION_HORIZONTAL);
