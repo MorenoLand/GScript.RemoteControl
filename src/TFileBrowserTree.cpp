@@ -3,67 +3,141 @@
 #include <grclib.h>
 
 #include <string>
+#include <ctime>
+#include <iomanip>
+#include <sstream>
 #include <vector>
 
 namespace {
-    constexpr int FolderPathColumn = 0;
-    constexpr int FolderRightsColumn = 1;
-    constexpr int FolderDisplayColumn = 2;
-    constexpr int FilePathColumn = 0;
-    constexpr int FileRightsColumn = 1;
-    constexpr int FileModifiedColumn = 2;
+    constexpr int FolderIconColumn = 0;
+    constexpr int FolderPathColumn = 1;
+    constexpr int FolderRightsColumn = 2;
+    constexpr int FolderDisplayColumn = 3;
+    constexpr int FileIconColumn = 0;
+    constexpr int FilePathColumn = 1;
+    constexpr int FileRightsColumn = 2;
+    constexpr int FileSizeColumn = 3;
+    constexpr int FileModifiedColumn = 4;
+
+    std::string formatModified(int timestamp) {
+        if (timestamp <= 0) return "";
+        const std::time_t value = timestamp;
+        std::tm local{};
+#ifdef _WIN32
+        localtime_s(&local, &value);
+#else
+        localtime_r(&value, &local);
+#endif
+        std::ostringstream stream;
+        stream << std::put_time(&local, "%Y-%m-%d %H:%M:%S");
+        return stream.str();
+    }
+
+    GdkPixbuf* loadImage(const char* name) { return gdk_pixbuf_new_from_file((std::string("images/") + name).c_str(), nullptr); }
+
+    GdkPixbuf* fileIcon(const RCFileBrowserEntry& entry, GdkPixbuf* text, GdkPixbuf* nw, GdkPixbuf* graal, GdkPixbuf* gmap) {
+        const std::string path = entry.path == nullptr ? "" : entry.path;
+        if (path.ends_with(".nw")) return nw;
+        if (path.ends_with(".gmap")) return gmap;
+        if (path.ends_with(".graal")) return graal;
+        return text;
+    }
 }
 
 TFileBrowserTree::TFileBrowserTree() {
     window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
     gtk_window_set_title(GTK_WINDOW(window), "File Browser");
-    gtk_window_set_default_size(GTK_WINDOW(window), 700, 480);
-    GtkWidget* root = gtk_box_new(GTK_ORIENTATION_VERTICAL, 5);
+    gtk_window_set_default_size(GTK_WINDOW(window), 800, 600);
+    GtkWidget* root = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    gtk_widget_set_name(window, "FileBrowser");
     gtk_container_set_border_width(GTK_CONTAINER(root), 5);
     gtk_container_add(GTK_CONTAINER(window), root);
-    GtkWidget* pathRow = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 5);
-    gtk_box_pack_start(GTK_BOX(pathRow), gtk_label_new("Folder:"), false, false, 0);
-    folderPath = gtk_entry_new();
-    gtk_editable_set_editable(GTK_EDITABLE(folderPath), false);
-    gtk_box_pack_start(GTK_BOX(pathRow), folderPath, true, true, 0);
-    GtkWidget* refreshButton = gtk_button_new_with_label("Refresh");
-    gtk_box_pack_start(GTK_BOX(pathRow), refreshButton, false, false, 0);
-    gtk_box_pack_start(GTK_BOX(root), pathRow, false, false, 0);
-    GtkWidget* panes = gtk_paned_new(GTK_ORIENTATION_HORIZONTAL);
+    GtkWidget* frame = gtk_frame_new(" Files ");
+    gtk_container_set_border_width(GTK_CONTAINER(frame), 5);
+    gtk_box_pack_start(GTK_BOX(root), frame, true, true, 0);
+    GtkWidget* content = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    gtk_container_set_border_width(GTK_CONTAINER(content), 5);
+    gtk_container_add(GTK_CONTAINER(frame), content);
+    folderPath = gtk_label_new("Current Folder:");
+    gtk_misc_set_alignment(GTK_MISC(folderPath), 0.0f, 0.5f);
+    gtk_box_pack_start(GTK_BOX(content), folderPath, false, false, 5);
+    GtkWidget* panes = gtk_paned_new(GTK_ORIENTATION_VERTICAL);
+    gtk_paned_set_position(GTK_PANED(panes), 366);
+    gtk_box_pack_start(GTK_BOX(content), panes, true, true, 0);
+    GtkWidget* filePanes = gtk_paned_new(GTK_ORIENTATION_HORIZONTAL);
+    gtk_paned_set_position(GTK_PANED(filePanes), 200);
+    gtk_paned_pack1(GTK_PANED(panes), filePanes, false, true);
     GtkWidget* folderScrolled = gtk_scrolled_window_new(nullptr, nullptr);
     GtkWidget* fileScrolled = gtk_scrolled_window_new(nullptr, nullptr);
-    folders = gtk_tree_store_new(3, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING);
-    files = gtk_list_store_new(3, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING);
+    gtk_scrolled_window_set_shadow_type(GTK_SCROLLED_WINDOW(folderScrolled), GTK_SHADOW_IN);
+    gtk_scrolled_window_set_shadow_type(GTK_SCROLLED_WINDOW(fileScrolled), GTK_SHADOW_IN);
+    folders = gtk_tree_store_new(4, GDK_TYPE_PIXBUF, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING);
+    files = gtk_list_store_new(5, GDK_TYPE_PIXBUF, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING);
     GtkWidget* folderView = gtk_tree_view_new_with_model(GTK_TREE_MODEL(folders));
     GtkWidget* fileView = gtk_tree_view_new_with_model(GTK_TREE_MODEL(files));
+    gtk_tree_view_set_headers_visible(GTK_TREE_VIEW(folderView), false);
+    GtkTreeViewColumn* folderColumn = gtk_tree_view_column_new();
+    GtkCellRenderer* image = gtk_cell_renderer_pixbuf_new();
     GtkCellRenderer* text = gtk_cell_renderer_text_new();
-    gtk_tree_view_append_column(GTK_TREE_VIEW(folderView), gtk_tree_view_column_new_with_attributes("Folders", text, "text", FolderDisplayColumn, nullptr));
+    gtk_tree_view_column_pack_start(folderColumn, image, false);
+    gtk_tree_view_column_add_attribute(folderColumn, image, "pixbuf", FolderIconColumn);
+    gtk_tree_view_column_pack_start(folderColumn, text, true);
+    gtk_tree_view_column_add_attribute(folderColumn, text, "text", FolderDisplayColumn);
+    gtk_tree_view_append_column(GTK_TREE_VIEW(folderView), folderColumn);
+    image = gtk_cell_renderer_pixbuf_new();
     text = gtk_cell_renderer_text_new();
-    gtk_tree_view_append_column(GTK_TREE_VIEW(folderView), gtk_tree_view_column_new_with_attributes("Rights", text, "text", FolderRightsColumn, nullptr));
-    text = gtk_cell_renderer_text_new();
-    gtk_tree_view_append_column(GTK_TREE_VIEW(fileView), gtk_tree_view_column_new_with_attributes("Files", text, "text", FilePathColumn, nullptr));
-    text = gtk_cell_renderer_text_new();
-    gtk_tree_view_append_column(GTK_TREE_VIEW(fileView), gtk_tree_view_column_new_with_attributes("Rights", text, "text", FileRightsColumn, nullptr));
-    text = gtk_cell_renderer_text_new();
-    gtk_tree_view_append_column(GTK_TREE_VIEW(fileView), gtk_tree_view_column_new_with_attributes("Modified", text, "text", FileModifiedColumn, nullptr));
+    GtkTreeViewColumn* nameColumn = gtk_tree_view_column_new_with_attributes("Name", image, "pixbuf", FileIconColumn, nullptr);
+    gtk_tree_view_column_pack_start(nameColumn, text, true);
+    gtk_tree_view_column_add_attribute(nameColumn, text, "text", FilePathColumn);
+    gtk_tree_view_column_set_resizable(nameColumn, true);
+    gtk_tree_view_column_set_fixed_width(nameColumn, 290);
+    gtk_tree_view_append_column(GTK_TREE_VIEW(fileView), nameColumn);
+    const struct { const char* name; int column; int width; } columns[] = {{"Rights", FileRightsColumn, 60}, {"Size", FileSizeColumn, 60}, {"Modified", FileModifiedColumn, 145}};
+    for (const auto& column : columns) {
+        text = gtk_cell_renderer_text_new();
+        GtkTreeViewColumn* viewColumn = gtk_tree_view_column_new_with_attributes(column.name, text, "text", column.column, nullptr);
+        gtk_tree_view_column_set_resizable(viewColumn, true);
+        gtk_tree_view_column_set_fixed_width(viewColumn, column.width);
+        gtk_tree_view_column_set_sort_column_id(viewColumn, column.column);
+        gtk_tree_view_append_column(GTK_TREE_VIEW(fileView), viewColumn);
+    }
     gtk_container_add(GTK_CONTAINER(folderScrolled), folderView);
     gtk_container_add(GTK_CONTAINER(fileScrolled), fileView);
-    gtk_paned_pack1(GTK_PANED(panes), folderScrolled, true, false);
-    gtk_paned_pack2(GTK_PANED(panes), fileScrolled, true, false);
-    gtk_box_pack_start(GTK_BOX(root), panes, true, true, 0);
+    gtk_paned_pack1(GTK_PANED(filePanes), folderScrolled, false, true);
+    gtk_paned_pack2(GTK_PANED(filePanes), fileScrolled, true, true);
     GtkWidget* logScrolled = gtk_scrolled_window_new(nullptr, nullptr);
-    gtk_widget_set_size_request(logScrolled, -1, 90);
+    gtk_scrolled_window_set_shadow_type(GTK_SCROLLED_WINDOW(logScrolled), GTK_SHADOW_IN);
     log = gtk_text_view_new();
     gtk_text_view_set_editable(GTK_TEXT_VIEW(log), false);
     gtk_text_view_set_cursor_visible(GTK_TEXT_VIEW(log), false);
     gtk_container_add(GTK_CONTAINER(logScrolled), log);
-    gtk_box_pack_start(GTK_BOX(root), logScrolled, false, true, 0);
-    g_signal_connect(refreshButton, "clicked", G_CALLBACK(onRefresh), this);
-    g_signal_connect(folderView, "row-activated", G_CALLBACK(onFolderActivated), this);
+    gtk_paned_pack2(GTK_PANED(panes), logScrolled, true, true);
+    GtkWidget* buttons = gtk_button_box_new(GTK_ORIENTATION_HORIZONTAL);
+    gtk_button_box_set_layout(GTK_BUTTON_BOX(buttons), GTK_BUTTONBOX_END);
+    gtk_container_set_border_width(GTK_CONTAINER(buttons), 5);
+    GtkWidget* closeButton = gtk_button_new_with_label("Close");
+    gtk_container_add(GTK_CONTAINER(buttons), closeButton);
+    gtk_box_pack_start(GTK_BOX(root), buttons, false, true, 0);
+    closedFolderIcon = loadImage("rcfiles_folderclosed.png");
+    openFolderIcon = loadImage("rcfiles_folderopen.png");
+    textFileIcon = loadImage("rcfiles_text.png");
+    nwFileIcon = loadImage("rcfiles_nw.png");
+    graalFileIcon = loadImage("rcfiles_graal.png");
+    gmapFileIcon = loadImage("rcfiles_gmap.png");
+    g_signal_connect(gtk_tree_view_get_selection(GTK_TREE_VIEW(folderView)), "changed", G_CALLBACK(onFolderSelected), this);
+    g_signal_connect(closeButton, "clicked", G_CALLBACK(onRefresh), this);
     g_signal_connect(window, "delete-event", G_CALLBACK(onDelete), this);
 }
 
-TFileBrowserTree::~TFileBrowserTree() { if (window != nullptr) gtk_widget_destroy(window); }
+TFileBrowserTree::~TFileBrowserTree() {
+    if (closedFolderIcon != nullptr) g_object_unref(closedFolderIcon);
+    if (openFolderIcon != nullptr) g_object_unref(openFolderIcon);
+    if (textFileIcon != nullptr) g_object_unref(textFileIcon);
+    if (nwFileIcon != nullptr) g_object_unref(nwFileIcon);
+    if (graalFileIcon != nullptr) g_object_unref(graalFileIcon);
+    if (gmapFileIcon != nullptr) g_object_unref(gmapFileIcon);
+    if (window != nullptr) gtk_widget_destroy(window);
+}
 
 void TFileBrowserTree::open(void* nextConnection) {
     connection = nextConnection;
@@ -75,16 +149,16 @@ void TFileBrowserTree::open(void* nextConnection) {
     refresh();
 }
 
-void TFileBrowserTree::onRefresh(GtkButton*, gpointer data) { static_cast<TFileBrowserTree*>(data)->refresh(); }
+void TFileBrowserTree::onRefresh(GtkButton*, gpointer data) { gtk_widget_hide(static_cast<TFileBrowserTree*>(data)->window); }
 void TFileBrowserTree::onFolders(int, void* data) { static_cast<TFileBrowserTree*>(data)->refreshFolders(); }
 void TFileBrowserTree::onFiles(const char* folder, int, void* data) { static_cast<TFileBrowserTree*>(data)->refreshFiles(folder); }
 void TFileBrowserTree::onMessage(const char* message, void* data) { static_cast<TFileBrowserTree*>(data)->appendLog(message == nullptr ? "" : message); }
 gboolean TFileBrowserTree::onDelete(GtkWidget*, GdkEvent*, gpointer data) { gtk_widget_hide(static_cast<TFileBrowserTree*>(data)->window); return true; }
 
-void TFileBrowserTree::onFolderActivated(GtkTreeView* view, GtkTreePath* path, GtkTreeViewColumn*, gpointer data) {
+void TFileBrowserTree::onFolderSelected(GtkTreeSelection* selection, gpointer data) {
     TFileBrowserTree* browser = static_cast<TFileBrowserTree*>(data);
     GtkTreeIter row;
-    if (!gtk_tree_model_get_iter(GTK_TREE_MODEL(browser->folders), &row, path)) return;
+    if (!gtk_tree_selection_get_selected(selection, nullptr, &row)) return;
     gchar* folder = nullptr;
     gtk_tree_model_get(GTK_TREE_MODEL(browser->folders), &row, FolderPathColumn, &folder, -1);
     if (folder != nullptr) {
@@ -109,12 +183,13 @@ void TFileBrowserTree::refreshFiles(const char* folder) {
     RCFileBrowserEntry* entries = nullptr;
     const int count = rc_copy_filebrowser_files(connection, &entries);
     gtk_list_store_clear(files);
-    gtk_entry_set_text(GTK_ENTRY(folderPath), folder == nullptr ? "" : folder);
+    gtk_label_set_text(GTK_LABEL(folderPath), (std::string("Current Folder: ") + (folder == nullptr ? "" : folder)).c_str());
     for (int index = 0; index < count; ++index) {
         GtkTreeIter row;
         gtk_list_store_append(files, &row);
-        const std::string modified = entries[index].modified == 0 ? "" : std::to_string(entries[index].modified);
-        gtk_list_store_set(files, &row, FilePathColumn, entries[index].path == nullptr ? "" : entries[index].path, FileRightsColumn, entries[index].rights == nullptr ? "" : entries[index].rights, FileModifiedColumn, modified.c_str(), -1);
+        const std::string modified = formatModified(entries[index].modified);
+        const std::string size = entries[index].size == 0 ? "" : std::to_string(entries[index].size);
+        gtk_list_store_set(files, &row, FileIconColumn, fileIcon(entries[index], textFileIcon, nwFileIcon, graalFileIcon, gmapFileIcon), FilePathColumn, entries[index].path == nullptr ? "" : entries[index].path, FileRightsColumn, entries[index].rights == nullptr ? "" : entries[index].rights, FileSizeColumn, size.c_str(), FileModifiedColumn, modified.c_str(), -1);
     }
     rc_free_filebrowser_files(entries, count);
 }
@@ -153,7 +228,7 @@ void TFileBrowserTree::addFolder(const char* pattern, const char* rights) {
         if (!found) {
             gtk_tree_store_append(folders, &row, parentPointer);
             const std::string label = parts[index] + "/";
-            gtk_tree_store_set(folders, &row, FolderPathColumn, fullPath.c_str(), FolderRightsColumn, index + 1 == parts.size() && rights != nullptr ? rights : "", FolderDisplayColumn, label.c_str(), -1);
+            gtk_tree_store_set(folders, &row, FolderIconColumn, index + 1 == parts.size() ? closedFolderIcon : openFolderIcon, FolderPathColumn, fullPath.c_str(), FolderRightsColumn, index + 1 == parts.size() && rights != nullptr ? rights : "", FolderDisplayColumn, label.c_str(), -1);
         }
         parent = row;
         parentPointer = &parent;

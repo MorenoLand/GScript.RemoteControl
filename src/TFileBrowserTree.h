@@ -9,7 +9,7 @@ public:
     void open(void* connection);
 private:
     static void onRefresh(GtkButton*, gpointer data);
-    static void onFolderActivated(GtkTreeView*, GtkTreePath*, GtkTreeViewColumn*, gpointer data);
+    static void onFolderSelected(GtkTreeSelection*, gpointer data);
     static gboolean onDelete(GtkWidget*, GdkEvent*, gpointer data);
     static void onFolders(int count, void* data);
     static void onFiles(const char* folder, int count, void* data);
@@ -24,5 +24,11 @@ private:
     GtkTreeStore* folders = nullptr;
     GtkListStore* files = nullptr;
     GtkWidget* log = nullptr;
+    GdkPixbuf* closedFolderIcon = nullptr;
+    GdkPixbuf* openFolderIcon = nullptr;
+    GdkPixbuf* textFileIcon = nullptr;
+    GdkPixbuf* nwFileIcon = nullptr;
+    GdkPixbuf* graalFileIcon = nullptr;
+    GdkPixbuf* gmapFileIcon = nullptr;
     void* connection = nullptr;
 };

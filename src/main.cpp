@@ -42,6 +42,14 @@ namespace {
 #endif
     }
 
+    void applyDarkTheme() {
+        GtkCssProvider* provider = gtk_css_provider_new();
+        constexpr const char* css = "* { color: #dddddd; } window, dialog, .background { background-color: #454545; } treeview.view { background-color: #272822; color: #dddddd; } button { background-color: #383838; color: #cbcbcb; border-color: #555555; } button:hover { background-color: #3b3b3b; } button:active { background-color: #383838; } menubar, menu { background-color: #484848; color: #cbcbcb; } notebook > header { background-color: #454545; } notebook > stack { background-color: #383838; } treeview.view:selected { background-color: #555555; color: #ffffff; }";
+        gtk_css_provider_load_from_data(provider, css, -1, nullptr);
+        gtk_style_context_add_provider_for_screen(gdk_screen_get_default(), GTK_STYLE_PROVIDER(provider), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+        g_object_unref(provider);
+    }
+
 }
 
 int main(int argc, char** argv) {
@@ -52,6 +60,7 @@ int main(int argc, char** argv) {
     RC3::RCOptions options;
     copySyntaxFiles(applicationDirectory);
     RC3::loadRCOptions(options, applicationDirectory);
+    applyDarkTheme();
     TStartFrame* startFrame = nullptr;
     std::unique_ptr<TRemoteFrame> remoteFrame;
     TServerList serverList([&] { startFrame->show(); }, [&](void* connection, const std::string& serverName) {

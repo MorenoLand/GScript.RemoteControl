@@ -58,5 +58,6 @@ endif()
 foreach(assetDirectory images language-specs sounds)
     add_custom_command(TARGET RemoteControl3 POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/original/${assetDirectory}" "$<TARGET_FILE_DIR:RemoteControl3>/${assetDirectory}")
 endforeach()
+add_custom_command(TARGET RemoteControl3 POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/original/share/themes" "$<TARGET_FILE_DIR:RemoteControl3>/share/themes")
 
 add_custom_command(TARGET RemoteControl3 POST_BUILD COMMAND ${CMAKE_COMMAND} -E rm -f "$<TARGET_FILE_DIR:RemoteControl3>/RemoteControl3.ico")

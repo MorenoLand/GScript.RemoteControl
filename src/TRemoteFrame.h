@@ -34,6 +34,7 @@ private:
 
     void appendChat(const std::string& message);
     void appendChannelMessage(const std::string& channel, const std::string& message);
+    void configureChatField(GtkWidget* field);
     bool applyAlertTag(std::string& message);
     void send();
     void addMenuItem(GtkWidget* menu, const char* label, GCallback callback = nullptr);

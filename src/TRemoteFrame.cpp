@@ -97,20 +97,12 @@ TRemoteFrame::TRemoteFrame(const RC3::RCOptions& nextOptions, const std::filesys
     gtk_text_view_set_editable(GTK_TEXT_VIEW(chatField), false);
     gtk_text_view_set_cursor_visible(GTK_TEXT_VIEW(chatField), false);
     gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(chatField), GTK_WRAP_WORD_CHAR);
-    GdkColor chatBackgroundColor;
-    GdkColor chatColor;
-    gdk_color_parse(options.colorchatback.c_str(), &chatBackgroundColor);
-    gdk_color_parse(options.colorchat.c_str(), &chatColor);
-    gtk_widget_modify_base(chatField, GTK_STATE_NORMAL, &chatBackgroundColor);
-    gtk_widget_modify_text(chatField, GTK_STATE_NORMAL, &chatColor);
-    PangoFontDescription* chatFont = pango_font_description_from_string(("Sans " + std::to_string(options.chatfontsize)).c_str());
-    gtk_widget_modify_font(chatField, chatFont);
-    pango_font_description_free(chatFont);
+    configureChatField(chatField);
     gtk_container_add(GTK_CONTAINER(chatScrolled), chatField);
     gtk_notebook_append_page(GTK_NOTEBOOK(notebook), chatScrolled, gtk_label_new("RC Chat"));
     if (graphicalFixed != nullptr) {
         gtk_widget_set_size_request(notebook, 500, 194);
-        gtk_fixed_put(GTK_FIXED(graphicalFixed), notebook, 0, 136);
+        gtk_fixed_put(GTK_FIXED(graphicalFixed), notebook, 0, 116);
     } else gtk_box_pack_start(GTK_BOX(root), notebook, true, true, 0);
 
     editField = gtk_entry_new();
@@ -234,16 +226,32 @@ void TRemoteFrame::graphicalAction(int index) {
 }
 
 void TRemoteFrame::appendChat(const std::string& message) {
+    const bool colorAlert = message.rfind("#ALERT", 0) == 0;
     std::string display = message;
     const bool alert = applyAlertTag(display);
     GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(chatField));
     GtkTextIter end;
     gtk_text_buffer_get_end_iter(buffer, &end);
-    gtk_text_buffer_insert(buffer, &end, (display + "\n").c_str(), -1);
+    if (colorAlert) {
+        GtkTextTag* tag = gtk_text_buffer_create_tag(buffer, nullptr, "foreground", options.coloralert.c_str(), "weight", PANGO_WEIGHT_BOLD, nullptr);
+        gtk_text_buffer_insert_with_tags(buffer, &end, (display + "\n").c_str(), -1, tag, nullptr);
+    } else gtk_text_buffer_insert(buffer, &end, (display + "\n").c_str(), -1);
     if (alert) {
         gtk_window_set_urgency_hint(GTK_WINDOW(window), true);
         gdk_beep();
     }
+}
+
+void TRemoteFrame::configureChatField(GtkWidget* field) {
+    GdkColor chatBackgroundColor;
+    GdkColor chatColor;
+    gdk_color_parse(options.colorchatback.c_str(), &chatBackgroundColor);
+    gdk_color_parse(options.colorchat.c_str(), &chatColor);
+    gtk_widget_modify_base(field, GTK_STATE_NORMAL, &chatBackgroundColor);
+    gtk_widget_modify_text(field, GTK_STATE_NORMAL, &chatColor);
+    PangoFontDescription* chatFont = pango_font_description_from_string(("Sans " + std::to_string(options.chatfontsize)).c_str());
+    gtk_widget_modify_font(field, chatFont);
+    pango_font_description_free(chatFont);
 }
 
 void TRemoteFrame::appendChannelMessage(const std::string& channel, const std::string& message) {
@@ -251,6 +259,7 @@ void TRemoteFrame::appendChannelMessage(const std::string& channel, const std::s
         appendChat(message);
         return;
     }
+    const bool colorAlert = message.rfind("#ALERT", 0) == 0;
     std::string display = message;
     const bool alert = applyAlertTag(display);
     GtkWidget*& field = channelFields[channel];
@@ -260,6 +269,7 @@ void TRemoteFrame::appendChannelMessage(const std::string& channel, const std::s
         gtk_text_view_set_editable(GTK_TEXT_VIEW(field), false);
         gtk_text_view_set_cursor_visible(GTK_TEXT_VIEW(field), false);
         gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(field), GTK_WRAP_WORD_CHAR);
+        configureChatField(field);
         gtk_container_add(GTK_CONTAINER(scrolled), field);
         gtk_notebook_append_page(GTK_NOTEBOOK(notebook), scrolled, gtk_label_new(channel.c_str()));
         gtk_widget_show_all(scrolled);
@@ -267,7 +277,10 @@ void TRemoteFrame::appendChannelMessage(const std::string& channel, const std::s
     GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(field));
     GtkTextIter end;
     gtk_text_buffer_get_end_iter(buffer, &end);
-    gtk_text_buffer_insert(buffer, &end, (display + "\n").c_str(), -1);
+    if (colorAlert) {
+        GtkTextTag* tag = gtk_text_buffer_create_tag(buffer, nullptr, "foreground", options.coloralert.c_str(), "weight", PANGO_WEIGHT_BOLD, nullptr);
+        gtk_text_buffer_insert_with_tags(buffer, &end, (display + "\n").c_str(), -1, tag, nullptr);
+    } else gtk_text_buffer_insert(buffer, &end, (display + "\n").c_str(), -1);
     if (alert) {
         gtk_window_set_urgency_hint(GTK_WINDOW(window), true);
         gdk_beep();
