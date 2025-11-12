@@ -1,4 +1,5 @@
 #include "RCOptions.h"
+#include "TRemoteFrame.h"
 #include "TServerList.h"
 #include "TStartFrame.h"
 
@@ -54,7 +55,8 @@ int main(int argc, char** argv) {
     copySyntaxFiles(applicationDirectory);
     RC3::loadRCOptions(options, applicationDirectory);
     TStartFrame* startFrame = nullptr;
-    TServerList serverList([&] { startFrame->show(); });
+    TRemoteFrame remoteFrame([&] { startFrame->show(); });
+    TServerList serverList([&] { startFrame->show(); }, [&](void* connection) { remoteFrame.open(connection); });
     TStartFrame frame(options, applicationDirectory, [&](const std::string& account, const std::string& password) { serverList.open(account, password); });
     startFrame = &frame;
     frame.show();

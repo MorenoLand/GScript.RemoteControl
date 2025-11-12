@@ -12,7 +12,7 @@ struct RCConnection;
 
 class TServerList {
 public:
-    explicit TServerList(std::function<void()> onClose);
+    TServerList(std::function<void()> onClose, std::function<void(void*)> onConnected);
     ~TServerList();
 
     void open(const std::string& account, const std::string& password);
@@ -43,6 +43,7 @@ private:
     void showEntry(int index);
 
     std::function<void()> onCloseCallback;
+    std::function<void(void*)> onConnectedCallback;
     GtkWidget* window = nullptr;
     GtkListStore* store = nullptr;
     GtkWidget* tree = nullptr;

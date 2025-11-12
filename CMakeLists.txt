@@ -20,7 +20,7 @@ add_executable(RCOptionsTests tests/RCOptionsTests.cpp)
 target_link_libraries(RCOptionsTests PRIVATE rc3_options)
 add_test(NAME RCOptionsTests COMMAND RCOptionsTests)
 
-add_executable(RemoteControl3 src/main.cpp src/RCAccounts.cpp src/TServerList.cpp src/TStartFrame.cpp)
+add_executable(RemoteControl3 src/main.cpp src/RCAccounts.cpp src/TRemoteFrame.cpp src/TServerList.cpp src/TStartFrame.cpp)
 target_link_libraries(RemoteControl3 PRIVATE rc3_options grclib OpenSSL::Crypto PkgConfig::GTK3 PkgConfig::GTKSOURCEVIEW3)
 if(WIN32)
     target_link_libraries(RemoteControl3 PRIVATE iphlpapi rpcrt4)

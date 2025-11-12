@@ -20,7 +20,7 @@ namespace {
 
 }
 
-TServerList::TServerList(std::function<void()> onClose) : onCloseCallback(std::move(onClose)) {
+TServerList::TServerList(std::function<void()> onClose, std::function<void(void*)> onConnected) : onCloseCallback(std::move(onClose)), onConnectedCallback(std::move(onConnected)) {
     window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
     gtk_widget_set_name(window, "ServerList");
     gtk_window_set_title(GTK_WINDOW(window), "Graal Servers");
@@ -217,7 +217,10 @@ void TServerList::connect() {
     gtk_tree_model_get(model, &iter, 3, &index, -1);
     std::lock_guard lock(connectionMutex);
     if (connection == nullptr) return;
-    if (rc_connect_to_server(connection, index)) gtk_label_set_text(GTK_LABEL(statusField), "Connected.");
+    if (rc_connect_to_server(connection, index)) {
+        gtk_widget_hide(window);
+        onConnectedCallback(connection);
+    }
     else gtk_label_set_text(GTK_LABEL(statusField), rc_last_error(connection));
 }
 
