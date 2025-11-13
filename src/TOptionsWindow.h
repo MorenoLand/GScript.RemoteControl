@@ -12,6 +12,8 @@ public:
     void open();
 private:
     static void onClose(GtkButton*, gpointer data);
+    static void onBrowseDownload(GtkButton*, gpointer data);
+    static void onBrowseLog(GtkButton*, gpointer data);
     static gboolean onDelete(GtkWidget*, GdkEvent*, gpointer data);
     void save();
     GtkWidget* window = nullptr;

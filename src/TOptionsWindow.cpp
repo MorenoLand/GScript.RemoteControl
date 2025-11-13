@@ -41,12 +41,16 @@ TOptionsWindow::TOptionsWindow(RC3::RCOptions& nextOptions, const std::filesyste
     gtk_grid_set_column_spacing(GTK_GRID(generalGrid), 5);
     nickname = addEntry(GTK_GRID(generalGrid), "Nickname:", options.nickname, 0);
     downloadFolder = addEntry(GTK_GRID(generalGrid), "Downloadfolder:", options.downloadfolder, 1);
+    GtkWidget* downloadBrowse = gtk_button_new_with_label("Browse");
+    gtk_grid_attach(GTK_GRID(generalGrid), downloadBrowse, 2, 1, 1, 1);
     logChat = gtk_check_button_new_with_label("Log RC Chat");
     gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(logChat), options.logrcchat);
     gtk_grid_attach(GTK_GRID(generalGrid), logChat, 0, 2, 1, 1);
     logFile = gtk_entry_new();
     gtk_entry_set_text(GTK_ENTRY(logFile), options.chatlogfile.c_str());
     gtk_grid_attach(GTK_GRID(generalGrid), logFile, 1, 2, 1, 1);
+    GtkWidget* logBrowse = gtk_button_new_with_label("Browse");
+    gtk_grid_attach(GTK_GRID(generalGrid), logBrowse, 2, 2, 1, 1);
     chatFontSize = addEntry(GTK_GRID(generalGrid), "Chat font size:", std::to_string(options.chatfontsize), 3);
     gtk_box_pack_start(GTK_BOX(general), generalGrid, false, false, 4);
     GtkWidget* script = gtk_box_new(GTK_ORIENTATION_VERTICAL, 5);
@@ -71,11 +75,35 @@ TOptionsWindow::TOptionsWindow(RC3::RCOptions& nextOptions, const std::filesyste
     gtk_container_add(GTK_CONTAINER(buttons), close);
     gtk_box_pack_start(GTK_BOX(root), buttons, false, false, 5);
     g_signal_connect(close, "clicked", G_CALLBACK(onClose), this);
+    g_signal_connect(downloadBrowse, "clicked", G_CALLBACK(onBrowseDownload), this);
+    g_signal_connect(logBrowse, "clicked", G_CALLBACK(onBrowseLog), this);
     g_signal_connect(window, "delete-event", G_CALLBACK(onDelete), this);
 }
 TOptionsWindow::~TOptionsWindow() { if (window != nullptr) gtk_widget_destroy(window); }
 void TOptionsWindow::open() { gtk_widget_show_all(window); gtk_window_present(GTK_WINDOW(window)); }
 void TOptionsWindow::onClose(GtkButton*, gpointer data) { TOptionsWindow* window = static_cast<TOptionsWindow*>(data); window->save(); gtk_widget_hide(window->window); }
+void TOptionsWindow::onBrowseDownload(GtkButton*, gpointer data) {
+    TOptionsWindow* optionsWindow = static_cast<TOptionsWindow*>(data);
+    GtkWidget* dialog = gtk_file_chooser_dialog_new("Download folder", GTK_WINDOW(optionsWindow->window), GTK_FILE_CHOOSER_ACTION_SELECT_FOLDER, "Cancel", GTK_RESPONSE_CANCEL, "Select", GTK_RESPONSE_ACCEPT, nullptr);
+    gtk_file_chooser_set_filename(GTK_FILE_CHOOSER(dialog), gtk_entry_get_text(GTK_ENTRY(optionsWindow->downloadFolder)));
+    if (gtk_dialog_run(GTK_DIALOG(dialog)) == GTK_RESPONSE_ACCEPT) {
+        gchar* path = gtk_file_chooser_get_filename(GTK_FILE_CHOOSER(dialog));
+        gtk_entry_set_text(GTK_ENTRY(optionsWindow->downloadFolder), path);
+        g_free(path);
+    }
+    gtk_widget_destroy(dialog);
+}
+void TOptionsWindow::onBrowseLog(GtkButton*, gpointer data) {
+    TOptionsWindow* optionsWindow = static_cast<TOptionsWindow*>(data);
+    GtkWidget* dialog = gtk_file_chooser_dialog_new("RC chat log", GTK_WINDOW(optionsWindow->window), GTK_FILE_CHOOSER_ACTION_SAVE, "Cancel", GTK_RESPONSE_CANCEL, "Select", GTK_RESPONSE_ACCEPT, nullptr);
+    gtk_file_chooser_set_filename(GTK_FILE_CHOOSER(dialog), gtk_entry_get_text(GTK_ENTRY(optionsWindow->logFile)));
+    if (gtk_dialog_run(GTK_DIALOG(dialog)) == GTK_RESPONSE_ACCEPT) {
+        gchar* path = gtk_file_chooser_get_filename(GTK_FILE_CHOOSER(dialog));
+        gtk_entry_set_text(GTK_ENTRY(optionsWindow->logFile), path);
+        g_free(path);
+    }
+    gtk_widget_destroy(dialog);
+}
 gboolean TOptionsWindow::onDelete(GtkWidget*, GdkEvent*, gpointer data) { TOptionsWindow* window = static_cast<TOptionsWindow*>(data); window->save(); gtk_widget_hide(window->window); return true; }
 void TOptionsWindow::save() {
     options.nickname = gtk_entry_get_text(GTK_ENTRY(nickname)); options.downloadfolder = gtk_entry_get_text(GTK_ENTRY(downloadFolder)); options.chatlogfile = gtk_entry_get_text(GTK_ENTRY(logFile)); options.chatfontsize = std::max(1, std::atoi(gtk_entry_get_text(GTK_ENTRY(chatFontSize))));
