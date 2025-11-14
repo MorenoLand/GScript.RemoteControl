@@ -45,7 +45,7 @@ TRemoteFrame::TRemoteFrame(const RC3::RCOptions& nextOptions, const std::filesys
     } else {
         GtkWidget* fixed = gtk_fixed_new();
         graphicalFixed = fixed;
-        gtk_widget_set_size_request(fixed, 500, 330);
+        gtk_widget_set_size_request(fixed, 500, 310);
         const std::filesystem::path background = applicationDirectory / "images" / options.background;
         GError* imageError = nullptr;
         GdkPixbuf* backgroundPixbuf = gdk_pixbuf_new_from_file_at_scale(background.string().c_str(), 500, 160, false, &imageError);
@@ -160,7 +160,15 @@ void TRemoteFrame::onFileBrowser(GtkMenuItem*, gpointer data) {
 gboolean TRemoteFrame::onGraphicalButton(GtkWidget* button, GdkEventButton* event, gpointer data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
     const int index = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(button), "button-index"));
-    const std::filesystem::path imagePath = frame->applicationDirectory / "images" / (event->type == GDK_BUTTON_PRESS ? frame->options.buttonimagefilespressed[index] : frame->options.buttonimagefiles[index]);
+    std::string imageName = event->type == GDK_BUTTON_PRESS ? frame->options.buttonimagefilespressed[index] : frame->options.buttonimagefiles[index];
+    if (event->type == GDK_BUTTON_PRESS && imageName == frame->options.buttonimagefiles[index]) {
+        const std::size_t suffix = imageName.rfind("_normal");
+        if (suffix != std::string::npos) {
+            const std::string pressedName = imageName.substr(0, suffix) + "_pressed" + imageName.substr(suffix + 7);
+            if (std::filesystem::exists(frame->applicationDirectory / "images" / pressedName)) imageName = pressedName;
+        }
+    }
+    const std::filesystem::path imagePath = frame->applicationDirectory / "images" / imageName;
     GtkWidget* image = gtk_bin_get_child(GTK_BIN(button));
     gtk_image_set_from_file(GTK_IMAGE(image), imagePath.string().c_str());
     if (event->type == GDK_BUTTON_RELEASE) frame->graphicalAction(index);
@@ -252,6 +260,11 @@ void TRemoteFrame::configureChatField(GtkWidget* field) {
     PangoFontDescription* chatFont = pango_font_description_from_string(("Sans " + std::to_string(options.chatfontsize)).c_str());
     gtk_widget_modify_font(field, chatFont);
     pango_font_description_free(chatFont);
+    GtkCssProvider* provider = gtk_css_provider_new();
+    const std::string css = "textview, textview text { background-color: " + options.colorchatback + "; color: " + options.colorchat + "; }";
+    gtk_css_provider_load_from_data(provider, css.c_str(), -1, nullptr);
+    gtk_style_context_add_provider(gtk_widget_get_style_context(field), GTK_STYLE_PROVIDER(provider), GTK_STYLE_PROVIDER_PRIORITY_USER);
+    g_object_unref(provider);
 }
 
 void TRemoteFrame::appendChannelMessage(const std::string& channel, const std::string& message) {
