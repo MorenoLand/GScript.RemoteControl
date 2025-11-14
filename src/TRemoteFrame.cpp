@@ -118,8 +118,9 @@ TRemoteFrame::TRemoteFrame(const RC3::RCOptions& nextOptions, const std::filesys
     gtk_notebook_set_tab_detachable(GTK_NOTEBOOK(notebook), chatScrolled, true);
     gtk_notebook_set_tab_reorderable(GTK_NOTEBOOK(notebook), chatScrolled, true);
     GtkCssProvider* tabProvider = gtk_css_provider_new();
-    gtk_css_provider_load_from_data(tabProvider, "#RemoteFrame notebook, #RemoteFrame notebook > stack, #RemoteFrame notebook > stack > scrolledwindow { margin: 0; padding: 0; border: 0; } #RemoteFrame notebook > header.top, #RemoteFrame notebook > header.top > tabs, #RemoteFrame notebook > header.top > tabs > tab { min-height: 14px; margin: 0; padding: 0 8px; border: 0; } #RemoteFrame notebook > header.top > tabs > tab label { margin: 0; padding: 0; font-size: 10px; }", -1, nullptr);
-    gtk_style_context_add_provider(gtk_widget_get_style_context(window), GTK_STYLE_PROVIDER(tabProvider), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+    const std::string notebookCss = "#RemoteFrame notebook, #RemoteFrame notebook > header, #RemoteFrame notebook > header.top, #RemoteFrame notebook > header.top > tabs, #RemoteFrame notebook > header.top > tabs > tab { margin: 0; padding: 0; border: 0; background-color: transparent; background-image: none; box-shadow: none; } #RemoteFrame notebook > stack, #RemoteFrame notebook > stack > scrolledwindow, #RemoteFrame notebook > stack > scrolledwindow > viewport { margin: 0; padding: 0; border: 0; background-color: " + options.colorchatback + "; } #RemoteFrame notebook > header.top > tabs > tab { min-height: 12px; padding: 0 8px; } #RemoteFrame notebook > header.top > tabs > tab label { margin: 0; padding: 0; font-size: 10px; }";
+    gtk_css_provider_load_from_data(tabProvider, notebookCss.c_str(), -1, nullptr);
+    gtk_style_context_add_provider(gtk_widget_get_style_context(window), GTK_STYLE_PROVIDER(tabProvider), GTK_STYLE_PROVIDER_PRIORITY_USER);
     g_object_unref(tabProvider);
     if (graphicalFixed != nullptr) {
         gtk_widget_set_size_request(notebook, 500, 194);
