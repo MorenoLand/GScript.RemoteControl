@@ -122,7 +122,7 @@ TPlayerList::TPlayerList(const std::filesystem::path& nextApplicationDirectory) 
     gtk_tree_view_set_show_expanders(GTK_TREE_VIEW(tree), false);
     g_signal_connect(tree, "row-expanded", G_CALLBACK(onGroupExpanded), this);
     g_signal_connect(tree, "row-collapsed", G_CALLBACK(onGroupCollapsed), this);
-    gtk_tree_selection_set_mode(gtk_tree_view_get_selection(GTK_TREE_VIEW(tree)), GTK_SELECTION_MULTIPLE);
+    gtk_tree_selection_set_mode(gtk_tree_view_get_selection(GTK_TREE_VIEW(tree)), GTK_SELECTION_SINGLE);
     g_signal_connect(tree, "button-press-event", G_CALLBACK(onButtonPress), this);
     onlineIcon = gdk_pixbuf_new_from_file("images/plisticononline.png", nullptr);
     channelIcon = gdk_pixbuf_new_from_file("images/rcicon_channelopen.png", nullptr);
