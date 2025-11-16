@@ -22,6 +22,8 @@ private:
         std::string name;
         std::string language;
         std::string description;
+        std::string version;
+        std::string homepage;
         int players = 0;
         int icon = -1;
     };
@@ -48,6 +50,7 @@ private:
     GtkListStore* store = nullptr;
     GtkWidget* tree = nullptr;
     GtkWidget* languageField = nullptr;
+    GtkWidget* versionField = nullptr;
     GtkWidget* descriptionField = nullptr;
     GtkWidget* statusField = nullptr;
     GtkWidget* refreshButton = nullptr;

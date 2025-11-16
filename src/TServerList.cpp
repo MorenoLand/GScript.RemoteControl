@@ -96,6 +96,16 @@ TServerList::TServerList(std::function<void()> onClose, std::function<void(void*
     gtk_box_pack_end(GTK_BOX(languageRow), languageField, true, true, 0);
     gtk_box_pack_start(GTK_BOX(details), languageRow, false, true, 0);
 
+    GtkWidget* versionRow = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 3);
+    GtkWidget* versionLabel = gtk_label_new("Version:");
+    gtk_widget_set_size_request(versionLabel, 80, -1);
+    gtk_label_set_xalign(GTK_LABEL(versionLabel), 0.0F);
+    versionField = gtk_entry_new();
+    gtk_editable_set_editable(GTK_EDITABLE(versionField), false);
+    gtk_box_pack_start(GTK_BOX(versionRow), versionLabel, false, false, 0);
+    gtk_box_pack_end(GTK_BOX(versionRow), versionField, true, true, 0);
+    gtk_box_pack_start(GTK_BOX(details), versionRow, false, true, 0);
+
     GtkWidget* descriptionLabel = gtk_label_new("Description:");
     gtk_label_set_xalign(GTK_LABEL(descriptionLabel), 0.0F);
     gtk_box_pack_start(GTK_BOX(details), descriptionLabel, false, false, 0);
@@ -105,6 +115,10 @@ TServerList::TServerList(std::function<void()> onClose, std::function<void(void*
     gtk_text_view_set_editable(GTK_TEXT_VIEW(descriptionField), false);
     gtk_text_view_set_cursor_visible(GTK_TEXT_VIEW(descriptionField), false);
     gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(descriptionField), GTK_WRAP_WORD);
+    GtkCssProvider* descriptionProvider = gtk_css_provider_new();
+    gtk_css_provider_load_from_data(descriptionProvider, "textview, textview text { background-color: #1e1e1e; color: #d4d4d4; }", -1, nullptr);
+    gtk_style_context_add_provider(gtk_widget_get_style_context(descriptionField), GTK_STYLE_PROVIDER(descriptionProvider), GTK_STYLE_PROVIDER_PRIORITY_USER);
+    g_object_unref(descriptionProvider);
     gtk_container_add(GTK_CONTAINER(descriptionScrolled), descriptionField);
     gtk_box_pack_start(GTK_BOX(details), descriptionScrolled, true, true, 0);
 
@@ -194,7 +208,7 @@ void TServerList::refresh() {
             const int count = rc_get_servers(nextConnection, &servers);
             for (int index = 0; index < count; ++index) {
                 const std::string rawName = servers[index].name == nullptr ? "" : servers[index].name;
-                nextEntries.push_back({getServerListName(rawName), servers[index].language == nullptr ? "" : servers[index].language, servers[index].description == nullptr ? "" : servers[index].description, servers[index].players, getServerListIcon(rawName)});
+                nextEntries.push_back({getServerListName(rawName), servers[index].language == nullptr ? "" : servers[index].language, servers[index].description == nullptr ? "" : servers[index].description, servers[index].version == nullptr ? "" : servers[index].version, servers[index].homepage == nullptr ? "" : servers[index].homepage, servers[index].players, getServerListIcon(rawName)});
             }
             const char* lastError = rc_last_error(nextConnection);
             if (count == 0 && lastError != nullptr) error = lastError;
@@ -228,6 +242,7 @@ void TServerList::showEntry(int index) {
     if (index < 0 || static_cast<std::size_t>(index) >= entries.size()) return;
     const ServerEntry& entry = entries[index];
     gtk_entry_set_text(GTK_ENTRY(languageField), entry.language.c_str());
+    gtk_entry_set_text(GTK_ENTRY(versionField), entry.version.c_str());
     GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(descriptionField));
     gtk_text_buffer_set_text(buffer, entry.description.c_str(), -1);
 }
