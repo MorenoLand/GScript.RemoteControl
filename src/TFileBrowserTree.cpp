@@ -292,7 +292,12 @@ void TFileBrowserTree::onUpload(GtkMenuItem*, gpointer data) {
                 browser->appendLog(error == nullptr ? "Unable to read selected file" : error->message);
                 if (error != nullptr) g_error_free(error);
             } else {
-                if (!rc_upload_file(browser->connection, filename, contents, static_cast<int>(length))) browser->appendLog(rc_last_error(browser->connection));
+                gchar* basename = g_path_get_basename(filename);
+                std::string remotePath = browser->currentFolder;
+                if (!remotePath.empty() && remotePath.back() != '/') remotePath += '/';
+                remotePath += basename;
+                if (!rc_upload_file(browser->connection, remotePath.c_str(), contents, static_cast<int>(length))) browser->appendLog(rc_last_error(browser->connection));
+                g_free(basename);
                 g_free(contents);
             }
             g_free(node->data);
