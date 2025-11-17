@@ -1,4 +1,6 @@
 #include "RCOptions.h"
+#include "TServerList.h"
+#include "TStartFrame.h"
 
 #include <filesystem>
 #include <gtk/gtk.h>
@@ -21,11 +23,11 @@ int main(int argc, char** argv) {
     const std::filesystem::path applicationDirectory = std::filesystem::current_path();
     copySyntaxFiles(applicationDirectory);
     RC3::loadRCOptions(options, applicationDirectory);
-    GtkWidget* window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
-    gtk_window_set_title(GTK_WINDOW(window), "RemoteControl3");
-    g_signal_connect(window, "destroy", G_CALLBACK(gtk_main_quit), nullptr);
-    gtk_widget_show_all(window);
+    TStartFrame* startFrame = nullptr;
+    TServerList serverList([&] { startFrame->show(); });
+    TStartFrame frame(options, applicationDirectory, [&](const std::string& account, const std::string& password) { serverList.open(account, password); });
+    startFrame = &frame;
+    frame.show();
     gtk_main();
-    RC3::saveRCOptions(options, applicationDirectory);
     return 0;
 }
