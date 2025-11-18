@@ -1,7 +1,10 @@
-bin/
+*.exe
+*.obj
 cmake-build/
 cmake-build-mingw/
 dependencies/
-original/
 research/
 tools/
+bin/PMs/
+include/
+lib/
