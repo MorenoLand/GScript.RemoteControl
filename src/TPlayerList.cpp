@@ -498,6 +498,7 @@ void TPlayerList::openPrivateMessage(int playerId, const char* account, const ch
     if (playerId == 0 || account == nullptr || *account == '\0') return;
     PMWindowData* data = new PMWindowData{connection, applicationDirectory / "PMs", nullptr, nullptr, playerId, account, nick == nullptr ? "" : nick};
     data->window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
+    gtk_widget_set_name(data->window, "PrivateMessage");
     gtk_window_set_title(GTK_WINDOW(data->window), "PM");
     gtk_window_set_default_size(GTK_WINDOW(data->window), 380, 300);
     GtkWidget* root = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
@@ -508,7 +509,13 @@ void TPlayerList::openPrivateMessage(int playerId, const char* account, const ch
     GtkWidget* scrolled = gtk_scrolled_window_new(nullptr, nullptr);
     gtk_scrolled_window_set_shadow_type(GTK_SCROLLED_WINDOW(scrolled), GTK_SHADOW_IN);
     data->reply = gtk_text_view_new();
+    gtk_widget_set_name(data->reply, "PrivateMessageText");
     gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(data->reply), GTK_WRAP_WORD_CHAR);
+    GtkCssProvider* pmProvider = gtk_css_provider_new();
+    gtk_css_provider_load_from_data(pmProvider, "#PrivateMessage, #PrivateMessage box, #PrivateMessage scrolledwindow, #PrivateMessage viewport, #PrivateMessageText, #PrivateMessageText text { background-color: #1e1e1e; color: #d4d4d4; }", -1, nullptr);
+    gtk_style_context_add_provider(gtk_widget_get_style_context(data->window), GTK_STYLE_PROVIDER(pmProvider), GTK_STYLE_PROVIDER_PRIORITY_USER);
+    gtk_style_context_add_provider(gtk_widget_get_style_context(data->reply), GTK_STYLE_PROVIDER(pmProvider), GTK_STYLE_PROVIDER_PRIORITY_USER);
+    g_object_unref(pmProvider);
     gtk_container_add(GTK_CONTAINER(scrolled), data->reply);
     gtk_box_pack_start(GTK_BOX(root), scrolled, true, true, 0);
     GtkWidget* buttons = gtk_button_box_new(GTK_ORIENTATION_HORIZONTAL);
