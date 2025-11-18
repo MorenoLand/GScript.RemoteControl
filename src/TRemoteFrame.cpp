@@ -45,7 +45,7 @@ TRemoteFrame::TRemoteFrame(const RC3::RCOptions& nextOptions, const std::filesys
     } else {
         GtkWidget* fixed = gtk_fixed_new();
         graphicalFixed = fixed;
-        gtk_widget_set_size_request(fixed, 500, 310);
+        gtk_widget_set_size_request(fixed, 500, 330);
         const std::filesystem::path background = applicationDirectory / "images" / options.background;
         GError* imageError = nullptr;
         GdkPixbuf* backgroundPixbuf = gdk_pixbuf_new_from_file_at_scale(background.string().c_str(), 500, 160, false, &imageError);
@@ -102,7 +102,7 @@ TRemoteFrame::TRemoteFrame(const RC3::RCOptions& nextOptions, const std::filesys
     gtk_notebook_append_page(GTK_NOTEBOOK(notebook), chatScrolled, gtk_label_new("RC Chat"));
     if (graphicalFixed != nullptr) {
         gtk_widget_set_size_request(notebook, 500, 194);
-        gtk_fixed_put(GTK_FIXED(graphicalFixed), notebook, 0, 116);
+        gtk_fixed_put(GTK_FIXED(graphicalFixed), notebook, 0, 136);
     } else gtk_box_pack_start(GTK_BOX(root), notebook, true, true, 0);
 
     editField = gtk_entry_new();

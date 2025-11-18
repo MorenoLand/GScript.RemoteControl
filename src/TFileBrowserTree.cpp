@@ -110,6 +110,10 @@ TFileBrowserTree::TFileBrowserTree() {
     log = gtk_text_view_new();
     gtk_text_view_set_editable(GTK_TEXT_VIEW(log), false);
     gtk_text_view_set_cursor_visible(GTK_TEXT_VIEW(log), false);
+    GtkCssProvider* logProvider = gtk_css_provider_new();
+    gtk_css_provider_load_from_data(logProvider, "textview, textview text { background-color: #1e1e1e; color: #d4d4d4; }", -1, nullptr);
+    gtk_style_context_add_provider(gtk_widget_get_style_context(log), GTK_STYLE_PROVIDER(logProvider), GTK_STYLE_PROVIDER_PRIORITY_USER);
+    g_object_unref(logProvider);
     gtk_container_add(GTK_CONTAINER(logScrolled), log);
     gtk_paned_pack2(GTK_PANED(panes), logScrolled, true, true);
     GtkWidget* buttons = gtk_button_box_new(GTK_ORIENTATION_HORIZONTAL);
