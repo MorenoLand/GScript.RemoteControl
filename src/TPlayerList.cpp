@@ -9,6 +9,7 @@
 #include <sstream>
 #include <filesystem>
 #include <fstream>
+#include <map>
 
 namespace {
     constexpr int PlayerIconColumn = 0;
@@ -245,7 +246,8 @@ TPlayerList::TPlayerList(const std::filesystem::path& nextApplicationDirectory) 
 }
 
 TPlayerList::~TPlayerList() { if (pmBlinkSource != 0) g_source_remove(pmBlinkSource); delete localBanWindow; if (onlineIcon != nullptr) g_object_unref(onlineIcon); if (channelIcon != nullptr) g_object_unref(channelIcon); if (channelClosedIcon != nullptr) g_object_unref(channelClosedIcon); if (pmNormalIcon != nullptr) g_object_unref(pmNormalIcon); if (pmGuildIcon != nullptr) g_object_unref(pmGuildIcon); if (pmAdminIcon != nullptr) g_object_unref(pmAdminIcon); if (pmMassIcon != nullptr) g_object_unref(pmMassIcon); if (window != nullptr) gtk_widget_destroy(window); }
-void TPlayerList::open(void* nextConnection) { connection = nextConnection; rc_on_pm_servers_updated(connection, onPMServers, this); rc_on_pm_guilds_updated(connection, onPMGuilds, this); rc_on_pm_server_players(connection, onPMServerPlayers, this); rc_on_ban_data(connection, onBanData, this); rc_on_ban_list_data(connection, onBanListData, this); rc_on_player_rights(connection, onPlayerRights, this); rc_on_player_attributes(connection, onPlayerAttributes, this); refresh(); gtk_widget_show_all(window); gtk_window_present(GTK_WINDOW(window)); }
+void TPlayerList::open(void* nextConnection) { setConnection(nextConnection); rc_on_pm_servers_updated(connection, onPMServers, this); rc_on_pm_guilds_updated(connection, onPMGuilds, this); rc_on_pm_server_players(connection, onPMServerPlayers, this); refresh(); gtk_widget_show_all(window); gtk_window_present(GTK_WINDOW(window)); }
+void TPlayerList::setConnection(void* nextConnection) { connection = nextConnection; }
 void TPlayerList::onRefresh(GtkButton*, gpointer data) { static_cast<TPlayerList*>(data)->refresh(); }
 void TPlayerList::onMassPM(GtkButton*, gpointer data) { static_cast<TPlayerList*>(data)->sendMassPM(); }
 void TPlayerList::onAdminMessage(GtkButton*, gpointer data) { static_cast<TPlayerList*>(data)->sendAdminMessage(); }
@@ -326,86 +328,176 @@ void TPlayerList::onPrivateMessageMenu(GtkMenuItem*, gpointer data) { static_cas
 void TPlayerList::onHistoryMenu(GtkMenuItem*, gpointer data) { static_cast<TPlayerList*>(data)->openSelectedHistory(); }
 void TPlayerList::onDisconnectPlayer(GtkMenuItem*, gpointer data) { static_cast<TPlayerList*>(data)->disconnectSelectedPlayer(); }
 void TPlayerList::onResetPlayer(GtkMenuItem*, gpointer data) { static_cast<TPlayerList*>(data)->resetSelectedPlayer(); }
-void TPlayerList::onBanData(const char* account, const char* computerId, const char* details, void* data) {
-    TPlayerList* list = static_cast<TPlayerList*>(data);
+void TPlayerList::handleBanData(const char* account, const char* computerId, const char* details) {
     if (account == nullptr || *account == '\0') return;
-    if (list->localBanWindow == nullptr) list->localBanWindow = new TLocalBanWindow();
-    list->localBanWindow->open(list->connection, account, computerId == nullptr ? "" : computerId, details == nullptr ? "" : details);
+    if (localBanWindow == nullptr) localBanWindow = new TLocalBanWindow();
+    localBanWindow->open(connection, account, computerId == nullptr ? "" : computerId, details == nullptr ? "" : details);
 }
-void TPlayerList::onBanListData(const char* type, const char*, const char* content, void* data) {
+void TPlayerList::handleBanListData(const char* type, const char*, const char* content) {
     if (type == nullptr || std::string(type) != "bantypes") return;
-    TPlayerList* list = static_cast<TPlayerList*>(data);
-    if (list->localBanWindow == nullptr) list->localBanWindow = new TLocalBanWindow();
-    list->localBanWindow->setBanTypes(content);
+    if (localBanWindow == nullptr) localBanWindow = new TLocalBanWindow();
+    localBanWindow->setBanTypes(content);
 }
-void TPlayerList::onPlayerRights(const char* account, int rights, const char* ipRange, const char* folderAccess, void* data) {
-    TPlayerList* list = static_cast<TPlayerList*>(data);
+void TPlayerList::handlePlayerRights(const char* account, int rights, const char* ipRange, const char* folderAccess) {
     if (account == nullptr || *account == '\0') return;
-    struct RightsState { TPlayerList* list; std::string account; GtkWidget* text; };
-    GtkWidget* dialog = gtk_dialog_new_with_buttons(("Edit Rights of " + std::string(account)).c_str(), GTK_WINDOW(list->window), GTK_DIALOG_DESTROY_WITH_PARENT, "Cancel", GTK_RESPONSE_CANCEL, "Apply", GTK_RESPONSE_ACCEPT, nullptr);
-    gtk_window_set_default_size(GTK_WINDOW(dialog), 440, 420);
-    GtkWidget* scrolled = gtk_scrolled_window_new(nullptr, nullptr);
-    GtkWidget* text = gtk_text_view_new();
-    gtk_text_view_set_monospace(GTK_TEXT_VIEW(text), true);
-    char* formatted = rc_format_player_rights_text(rights, ipRange, folderAccess);
-    gtk_text_buffer_set_text(gtk_text_view_get_buffer(GTK_TEXT_VIEW(text)), formatted == nullptr ? "" : formatted, -1);
-    if (formatted != nullptr) free(formatted);
-    gtk_container_add(GTK_CONTAINER(scrolled), text);
-    gtk_box_pack_start(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), scrolled, true, true, 0);
-    auto* state = new RightsState{list, account, text};
-    g_signal_connect(dialog, "response", G_CALLBACK(+[](GtkDialog* responseDialog, gint response, gpointer userData) {
+    struct RightsState { TPlayerList* list; std::string account; GtkWidget* ipRange; GtkWidget* folderAccess; GtkWidget* checks[20]{}; };
+    GtkWidget* dialog = gtk_dialog_new_with_buttons(("Edit Rights of " + std::string(account)).c_str(), GTK_WINDOW(window), GTK_DIALOG_DESTROY_WITH_PARENT, "Cancel", GTK_RESPONSE_CANCEL, "Apply", GTK_RESPONSE_ACCEPT, nullptr);
+    gtk_widget_set_name(dialog, "EditRightsWindow");
+    gtk_window_set_default_size(GTK_WINDOW(dialog), 460, 420);
+    GtkWidget* notebook = gtk_notebook_new();
+    gtk_container_set_border_width(GTK_CONTAINER(notebook), 5);
+    GtkWidget* flags = gtk_box_new(GTK_ORIENTATION_VERTICAL, 3);
+    gtk_container_set_border_width(GTK_CONTAINER(flags), 5);
+    GtkWidget* accountRow = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 3);
+    GtkWidget* accountField = gtk_entry_new();
+    gtk_entry_set_text(GTK_ENTRY(accountField), account);
+    gtk_editable_set_editable(GTK_EDITABLE(accountField), false);
+    gtk_box_pack_start(GTK_BOX(accountRow), gtk_label_new("Account name:"), false, false, 0);
+    gtk_box_pack_start(GTK_BOX(accountRow), accountField, true, true, 0);
+    gtk_box_pack_start(GTK_BOX(flags), accountRow, false, false, 0);
+    GtkWidget* ipRow = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 3);
+    GtkWidget* ipField = gtk_entry_new();
+    gtk_entry_set_text(GTK_ENTRY(ipField), ipRange == nullptr ? "" : ipRange);
+    gtk_box_pack_start(GTK_BOX(ipRow), gtk_label_new("IP range(s):"), false, false, 0);
+    gtk_box_pack_start(GTK_BOX(ipRow), ipField, true, true, 0);
+    gtk_box_pack_start(GTK_BOX(flags), ipRow, false, false, 0);
+    auto* state = new RightsState{this, account, ipField, nullptr};
+    GtkWidget* grid = gtk_grid_new();
+    gtk_grid_set_column_spacing(GTK_GRID(grid), 8);
+    gtk_grid_set_row_spacing(GTK_GRID(grid), 2);
+    const struct { const char* label; int bit; int column; int row; } rightsLayout[] = {
+        {"Warpto XY", 0, 0, 0}, {"Set server flags", 15, 1, 0}, {"Warpto player", 1, 0, 1}, {"Change rights", 10, 1, 1},
+        {"Warp players", 2, 0, 2}, {"Ban players", 11, 1, 2}, {"Update level", 3, 0, 3}, {"Change comments", 12, 1, 3},
+        {"Disconnect players", 4, 0, 4}, {"Change staff accounts", 14, 1, 4}, {"View player attributes", 5, 0, 5}, {"Change server options", 16, 1, 5},
+        {"Set player attributes", 6, 0, 6}, {"Edit folder configuration", 17, 1, 6}, {"Set the own attributes", 7, 0, 7}, {"Edit folder rights", 18, 1, 7},
+        {"Reset attributes", 8, 0, 8}, {"NPC-Control", 19, 1, 8}, {"Admin message", 9, 0, 9}
+    };
+    for (const auto& entry : rightsLayout) {
+        state->checks[entry.bit] = gtk_check_button_new_with_label(entry.label);
+        gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(state->checks[entry.bit]), (rights & (1 << entry.bit)) != 0);
+        gtk_grid_attach(GTK_GRID(grid), state->checks[entry.bit], entry.column, entry.row, 1, 1);
+    }
+    GtkWidget* clearAll = gtk_button_new_with_label("Clear all");
+    g_signal_connect(clearAll, "clicked", G_CALLBACK(+[](GtkButton*, gpointer data) { auto* state = static_cast<RightsState*>(data); for (GtkWidget* check : state->checks) if (check != nullptr) gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(check), false); }), state);
+    gtk_grid_attach(GTK_GRID(grid), clearAll, 1, 9, 1, 1);
+    gtk_box_pack_start(GTK_BOX(flags), grid, false, false, 0);
+    GtkWidget* folderScroll = gtk_scrolled_window_new(nullptr, nullptr);
+    gtk_container_set_border_width(GTK_CONTAINER(folderScroll), 5);
+    GtkWidget* folderField = gtk_text_view_new();
+    gtk_text_view_set_left_margin(GTK_TEXT_VIEW(folderField), 5);
+    gtk_text_view_set_right_margin(GTK_TEXT_VIEW(folderField), 5);
+    gtk_text_buffer_set_text(gtk_text_view_get_buffer(GTK_TEXT_VIEW(folderField)), folderAccess == nullptr ? "" : folderAccess, -1);
+    gtk_container_add(GTK_CONTAINER(folderScroll), folderField);
+    state->folderAccess = folderField;
+    gtk_notebook_append_page(GTK_NOTEBOOK(notebook), flags, gtk_label_new("IP Range and Right flags"));
+    gtk_notebook_append_page(GTK_NOTEBOOK(notebook), folderScroll, gtk_label_new("Folder rights"));
+    gtk_box_pack_start(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), notebook, true, true, 0);
+    auto onAttributeResponse = +[](GtkDialog* responseDialog, gint response, gpointer userData) {
         auto* state = static_cast<RightsState*>(userData);
-        if (response != GTK_RESPONSE_ACCEPT) { gtk_widget_destroy(GTK_WIDGET(responseDialog)); return; }
-        GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(state->text));
-        GtkTextIter start; GtkTextIter end;
-        gtk_text_buffer_get_bounds(buffer, &start, &end);
-        gchar* value = gtk_text_buffer_get_text(buffer, &start, &end, false);
-        char* parsed = rc_parse_player_rights_text(value == nullptr ? "" : value);
-        int rightsValue = 0;
-        std::string ipRange;
-        std::string folders;
-        std::istringstream fields(parsed == nullptr ? "" : parsed);
-        for (std::string line; std::getline(fields, line);) {
-            if (line.rfind("rights=", 0) == 0) rightsValue = std::atoi(line.c_str() + 7);
-            else if (line.rfind("ip=", 0) == 0) ipRange = line.substr(3);
-            else if (line.rfind("folders=", 0) == 0) folders = line.substr(8);
+        if (response == GTK_RESPONSE_ACCEPT) {
+            int value = 0;
+            for (int bit = 0; bit < 20; ++bit) if (state->checks[bit] != nullptr && gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(state->checks[bit]))) value |= 1 << bit;
+            GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(state->folderAccess));
+            GtkTextIter start; GtkTextIter end;
+            gtk_text_buffer_get_bounds(buffer, &start, &end);
+            gchar* folders = gtk_text_buffer_get_text(buffer, &start, &end, false);
+            rc_set_player_rights(state->list->connection, state->account.c_str(), value, gtk_entry_get_text(GTK_ENTRY(state->ipRange)), folders == nullptr ? "" : folders);
+            g_free(folders);
         }
-        if (parsed != nullptr) free(parsed);
-        g_free(value);
-        rc_set_player_rights(state->list->connection, state->account.c_str(), rightsValue, ipRange.c_str(), folders.c_str());
-    }), state);
+        gtk_widget_destroy(GTK_WIDGET(responseDialog));
+    };
+    g_signal_connect(dialog, "response", G_CALLBACK(onAttributeResponse), state);
     g_signal_connect(dialog, "destroy", G_CALLBACK(+[](GtkWidget*, gpointer userData) { delete static_cast<RightsState*>(userData); }), state);
     gtk_widget_show_all(dialog);
 }
-void TPlayerList::onPlayerAttributes(const char* account, const char*, const char* editorText, void* data) {
-    TPlayerList* list = static_cast<TPlayerList*>(data);
+void TPlayerList::handlePlayerAttributes(const char* account, const char*, const char* editorText) {
     if (account == nullptr || *account == '\0') return;
-    struct AttributeState { TPlayerList* list; std::string account; GtkWidget* text; };
-    GtkWidget* dialog = gtk_dialog_new_with_buttons(("Edit Attributes of " + std::string(account)).c_str(), GTK_WINDOW(list->window), GTK_DIALOG_DESTROY_WITH_PARENT, "Cancel", GTK_RESPONSE_CANCEL, "Apply", GTK_RESPONSE_ACCEPT, nullptr);
-    gtk_window_set_default_size(GTK_WINDOW(dialog), 480, 360);
-    GtkWidget* scrolled = gtk_scrolled_window_new(nullptr, nullptr);
-    GtkWidget* text = gtk_text_view_new();
-    gtk_text_view_set_monospace(GTK_TEXT_VIEW(text), true);
-    gtk_text_buffer_set_text(gtk_text_view_get_buffer(GTK_TEXT_VIEW(text)), editorText == nullptr ? "" : editorText, -1);
-    gtk_container_add(GTK_CONTAINER(scrolled), text);
-    gtk_box_pack_start(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), scrolled, true, true, 0);
-    auto* state = new AttributeState{list, account, text};
-    g_signal_connect(dialog, "response", G_CALLBACK(+[](GtkDialog* responseDialog, gint response, gpointer userData) {
+    struct AttributeState { TPlayerList* list; std::string account; std::map<std::string, GtkWidget*> fields; GtkWidget* male; GtkWidget* weapons; GtkWidget* spin; GtkWidget* chests; GtkWidget* weaponList; GtkWidget* flags; };
+    auto fieldValues = [](const char* source) {
+        std::map<std::string, std::string> values;
+        std::istringstream input(source == nullptr ? "" : source);
+        for (std::string line; std::getline(input, line);) { const size_t colon = line.find(':'); if (colon != std::string::npos) values[line.substr(0, colon)] = line.substr(colon + 1); }
+        return values;
+    };
+    const std::map<std::string, std::string> values = fieldValues(editorText);
+    GtkWidget* dialog = gtk_dialog_new_with_buttons(("Edit Attributes of " + std::string(account)).c_str(), GTK_WINDOW(window), GTK_DIALOG_DESTROY_WITH_PARENT, "Cancel", GTK_RESPONSE_CANCEL, "Apply", GTK_RESPONSE_ACCEPT, nullptr);
+    gtk_widget_set_name(dialog, "EditAttributesWindow");
+    gtk_window_set_default_size(GTK_WINDOW(dialog), 400, 360);
+    GtkWidget* notebook = gtk_notebook_new();
+    gtk_container_set_border_width(GTK_CONTAINER(notebook), 5);
+    auto* state = new AttributeState{this, account, {}, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr};
+    auto addFields = [&](const char* tab, const std::vector<std::pair<const char*, bool>>& labels) {
+        GtkWidget* grid = gtk_grid_new();
+        gtk_container_set_border_width(GTK_CONTAINER(grid), 5);
+        gtk_grid_set_row_spacing(GTK_GRID(grid), 3);
+        gtk_grid_set_column_spacing(GTK_GRID(grid), 6);
+        for (int row = 0; row < static_cast<int>(labels.size()); ++row) {
+            GtkWidget* entry = gtk_entry_new();
+            const auto found = values.find(labels[row].first);
+            gtk_entry_set_text(GTK_ENTRY(entry), found == values.end() ? "" : found->second.c_str() + (found->second.empty() ? 0 : 1));
+            gtk_editable_set_editable(GTK_EDITABLE(entry), labels[row].second);
+            gtk_grid_attach(GTK_GRID(grid), gtk_label_new((std::string(labels[row].first) + ":").c_str()), 0, row, 1, 1);
+            gtk_grid_attach(GTK_GRID(grid), entry, 1, row, 1, 1);
+            state->fields[labels[row].first] = entry;
+        }
+        gtk_notebook_append_page(GTK_NOTEBOOK(notebook), grid, gtk_label_new(tab));
+    };
+    addFields("Stats", {{"Account", false}, {"Last IP", false}, {"Kills", false}, {"Deaths", false}, {"Online Seconds", false}, {"Rating", false}, {"Rating Deviation", false}});
+    addFields("Look", {{"Head Image", true}, {"Body Image", true}, {"Animation", true}, {"Skin Color", true}, {"Coat Color", true}, {"Sleeves Color", true}, {"Shoes Color", true}, {"Belt Color", true}});
+    addFields("Basic Attributes", {{"Level", true}, {"X", true}, {"Y", true}, {"Hearts", true}, {"Full Hearts", true}, {"AP", true}, {"MP", true}, {"Gralats", true}, {"Glove", true}, {"Bombs", true}, {"Arrows", true}, {"Sword Power", true}, {"Sword Image", true}, {"Shield Power", true}, {"Shield Image", true}});
+    GtkWidget* basic = gtk_notebook_get_nth_page(GTK_NOTEBOOK(notebook), 2);
+    state->male = gtk_check_button_new_with_label("male");
+    state->weapons = gtk_check_button_new_with_label("weapons enabled");
+    state->spin = gtk_check_button_new_with_label("spin attack");
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(state->male), values.find("Male") != values.end() && values.at("Male").find("true") != std::string::npos);
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(state->weapons), values.find("Weapons Enabled") != values.end() && values.at("Weapons Enabled").find("true") != std::string::npos);
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(state->spin), values.find("Spin Attack") != values.end() && values.at("Spin Attack").find("true") != std::string::npos);
+    gtk_grid_attach(GTK_GRID(basic), state->male, 0, 15, 2, 1);
+    gtk_grid_attach(GTK_GRID(basic), state->weapons, 0, 16, 2, 1);
+    gtk_grid_attach(GTK_GRID(basic), state->spin, 0, 17, 2, 1);
+    auto addList = [&](const char* tab, GtkWidget** target) {
+        GtkWidget* scrolled = gtk_scrolled_window_new(nullptr, nullptr);
+        gtk_container_set_border_width(GTK_CONTAINER(scrolled), 5);
+        *target = gtk_text_view_new();
+        gtk_text_view_set_left_margin(GTK_TEXT_VIEW(*target), 5);
+        gtk_text_view_set_right_margin(GTK_TEXT_VIEW(*target), 5);
+        gtk_container_add(GTK_CONTAINER(scrolled), *target);
+        gtk_notebook_append_page(GTK_NOTEBOOK(notebook), scrolled, gtk_label_new(tab));
+    };
+    addList("Chests", &state->chests);
+    addList("Weapons", &state->weaponList);
+    addList("Script Flags", &state->flags);
+    std::string section;
+    std::istringstream source(editorText == nullptr ? "" : editorText);
+    for (std::string line; std::getline(source, line);) {
+        if (line == "[Chests]") { section = "Chests"; continue; }
+        if (line == "[Weapons]") { section = "Weapons"; continue; }
+        if (line == "[Script Flags]") { section = "Script Flags"; continue; }
+        if (!line.empty() && line.front() == '[') { section.clear(); continue; }
+        if (line.empty() || line.find(':') != std::string::npos) continue;
+        GtkWidget* target = section == "Chests" ? state->chests : section == "Weapons" ? state->weaponList : section == "Script Flags" ? state->flags : nullptr;
+        if (target != nullptr) { GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(target)); GtkTextIter end; gtk_text_buffer_get_end_iter(buffer, &end); gtk_text_buffer_insert(buffer, &end, (line + "\n").c_str(), -1); }
+    }
+    gtk_box_pack_start(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), notebook, true, true, 0);
+    auto onAttributeFormResponse = +[](GtkDialog* responseDialog, gint response, gpointer userData) {
         auto* state = static_cast<AttributeState*>(userData);
         if (response == GTK_RESPONSE_ACCEPT) {
-            GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(state->text));
-            GtkTextIter start;
-            GtkTextIter end;
-            gtk_text_buffer_get_bounds(buffer, &start, &end);
-            gchar* value = gtk_text_buffer_get_text(buffer, &start, &end, false);
-            char* properties = rc_parse_player_attributes_text(value == nullptr ? "" : value);
+            std::ostringstream text;
+            const char* sections[] = {"Stats", "Look", "Basic Attributes"};
+            const char* labels[][15] = {{"Account", "Last IP", "Kills", "Deaths", "Online Seconds", "Rating", "Rating Deviation"}, {"Head Image", "Body Image", "Animation", "Skin Color", "Coat Color", "Sleeves Color", "Shoes Color", "Belt Color"}, {"Level", "X", "Y", "Hearts", "Full Hearts", "AP", "MP", "Gralats", "Glove", "Bombs", "Arrows", "Sword Power", "Sword Image", "Shield Power", "Shield Image"}};
+            const int counts[] = {7, 8, 15};
+            for (int section = 0; section < 3; ++section) { text << '[' << sections[section] << "]\n"; for (int index = 0; index < counts[section]; ++index) text << labels[section][index] << ": " << gtk_entry_get_text(GTK_ENTRY(state->fields[labels[section][index]])) << "\n"; if (section == 2) text << "Male: " << (gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(state->male)) ? "true" : "false") << "\nWeapons Enabled: " << (gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(state->weapons)) ? "true" : "false") << "\nSpin Attack: " << (gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(state->spin)) ? "true" : "false") << "\n"; text << '\n'; }
+            const struct { const char* title; GtkWidget* field; } lists[] = {{"Chests", state->chests}, {"Weapons", state->weaponList}, {"Script Flags", state->flags}};
+            for (const auto& list : lists) { GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(list.field)); GtkTextIter start; GtkTextIter end; gtk_text_buffer_get_bounds(buffer, &start, &end); gchar* content = gtk_text_buffer_get_text(buffer, &start, &end, false); text << '[' << list.title << "]\n" << (content == nullptr ? "" : content) << '\n'; g_free(content); }
+            char* properties = rc_parse_player_attributes_text(text.str().c_str());
             if (properties != nullptr) {
                 rc_set_player_attributes(state->list->connection, state->account.c_str(), properties);
                 free(properties);
             }
-            g_free(value);
-        } else gtk_widget_destroy(GTK_WIDGET(responseDialog));
-    }), state);
+        }
+        gtk_widget_destroy(GTK_WIDGET(responseDialog));
+    };
+    g_signal_connect(dialog, "response", G_CALLBACK(onAttributeFormResponse), state);
     g_signal_connect(dialog, "destroy", G_CALLBACK(+[](GtkWidget*, gpointer userData) { delete static_cast<AttributeState*>(userData); }), state);
     gtk_widget_show_all(dialog);
 }

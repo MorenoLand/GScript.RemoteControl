@@ -35,6 +35,10 @@ private:
     static void onRCOptions(GtkMenuItem*, gpointer data);
     static void onAccountList(const char* accounts, void* data);
     static void onPlayerText(const char* type, const char* account, const char* content, void* data);
+    static void onPlayerRights(const char* account, int rights, const char* ipRange, const char* folderAccess, void* data);
+    static void onPlayerAttributes(const char* account, const char* properties, const char* editorText, void* data);
+    static void onBanData(const char* account, const char* computerId, const char* details, void* data);
+    static void onBanListData(const char* type, const char* account, const char* content, void* data);
     static void onFileBrowser(GtkMenuItem*, gpointer data);
     static void onClasses(GtkMenuItem*, gpointer data);
     static void onWeapons(GtkMenuItem*, gpointer data);

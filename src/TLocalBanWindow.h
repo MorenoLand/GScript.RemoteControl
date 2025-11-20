@@ -13,12 +13,17 @@ public:
 private:
     static void onApply(GtkButton*, gpointer data);
     static void onCancel(GtkButton*, gpointer data);
+    static void onBanTypeChanged(GtkComboBox*, gpointer data);
+    static void onBanHistory(GtkButton*, gpointer data);
+    static void onStaffActivity(GtkButton*, gpointer data);
     static gboolean onDelete(GtkWidget*, GdkEvent*, gpointer data);
     GtkWidget* window = nullptr;
-    struct Scope { GtkWidget* banned = nullptr; GtkWidget* reset = nullptr; GtkWidget* type = nullptr; GtkWidget* release = nullptr; GtkWidget* reason = nullptr; GtkWidget* world = nullptr; std::string target; };
+    struct Scope { GtkWidget* banned = nullptr; GtkWidget* reset = nullptr; GtkWidget* type = nullptr; GtkWidget* timeLeft = nullptr; GtkWidget* reason = nullptr; std::string target; std::string releaseTime; };
     Scope scopes[4];
     void* connection = nullptr;
     std::string account;
     std::string computerId;
     std::vector<std::string> banTypes;
+    std::vector<int> banDurations;
+    void updateTimeLeft(int scope);
 };

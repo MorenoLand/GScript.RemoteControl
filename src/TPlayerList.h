@@ -11,6 +11,11 @@ public:
     explicit TPlayerList(const std::filesystem::path& applicationDirectory);
     ~TPlayerList();
     void open(void* connection);
+    void setConnection(void* connection);
+    void handleBanData(const char* account, const char* computerId, const char* details);
+    void handleBanListData(const char* type, const char* account, const char* content);
+    void handlePlayerRights(const char* account, int rights, const char* ipRange, const char* folderAccess);
+    void handlePlayerAttributes(const char* account, const char* properties, const char* editorText);
     void handlePlayerText(const char* type, const char* account, const char* content);
     void notePrivateMessage(int playerId, const char* account, const char* nick, const char* message, const char* type);
     bool openLatestPrivateMessage();
@@ -25,10 +30,6 @@ private:
     static void onHistoryMenu(GtkMenuItem*, gpointer data);
     static void onDisconnectPlayer(GtkMenuItem*, gpointer data);
     static void onResetPlayer(GtkMenuItem*, gpointer data);
-    static void onBanData(const char* account, const char* computerId, const char* details, void* data);
-    static void onBanListData(const char* type, const char* account, const char* content, void* data);
-    static void onPlayerRights(const char* account, int rights, const char* ipRange, const char* folderAccess, void* data);
-    static void onPlayerAttributes(const char* account, const char* properties, const char* editorText, void* data);
     static gboolean onPMBlink(gpointer data);
     static void onPMServers(int count, void* data);
     static void onPMGuilds(int count, void* data);

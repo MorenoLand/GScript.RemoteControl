@@ -194,6 +194,10 @@ void TRemoteFrame::open(void* nextConnection, const std::string& serverName) {
     rc_on_server_data(connection, onServerData, this);
     rc_on_account_list(connection, onAccountList, this);
     rc_on_player_text_data(connection, onPlayerText, this);
+    rc_on_player_rights(connection, onPlayerRights, this);
+    rc_on_player_attributes(connection, onPlayerAttributes, this);
+    rc_on_ban_data(connection, onBanData, this);
+    rc_on_ban_list_data(connection, onBanListData, this);
     if (serverLabel != nullptr) gtk_label_set_text(GTK_LABEL(serverLabel), (options.labelservers + " " + serverName).c_str());
     if (eventSource == 0) eventSource = g_timeout_add(50, processEvents, this);
     gtk_widget_show_all(window);
@@ -249,7 +253,32 @@ void TRemoteFrame::onPlayerText(const char* type, const char* account, const cha
         return;
     }
     if (frame->playerList == nullptr) frame->playerList = new TPlayerList(frame->applicationDirectory);
+    frame->playerList->setConnection(frame->connection);
     frame->playerList->handlePlayerText(type, account, content);
+}
+void TRemoteFrame::onPlayerRights(const char* account, int rights, const char* ipRange, const char* folderAccess, void* data) {
+    TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
+    if (frame->playerList == nullptr) frame->playerList = new TPlayerList(frame->applicationDirectory);
+    frame->playerList->setConnection(frame->connection);
+    frame->playerList->handlePlayerRights(account, rights, ipRange, folderAccess);
+}
+void TRemoteFrame::onPlayerAttributes(const char* account, const char* properties, const char* editorText, void* data) {
+    TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
+    if (frame->playerList == nullptr) frame->playerList = new TPlayerList(frame->applicationDirectory);
+    frame->playerList->setConnection(frame->connection);
+    frame->playerList->handlePlayerAttributes(account, properties, editorText);
+}
+void TRemoteFrame::onBanData(const char* account, const char* computerId, const char* details, void* data) {
+    TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
+    if (frame->playerList == nullptr) frame->playerList = new TPlayerList(frame->applicationDirectory);
+    frame->playerList->setConnection(frame->connection);
+    frame->playerList->handleBanData(account, computerId, details);
+}
+void TRemoteFrame::onBanListData(const char* type, const char* account, const char* content, void* data) {
+    TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
+    if (frame->playerList == nullptr) frame->playerList = new TPlayerList(frame->applicationDirectory);
+    frame->playerList->setConnection(frame->connection);
+    frame->playerList->handleBanListData(type, account, content);
 }
 
 void TRemoteFrame::onFileBrowser(GtkMenuItem*, gpointer data) {
