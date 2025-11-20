@@ -64,12 +64,17 @@ TServerList::TServerList(std::function<void()> onClose, std::function<void(void*
 
     GtkTreeViewColumn* serverColumn = gtk_tree_view_column_new_with_attributes("Server", serverRenderer, "text", 1, nullptr);
     gtk_tree_view_column_set_resizable(serverColumn, true);
+    gtk_tree_view_column_set_fixed_width(serverColumn, 150);
+    gtk_tree_view_column_set_sizing(serverColumn, GTK_TREE_VIEW_COLUMN_FIXED);
     gtk_tree_view_column_set_sort_column_id(serverColumn, 1);
     gtk_tree_view_append_column(GTK_TREE_VIEW(tree), serverColumn);
 
     GtkCellRenderer* playerRenderer = gtk_cell_renderer_text_new();
+    g_object_set(playerRenderer, "xalign", 1.0F, nullptr);
     GtkTreeViewColumn* playerColumn = gtk_tree_view_column_new_with_attributes("Players", playerRenderer, "text", 2, nullptr);
     gtk_tree_view_column_set_resizable(playerColumn, true);
+    gtk_tree_view_column_set_fixed_width(playerColumn, 70);
+    gtk_tree_view_column_set_sizing(playerColumn, GTK_TREE_VIEW_COLUMN_FIXED);
     gtk_tree_view_column_set_sort_column_id(playerColumn, 2);
     gtk_tree_view_column_set_alignment(playerColumn, 1.0F);
     gtk_tree_view_append_column(GTK_TREE_VIEW(tree), playerColumn);

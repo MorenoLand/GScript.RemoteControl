@@ -3,6 +3,7 @@
 #include "TFileBrowserTree.h"
 #include "TPlayerList.h"
 #include "TScriptList.h"
+#include "TServerTextEditor.h"
 
 #include <grclib.h>
 
@@ -32,14 +33,14 @@ TRemoteFrame::TRemoteFrame(const RC3::RCOptions& nextOptions, const std::filesys
             addMenuItem(menu, "File Browser", G_CALLBACK(onFileBrowser));
         } else if (std::string(menuName) == "Configuration") {
             addMenuItem(menu, "RC Options");
-            addMenuItem(menu, "Server Options");
-            addMenuItem(menu, "Folder Config");
+            addMenuItem(menu, "Server Options", G_CALLBACK(onServerOptions));
+            addMenuItem(menu, "Folder Config", G_CALLBACK(onFolderConfig));
         } else if (std::string(menuName) == "Scripts") {
             addMenuItem(menu, "NPCs");
             addMenuItem(menu, "Classes", G_CALLBACK(onClasses));
             addMenuItem(menu, "Weapons (GUI)", G_CALLBACK(onWeapons));
         } else {
-            addMenuItem(menu, "Server Flags");
+            addMenuItem(menu, "Server Flags", G_CALLBACK(onServerFlags));
             addMenuItem(menu, "Level-NPC dump");
         }
         gtk_menu_item_set_submenu(GTK_MENU_ITEM(item), menu);
@@ -75,10 +76,13 @@ TRemoteFrame::TRemoteFrame(const RC3::RCOptions& nextOptions, const std::filesys
         gdk_color_parse(options.colorlabelback.c_str(), &labelBackgroundColor);
         PangoFontDescription* labelFont = pango_font_description_from_string("Sans Bold 12");
         const auto addLabel = [&](const std::string& text, int x, int y, GtkWidget** front) {
-            GtkWidget* shadow = gtk_label_new(text.c_str());
-            gtk_widget_modify_fg(shadow, GTK_STATE_NORMAL, &labelBackgroundColor);
-            gtk_widget_modify_font(shadow, labelFont);
-            gtk_fixed_put(GTK_FIXED(fixed), shadow, x + 1, y + 1);
+            const int offsets[][2] = {{-1, 0}, {1, 0}, {0, -1}, {0, 1}, {1, 1}};
+            for (const auto& offset : offsets) {
+                GtkWidget* shadow = gtk_label_new(text.c_str());
+                gtk_widget_modify_fg(shadow, GTK_STATE_NORMAL, &labelBackgroundColor);
+                gtk_widget_modify_font(shadow, labelFont);
+                gtk_fixed_put(GTK_FIXED(fixed), shadow, x + offset[0], y + offset[1]);
+            }
             *front = gtk_label_new(text.c_str());
             gtk_widget_modify_fg(*front, GTK_STATE_NORMAL, &labelColor);
             gtk_widget_modify_font(*front, labelFont);
@@ -136,6 +140,9 @@ TRemoteFrame::~TRemoteFrame() {
     delete fileBrowser;
     delete classList;
     delete weaponList;
+    delete serverOptionsEditor;
+    delete serverFlagsEditor;
+    delete folderConfigEditor;
 }
 
 void TRemoteFrame::open(void* nextConnection, const std::string& serverName) {
@@ -145,6 +152,7 @@ void TRemoteFrame::open(void* nextConnection, const std::string& serverName) {
     rc_on_disconnected(connection, onDisconnected, this);
     rc_on_message(connection, onMessage, this);
     rc_on_irc_message(connection, onIrcMessage, this);
+    rc_on_server_data(connection, onServerData, this);
     if (serverLabel != nullptr) gtk_label_set_text(GTK_LABEL(serverLabel), (options.labelservers + " " + serverName).c_str());
     if (eventSource == 0) eventSource = g_timeout_add(50, processEvents, this);
     gtk_widget_show_all(window);
@@ -185,6 +193,27 @@ void TRemoteFrame::onWeapons(GtkMenuItem*, gpointer data) {
     if (frame->connection == nullptr || rc_is_nc_authenticated(frame->connection) == 0) return;
     if (frame->weaponList == nullptr) frame->weaponList = new TScriptList("weapons");
     frame->weaponList->open(frame->connection);
+}
+
+void TRemoteFrame::onServerOptions(GtkMenuItem*, gpointer data) {
+    TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
+    if (frame->connection == nullptr) return;
+    if (frame->serverOptionsEditor == nullptr) frame->serverOptionsEditor = new TServerTextEditor(TServerTextEditor::Kind::ServerOptions, "Server Options");
+    frame->serverOptionsEditor->open(frame->connection);
+}
+
+void TRemoteFrame::onServerFlags(GtkMenuItem*, gpointer data) {
+    TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
+    if (frame->connection == nullptr) return;
+    if (frame->serverFlagsEditor == nullptr) frame->serverFlagsEditor = new TServerTextEditor(TServerTextEditor::Kind::ServerFlags, "Server Flags");
+    frame->serverFlagsEditor->open(frame->connection);
+}
+
+void TRemoteFrame::onFolderConfig(GtkMenuItem*, gpointer data) {
+    TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
+    if (frame->connection == nullptr) return;
+    if (frame->folderConfigEditor == nullptr) frame->folderConfigEditor = new TServerTextEditor(TServerTextEditor::Kind::FolderConfig, "Folder Config");
+    frame->folderConfigEditor->open(frame->connection);
 }
 
 gboolean TRemoteFrame::onGraphicalButton(GtkWidget* button, GdkEventButton* event, gpointer data) {
@@ -276,6 +305,14 @@ void TRemoteFrame::onIrcMessage(const char* channel, const char* line, void* dat
     static_cast<TRemoteFrame*>(data)->appendChannelMessage(channel == nullptr ? "" : channel, line == nullptr ? "" : line);
 }
 
+void TRemoteFrame::onServerData(const char* type, const char* content, void* data) {
+    TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
+    const std::string value = content == nullptr ? "" : content;
+    if (type != nullptr && std::string(type) == "options" && frame->serverOptionsEditor != nullptr) frame->serverOptionsEditor->setContent(value.c_str());
+    else if (type != nullptr && std::string(type) == "flags" && frame->serverFlagsEditor != nullptr) frame->serverFlagsEditor->setContent(value.c_str());
+    else if (type != nullptr && std::string(type) == "folder_config" && frame->folderConfigEditor != nullptr) frame->folderConfigEditor->setContent(value.c_str());
+}
+
 void TRemoteFrame::addMenuItem(GtkWidget* menu, const char* label, GCallback callback) {
     GtkWidget* item = gtk_menu_item_new_with_label(label);
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), item);
@@ -287,6 +324,9 @@ void TRemoteFrame::graphicalAction(int index) {
     else if (index == 1) onFileBrowser(nullptr, this);
     else if (index == 9) onClasses(nullptr, this);
     else if (index == 10) onWeapons(nullptr, this);
+    else if (index == 5) onServerFlags(nullptr, this);
+    else if (index == 6) onFolderConfig(nullptr, this);
+    else if (index == 7) onServerOptions(nullptr, this);
 }
 
 void TRemoteFrame::appendChat(const std::string& message) {
@@ -308,6 +348,7 @@ void TRemoteFrame::appendChat(const std::string& message) {
             gtk_text_buffer_insert_with_tags(buffer, &end, prefix.c_str(), -1, tag, nullptr);
             GtkTextIter textStart;
             gtk_text_buffer_get_end_iter(buffer, &textStart);
+            gtk_text_buffer_get_end_iter(buffer, &end);
             gtk_text_buffer_insert(buffer, &end, (display.substr(separator + 1) + "\n").c_str(), -1);
             applyEmotes(buffer, gtk_text_iter_get_offset(&textStart), display.substr(separator + 1));
         } else {
@@ -395,6 +436,7 @@ void TRemoteFrame::appendChannelMessage(const std::string& channel, const std::s
             gtk_text_buffer_insert_with_tags(buffer, &end, prefix.c_str(), -1, tag, nullptr);
             GtkTextIter textStart;
             gtk_text_buffer_get_end_iter(buffer, &textStart);
+            gtk_text_buffer_get_end_iter(buffer, &end);
             gtk_text_buffer_insert(buffer, &end, (display.substr(separator + 1) + "\n").c_str(), -1);
             applyEmotes(buffer, gtk_text_iter_get_offset(&textStart), display.substr(separator + 1));
         } else {

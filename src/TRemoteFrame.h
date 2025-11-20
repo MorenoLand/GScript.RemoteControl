@@ -12,6 +12,7 @@ namespace RC3 { struct RCOptions; }
 class TPlayerList;
 class TFileBrowserTree;
 class TScriptList;
+class TServerTextEditor;
 
 class TRemoteFrame {
 public:
@@ -27,6 +28,9 @@ private:
     static void onFileBrowser(GtkMenuItem*, gpointer data);
     static void onClasses(GtkMenuItem*, gpointer data);
     static void onWeapons(GtkMenuItem*, gpointer data);
+    static void onServerOptions(GtkMenuItem*, gpointer data);
+    static void onServerFlags(GtkMenuItem*, gpointer data);
+    static void onFolderConfig(GtkMenuItem*, gpointer data);
     static gboolean onGraphicalButton(GtkWidget*, GdkEventButton*, gpointer data);
     static gboolean onEditKey(GtkWidget*, GdkEventKey*, gpointer data);
     static gboolean onDelete(GtkWidget*, GdkEvent*, gpointer data);
@@ -36,6 +40,7 @@ private:
     static void onDisconnected(const char* reason, void* data);
     static void onMessage(const char* message, void* data);
     static void onIrcMessage(const char* channel, const char* line, void* data);
+    static void onServerData(const char* type, const char* content, void* data);
 
     void appendChat(const std::string& message);
     void appendChannelMessage(const std::string& channel, const std::string& message);
@@ -68,6 +73,9 @@ private:
     TFileBrowserTree* fileBrowser = nullptr;
     TScriptList* classList = nullptr;
     TScriptList* weaponList = nullptr;
+    TServerTextEditor* serverOptionsEditor = nullptr;
+    TServerTextEditor* serverFlagsEditor = nullptr;
+    TServerTextEditor* folderConfigEditor = nullptr;
     const RC3::RCOptions& options;
     std::filesystem::path applicationDirectory;
     std::unordered_map<std::string, GtkWidget*> channelFields;
