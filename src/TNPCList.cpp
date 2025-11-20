@@ -95,12 +95,14 @@ gboolean TNPCList::onTreeButton(GtkWidget* widget, GdkEventButton* event, gpoint
     GtkWidget* menu = gtk_menu_new();
     GtkWidget* editScript = gtk_menu_item_new_with_label("Edit Script");
     GtkWidget* editFlags = gtk_menu_item_new_with_label("Edit Flags");
+    GtkWidget* viewAttributes = gtk_menu_item_new_with_label("View Attributes");
     GtkWidget* separator = gtk_separator_menu_item_new();
     GtkWidget* warp = gtk_menu_item_new_with_label("Warp");
     GtkWidget* reset = gtk_menu_item_new_with_label("Reset");
     GtkWidget* remove = gtk_menu_item_new_with_label("Delete");
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), editScript);
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), editFlags);
+    gtk_menu_shell_append(GTK_MENU_SHELL(menu), viewAttributes);
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), separator);
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), reset);
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), remove);
@@ -108,6 +110,7 @@ gboolean TNPCList::onTreeButton(GtkWidget* widget, GdkEventButton* event, gpoint
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), warp);
     g_signal_connect(editScript, "activate", G_CALLBACK(onEditScript), list);
     g_signal_connect(editFlags, "activate", G_CALLBACK(onEditFlags), list);
+    g_signal_connect(viewAttributes, "activate", G_CALLBACK(onViewAttributes), list);
     g_signal_connect(warp, "activate", G_CALLBACK(onWarp), list);
     g_signal_connect(reset, "activate", G_CALLBACK(onReset), list);
     g_signal_connect(remove, "activate", G_CALLBACK(onDeleteNPC), list);
@@ -126,6 +129,12 @@ void TNPCList::onEditFlags(GtkMenuItem*, gpointer data) {
     if (list->selectedNPCId < 0) return;
     rc_on_npc_flags(list->connection, onNPCFlags, list);
     rc_get_npc_flags(list->connection, list->selectedNPCId);
+}
+void TNPCList::onViewAttributes(GtkMenuItem*, gpointer data) {
+    TNPCList* list = static_cast<TNPCList*>(data);
+    if (list->selectedNPCId < 0) return;
+    rc_on_npc_attributes(list->connection, onNPCAttributes, list);
+    rc_request_npc_attributes(list->connection, list->selectedNPCId);
 }
 void TNPCList::onWarp(GtkMenuItem*, gpointer data) {
     TNPCList* list = static_cast<TNPCList*>(data);
@@ -164,6 +173,7 @@ void TNPCList::onNPCScript(const char* scriptType, const char* name, int id, con
     TScriptList::restoreScriptReceiver(list->connection);
 }
 void TNPCList::onNPCFlags(int id, const char* flags, void* data) { static_cast<TNPCList*>(data)->showFlagsEditor(id, flags == nullptr ? "" : flags); }
+void TNPCList::onNPCAttributes(int id, const char* attributes, void* data) { static_cast<TNPCList*>(data)->showAttributes(id, attributes == nullptr ? "" : attributes); }
 void TNPCList::onReset(GtkMenuItem*, gpointer data) {
     TNPCList* list = static_cast<TNPCList*>(data);
     if (list->selectedNPCId >= 0) rc_reset_npc(list->connection, list->selectedNPCId);
@@ -242,6 +252,25 @@ void TNPCList::showFlagsEditor(int id, const char* flags) {
         } else gtk_widget_destroy(GTK_WIDGET(responseDialog));
     }), state);
     g_signal_connect(dialog, "destroy", G_CALLBACK(+[](GtkWidget*, gpointer data) { delete static_cast<FlagState*>(data); }), state);
+    gtk_widget_show_all(dialog);
+}
+void TNPCList::showAttributes(int id, const char* attributes) {
+    GtkWidget* dialog = gtk_dialog_new_with_buttons(("Attributes of NPC " + std::to_string(id)).c_str(), GTK_WINDOW(window), GTK_DIALOG_DESTROY_WITH_PARENT, "Close", GTK_RESPONSE_CLOSE, nullptr);
+    gtk_window_set_default_size(GTK_WINDOW(dialog), 500, 360);
+    GtkWidget* scrolled = gtk_scrolled_window_new(nullptr, nullptr);
+    GtkWidget* text = gtk_text_view_new();
+    gtk_widget_set_name(text, "NPCAttributes");
+    gtk_text_view_set_editable(GTK_TEXT_VIEW(text), false);
+    gtk_text_view_set_cursor_visible(GTK_TEXT_VIEW(text), false);
+    gtk_text_view_set_monospace(GTK_TEXT_VIEW(text), true);
+    gtk_text_buffer_set_text(gtk_text_view_get_buffer(GTK_TEXT_VIEW(text)), attributes, -1);
+    GtkCssProvider* provider = gtk_css_provider_new();
+    gtk_css_provider_load_from_data(provider, "#NPCAttributes, #NPCAttributes text { background-color: #1e1e1e; color: #d4d4d4; }", -1, nullptr);
+    gtk_style_context_add_provider(gtk_widget_get_style_context(text), GTK_STYLE_PROVIDER(provider), GTK_STYLE_PROVIDER_PRIORITY_USER);
+    g_object_unref(provider);
+    gtk_container_add(GTK_CONTAINER(scrolled), text);
+    gtk_box_pack_start(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), scrolled, true, true, 0);
+    g_signal_connect(dialog, "response", G_CALLBACK(+[](GtkDialog* responseDialog, gint, gpointer) { gtk_widget_destroy(GTK_WIDGET(responseDialog)); }), nullptr);
     gtk_widget_show_all(dialog);
 }
 void TNPCList::onClose(GtkButton*, gpointer data) { gtk_widget_hide(static_cast<TNPCList*>(data)->window); }

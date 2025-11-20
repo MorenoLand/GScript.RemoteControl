@@ -14,10 +14,12 @@ private:
     static gboolean onTreeButton(GtkWidget*, GdkEventButton*, gpointer data);
     static void onEditScript(GtkMenuItem*, gpointer data);
     static void onEditFlags(GtkMenuItem*, gpointer data);
+    static void onViewAttributes(GtkMenuItem*, gpointer data);
     static void onWarp(GtkMenuItem*, gpointer data);
     static void onWarpResponse(GtkDialog*, gint response, gpointer data);
     static void onNPCScript(const char* scriptType, const char* name, int id, const char* script, void* data);
     static void onNPCFlags(int id, const char* flags, void* data);
+    static void onNPCAttributes(int id, const char* attributes, void* data);
     static void onReset(GtkMenuItem*, gpointer data);
     static void onDeleteNPC(GtkMenuItem*, gpointer data);
     static void onClose(GtkButton*, gpointer data);
@@ -26,6 +28,7 @@ private:
     void refresh();
     void showScriptEditor(const char* name, int id, const char* script);
     void showFlagsEditor(int id, const char* flags);
+    void showAttributes(int id, const char* attributes);
     int firstFreeNPCId() const;
     GtkWidget* window = nullptr;
     GtkWidget* tree = nullptr;
