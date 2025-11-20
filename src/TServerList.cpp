@@ -77,6 +77,7 @@ TServerList::TServerList(std::function<void()> onClose, std::function<void(void*
 
     GtkTreeSelection* selection = gtk_tree_view_get_selection(GTK_TREE_VIEW(tree));
     g_signal_connect(selection, "changed", G_CALLBACK(onSelectionChanged), this);
+    g_signal_connect(tree, "row-activated", G_CALLBACK(onRowActivated), this);
 
     GtkWidget* detailsFrame = gtk_frame_new(" Server info ");
     gtk_container_set_border_width(GTK_CONTAINER(detailsFrame), 5);
@@ -122,6 +123,18 @@ TServerList::TServerList(std::function<void()> onClose, std::function<void(void*
     gtk_container_add(GTK_CONTAINER(descriptionScrolled), descriptionField);
     gtk_box_pack_start(GTK_BOX(details), descriptionScrolled, true, true, 0);
 
+    GtkWidget* homepageRow = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 3);
+    GtkWidget* homepageLabel = gtk_label_new("Homepage:");
+    gtk_widget_set_size_request(homepageLabel, 80, -1);
+    gtk_label_set_xalign(GTK_LABEL(homepageLabel), 0.0F);
+    homepageField = gtk_entry_new();
+    gtk_editable_set_editable(GTK_EDITABLE(homepageField), false);
+    GtkWidget* homepageButton = gtk_button_new_with_label(">");
+    gtk_box_pack_start(GTK_BOX(homepageRow), homepageLabel, false, false, 0);
+    gtk_box_pack_start(GTK_BOX(homepageRow), homepageField, true, true, 0);
+    gtk_box_pack_end(GTK_BOX(homepageRow), homepageButton, false, false, 0);
+    gtk_box_pack_start(GTK_BOX(details), homepageRow, false, true, 0);
+
     statusField = gtk_label_new("");
     gtk_label_set_xalign(GTK_LABEL(statusField), 0.0F);
     gtk_box_pack_start(GTK_BOX(details), statusField, false, false, 0);
@@ -137,6 +150,7 @@ TServerList::TServerList(std::function<void()> onClose, std::function<void(void*
 
     g_signal_connect(refreshButton, "clicked", G_CALLBACK(onRefresh), this);
     g_signal_connect(connectButton, "clicked", G_CALLBACK(onConnect), this);
+    g_signal_connect(homepageButton, "clicked", G_CALLBACK(onHomepage), this);
     g_signal_connect(window, "delete-event", G_CALLBACK(onDelete), this);
 }
 
@@ -167,6 +181,19 @@ void TServerList::onSelectionChanged(GtkTreeSelection* selection, gpointer data)
     int index = -1;
     gtk_tree_model_get(model, &iter, 3, &index, -1);
     static_cast<TServerList*>(data)->showEntry(index);
+}
+
+void TServerList::onRowActivated(GtkTreeView*, GtkTreePath*, GtkTreeViewColumn*, gpointer data) { static_cast<TServerList*>(data)->connect(); }
+
+void TServerList::onHomepage(GtkButton*, gpointer data) {
+    TServerList* serverList = static_cast<TServerList*>(data);
+    const char* homepage = gtk_entry_get_text(GTK_ENTRY(serverList->homepageField));
+    if (homepage == nullptr || *homepage == '\0') return;
+    GError* error = nullptr;
+    if (!gtk_show_uri_on_window(GTK_WINDOW(serverList->window), homepage, GDK_CURRENT_TIME, &error) && error != nullptr) {
+        gtk_label_set_text(GTK_LABEL(serverList->statusField), error->message);
+        g_error_free(error);
+    }
 }
 
 gboolean TServerList::onDelete(GtkWidget*, GdkEvent*, gpointer data) {
@@ -243,6 +270,7 @@ void TServerList::showEntry(int index) {
     const ServerEntry& entry = entries[index];
     gtk_entry_set_text(GTK_ENTRY(languageField), entry.language.c_str());
     gtk_entry_set_text(GTK_ENTRY(versionField), entry.version.c_str());
+    gtk_entry_set_text(GTK_ENTRY(homepageField), entry.homepage.c_str());
     GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(descriptionField));
     gtk_text_buffer_set_text(buffer, entry.description.c_str(), -1);
 }

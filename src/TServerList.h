@@ -37,6 +37,8 @@ private:
     static void onRefresh(GtkButton*, gpointer data);
     static void onConnect(GtkButton*, gpointer data);
     static void onSelectionChanged(GtkTreeSelection*, gpointer data);
+    static void onRowActivated(GtkTreeView*, GtkTreePath*, GtkTreeViewColumn*, gpointer data);
+    static void onHomepage(GtkButton*, gpointer data);
     static gboolean onDelete(GtkWidget*, GdkEvent*, gpointer data);
     static gboolean finishLoad(gpointer data);
 
@@ -51,6 +53,7 @@ private:
     GtkWidget* tree = nullptr;
     GtkWidget* languageField = nullptr;
     GtkWidget* versionField = nullptr;
+    GtkWidget* homepageField = nullptr;
     GtkWidget* descriptionField = nullptr;
     GtkWidget* statusField = nullptr;
     GtkWidget* refreshButton = nullptr;
