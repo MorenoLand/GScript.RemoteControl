@@ -10,7 +10,7 @@ namespace {
 
 TScriptList::TScriptList(std::string nextType) : type(std::move(nextType)) {
     window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
-    gtk_window_set_title(GTK_WINDOW(window), (type == "classes" ? "Classes" : "Weapons"));
+    gtk_window_set_title(GTK_WINDOW(window), (type == "classes" ? "Classes" : "Script List"));
     gtk_window_set_default_size(GTK_WINDOW(window), 540, 460);
     GtkWidget* root = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
     gtk_container_add(GTK_CONTAINER(window), root);
