@@ -505,6 +505,92 @@ void TPlayerList::handlePlayerText(const char* type, const char* account, const 
     if (type == nullptr || account == nullptr) return;
     const std::string dataType(type);
     if (dataType != "comments" && dataType != "profile") return;
+    if (dataType == "profile") {
+        struct ProfileState { TPlayerList* list; std::string account; GtkWidget* fields[8]{}; GtkWidget* quote; };
+        std::vector<std::string> values;
+        std::istringstream input(content == nullptr ? "" : content);
+        for (std::string value; std::getline(input, value);) values.push_back(value);
+        while (values.size() < 11) values.emplace_back();
+        GtkWidget* dialog = gtk_dialog_new_with_buttons(("Profile of " + std::string(account)).c_str(), GTK_WINDOW(window), GTK_DIALOG_DESTROY_WITH_PARENT, "Close", GTK_RESPONSE_CANCEL, "Apply", GTK_RESPONSE_ACCEPT, nullptr);
+        gtk_widget_set_name(dialog, "ProfileWindow");
+        gtk_window_set_default_size(GTK_WINDOW(dialog), 520, 400);
+        GtkWidget* root = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+        gtk_container_add(GTK_CONTAINER(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), root);
+        GtkWidget* nick = gtk_label_new((values[0] + ": " + (values.size() > 1 ? values[1] : "")).c_str());
+        gtk_widget_set_halign(nick, GTK_ALIGN_START);
+        gtk_widget_set_margin_start(nick, 10);
+        gtk_widget_set_margin_top(nick, 6);
+        gtk_box_pack_start(GTK_BOX(root), nick, false, false, 0);
+        GtkWidget* split = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+        gtk_box_pack_start(GTK_BOX(root), split, true, true, 0);
+        GtkWidget* information = gtk_frame_new(" Player information ");
+        gtk_container_set_border_width(GTK_CONTAINER(information), 5);
+        GtkWidget* form = gtk_grid_new();
+        gtk_container_set_border_width(GTK_CONTAINER(form), 5);
+        gtk_grid_set_row_spacing(GTK_GRID(form), 3);
+        gtk_grid_set_column_spacing(GTK_GRID(form), 6);
+        gtk_container_add(GTK_CONTAINER(information), form);
+        auto* state = new ProfileState{this, account};
+        const char* labels[] = {"Real name", "Age", "Sex", "Country", "Messenger", "E-mail", "Homepage", "Fav. hangout"};
+        for (int index = 0; index < 8; ++index) {
+            GtkWidget* field = index == 2 ? gtk_combo_box_text_new_with_entry() : gtk_entry_new();
+            if (index == 2) { gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(field), "unknown"); gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(field), "male"); gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(field), "female"); GtkWidget* entry = gtk_bin_get_child(GTK_BIN(field)); gtk_entry_set_text(GTK_ENTRY(entry), values[index + 1].c_str()); gtk_editable_set_editable(GTK_EDITABLE(entry), false); }
+            else gtk_entry_set_text(GTK_ENTRY(field), values[index + 1].c_str());
+            gtk_grid_attach(GTK_GRID(form), gtk_label_new((std::string(labels[index]) + ":").c_str()), 0, index, 1, 1);
+            gtk_grid_attach(GTK_GRID(form), field, 1, index, 1, 1);
+            state->fields[index] = field;
+        }
+        GtkWidget* quoteLabel = gtk_label_new("Favourite quote:");
+        gtk_widget_set_halign(quoteLabel, GTK_ALIGN_START);
+        gtk_grid_attach(GTK_GRID(form), quoteLabel, 0, 8, 2, 1);
+        GtkWidget* quoteScroll = gtk_scrolled_window_new(nullptr, nullptr);
+        gtk_widget_set_size_request(quoteScroll, -1, 80);
+        state->quote = gtk_text_view_new();
+        gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(state->quote), GTK_WRAP_WORD_CHAR);
+        gtk_text_buffer_set_text(gtk_text_view_get_buffer(GTK_TEXT_VIEW(state->quote)), values[9].c_str(), -1);
+        gtk_container_add(GTK_CONTAINER(quoteScroll), state->quote);
+        gtk_grid_attach(GTK_GRID(form), quoteScroll, 0, 9, 2, 1);
+        gtk_box_pack_start(GTK_BOX(split), information, true, true, 0);
+        GtkWidget* statsFrame = gtk_frame_new(" In-game stats ");
+        gtk_container_set_border_width(GTK_CONTAINER(statsFrame), 5);
+        GtkWidget* stats = gtk_box_new(GTK_ORIENTATION_VERTICAL, 3);
+        gtk_container_set_border_width(GTK_CONTAINER(stats), 5);
+        gtk_container_add(GTK_CONTAINER(statsFrame), stats);
+        GtkWidget* level = gtk_entry_new();
+        GtkWidget* online = gtk_entry_new();
+        gtk_entry_set_text(GTK_ENTRY(level), values.size() > 11 ? values[11].c_str() : "");
+        gtk_entry_set_text(GTK_ENTRY(online), values[10].c_str());
+        gtk_editable_set_editable(GTK_EDITABLE(level), false);
+        gtk_editable_set_editable(GTK_EDITABLE(online), false);
+        gtk_box_pack_start(GTK_BOX(stats), gtk_label_new("Level:"), false, false, 0);
+        gtk_box_pack_start(GTK_BOX(stats), level, false, false, 0);
+        gtk_box_pack_start(GTK_BOX(stats), gtk_label_new("Online time:"), false, false, 0);
+        gtk_box_pack_start(GTK_BOX(stats), online, false, false, 0);
+        gtk_box_pack_start(GTK_BOX(split), statsFrame, false, false, 0);
+        auto onProfileResponse = +[](GtkDialog* responseDialog, gint response, gpointer userData) {
+            auto* state = static_cast<ProfileState*>(userData);
+            if (response == GTK_RESPONSE_ACCEPT) {
+                std::ostringstream profile;
+                const char* fields[] = {"Real Name", "Age", "Sex", "Country", "Messenger", "E-Mail", "Homepage", "Fav. Hangout"};
+                for (int index = 0; index < 8; ++index) {
+                    const char* value = index == 2 ? gtk_entry_get_text(GTK_ENTRY(gtk_bin_get_child(GTK_BIN(state->fields[index])))) : gtk_entry_get_text(GTK_ENTRY(state->fields[index]));
+                    profile << fields[index] << ": " << value << '\n';
+                }
+                GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(state->quote));
+                GtkTextIter start; GtkTextIter end;
+                gtk_text_buffer_get_bounds(buffer, &start, &end);
+                gchar* quote = gtk_text_buffer_get_text(buffer, &start, &end, false);
+                profile << "Favourite Quote: " << (quote == nullptr ? "" : quote);
+                g_free(quote);
+                rc_set_player_profile(state->list->connection, state->account.c_str(), profile.str().c_str());
+            }
+            gtk_widget_destroy(GTK_WIDGET(responseDialog));
+        };
+        g_signal_connect(dialog, "response", G_CALLBACK(onProfileResponse), state);
+        g_signal_connect(dialog, "destroy", G_CALLBACK(+[](GtkWidget*, gpointer userData) { delete static_cast<ProfileState*>(userData); }), state);
+        gtk_widget_show_all(dialog);
+        return;
+    }
     struct TextState { TPlayerList* list; std::string account; std::string type; GtkWidget* text; };
     const std::string title = (dataType == "profile" ? "Profile of " : "Edit Comments of ") + std::string(account);
     GtkWidget* dialog = gtk_dialog_new_with_buttons(title.c_str(), GTK_WINDOW(window), GTK_DIALOG_DESTROY_WITH_PARENT, "Cancel", GTK_RESPONSE_CANCEL, "Save", GTK_RESPONSE_ACCEPT, nullptr);
