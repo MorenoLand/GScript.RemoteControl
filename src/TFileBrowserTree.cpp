@@ -186,8 +186,24 @@ gboolean TFileBrowserTree::onFolderButtonPress(GtkWidget* widget, GdkEventButton
 }
 
 gboolean TFileBrowserTree::onFileButtonPress(GtkWidget* widget, GdkEventButton* event, gpointer data) {
+    TFileBrowserTree* browser = static_cast<TFileBrowserTree*>(data);
+    if (event->type == GDK_2BUTTON_PRESS && event->button == GDK_BUTTON_PRIMARY) {
+        GtkTreePath* path = nullptr;
+        if (!gtk_tree_view_get_path_at_pos(GTK_TREE_VIEW(widget), static_cast<gint>(event->x), static_cast<gint>(event->y), &path, nullptr, nullptr, nullptr)) return false;
+        GtkTreeIter row;
+        GtkTreeModel* model = gtk_tree_view_get_model(GTK_TREE_VIEW(widget));
+        gchar* itemPath = nullptr;
+        if (gtk_tree_model_get_iter(model, &row, path)) gtk_tree_model_get(model, &row, FilePathColumn, &itemPath, -1);
+        gtk_tree_path_free(path);
+        if (itemPath != nullptr && *itemPath != '\0') {
+            browser->pendingEditPath = itemPath;
+            if (!rc_filebrowser_download(browser->connection, itemPath)) browser->appendLog(rc_last_error(browser->connection));
+        }
+        g_free(itemPath);
+        return true;
+    }
     if (event->type != GDK_BUTTON_PRESS || event->button != GDK_BUTTON_SECONDARY) return false;
-    static_cast<TFileBrowserTree*>(data)->showItemMenu(widget, event, false);
+    browser->showItemMenu(widget, event, false);
     return true;
 }
 
@@ -209,7 +225,7 @@ void TFileBrowserTree::showItemMenu(GtkWidget* view, GdkEventButton* event, bool
     g_signal_connect(upload, "activate", G_CALLBACK(onUpload), this);
     if (!folder) {
         GtkWidget* download = gtk_menu_item_new_with_label("Download");
-        GtkWidget* editAsText = gtk_menu_item_new_with_label("Edit as Text");
+        GtkWidget* editAsText = gtk_menu_item_new_with_label("Edit");
         GtkWidget* move = gtk_menu_item_new_with_label("Move");
         gtk_menu_shell_append(GTK_MENU_SHELL(menu), download);
         gtk_menu_shell_append(GTK_MENU_SHELL(menu), editAsText);
