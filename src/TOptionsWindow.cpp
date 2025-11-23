@@ -21,13 +21,15 @@ namespace {
 
 TOptionsWindow::TOptionsWindow(RC3::RCOptions& nextOptions, const std::filesystem::path& nextApplicationDirectory) : options(nextOptions), applicationDirectory(nextApplicationDirectory) {
     window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
+    gtk_widget_set_name(window, "OptionsWindow");
     gtk_window_set_title(GTK_WINDOW(window), "Options");
-    gtk_window_set_default_size(GTK_WINDOW(window), 370, 400);
+    gtk_window_set_default_size(GTK_WINDOW(window), 380, 400);
     GtkWidget* root = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
     gtk_container_add(GTK_CONTAINER(window), root);
     GtkWidget* notebook = gtk_notebook_new();
+    gtk_container_set_border_width(GTK_CONTAINER(notebook), 5);
     GtkWidget* general = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
-    gtk_container_set_border_width(GTK_CONTAINER(general), 8);
+    gtk_container_set_border_width(GTK_CONTAINER(general), 5);
     ignoreMass = addCheck(GTK_BOX(general), "Ignore Mass PMs", options.nomassmessages);
     ignoreMassClient = addCheck(GTK_BOX(general), "Ignore Mass PMs if client is on", options.nomassifclienton);
     attachAway = addCheck(GTK_BOX(general), "Go in away mode when closing playerlist", options.attachaway);
@@ -54,7 +56,7 @@ TOptionsWindow::TOptionsWindow(RC3::RCOptions& nextOptions, const std::filesyste
     chatFontSize = addEntry(GTK_GRID(generalGrid), "Chat font size:", std::to_string(options.chatfontsize), 3);
     gtk_box_pack_start(GTK_BOX(general), generalGrid, false, false, 4);
     GtkWidget* script = gtk_box_new(GTK_ORIENTATION_VERTICAL, 5);
-    gtk_container_set_border_width(GTK_CONTAINER(script), 8);
+    gtk_container_set_border_width(GTK_CONTAINER(script), 5);
     syntax = addCheck(GTK_BOX(script), "Syntax highlighting", options.syntaxhighlighting);
     autoIndent = addCheck(GTK_BOX(script), "Auto indenting", options.autoindenting);
     smartHomeEnd = addCheck(GTK_BOX(script), "Smart Home/End", options.smarthomeend);
@@ -66,9 +68,13 @@ TOptionsWindow::TOptionsWindow(RC3::RCOptions& nextOptions, const std::filesyste
     scriptTabWidth = addEntry(GTK_GRID(scriptGrid), "Script tab width:", std::to_string(options.scripttabwidth), 0);
     scriptFontSize = addEntry(GTK_GRID(scriptGrid), "Script font size:", std::to_string(options.scriptfontsize), 1);
     gtk_box_pack_start(GTK_BOX(script), scriptGrid, false, false, 4);
-    gtk_notebook_append_page(GTK_NOTEBOOK(notebook), general, gtk_label_new("General Options"));
-    gtk_notebook_append_page(GTK_NOTEBOOK(notebook), script, gtk_label_new("Script Style"));
+    gtk_notebook_append_page(GTK_NOTEBOOK(notebook), general, gtk_label_new("General Options "));
+    gtk_notebook_append_page(GTK_NOTEBOOK(notebook), script, gtk_label_new("Script Style "));
     gtk_box_pack_start(GTK_BOX(root), notebook, true, true, 0);
+    GtkCssProvider* tabs = gtk_css_provider_new();
+    gtk_css_provider_load_from_data(tabs, "#OptionsWindow notebook > header { border-bottom: 1px solid #777777; } #OptionsWindow notebook > header > tabs > tab { border: 1px solid #777777; border-bottom: 0; border-radius: 4px 4px 0 0; margin-right: 3px; padding: 4px 8px; } #OptionsWindow notebook > header > tabs > tab:checked { border-color: #aaaaaa; margin-bottom: -1px; } #OptionsWindow notebook > stack { border: 1px solid #777777; border-top: 0; }", -1, nullptr);
+    gtk_style_context_add_provider(gtk_widget_get_style_context(window), GTK_STYLE_PROVIDER(tabs), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION + 1);
+    g_object_unref(tabs);
     GtkWidget* buttons = gtk_button_box_new(GTK_ORIENTATION_HORIZONTAL);
     gtk_button_box_set_layout(GTK_BUTTON_BOX(buttons), GTK_BUTTONBOX_END);
     GtkWidget* close = gtk_button_new_with_label("Close");
