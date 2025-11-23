@@ -22,7 +22,7 @@ add_executable(RCOptionsTests tests/RCOptionsTests.cpp)
 target_link_libraries(RCOptionsTests PRIVATE rc3_options)
 add_test(NAME RCOptionsTests COMMAND RCOptionsTests)
 
-add_executable(RemoteControl3 src/main.cpp src/RCAccounts.cpp src/TFileBrowser.cpp src/TFileBrowserTree.cpp src/TPlayerList.cpp src/TRemoteFrame.cpp src/TServerList.cpp src/TStartFrame.cpp)
+add_executable(RemoteControl3 src/main.cpp src/RCAccounts.cpp src/TFileBrowser.cpp src/TFileBrowserTree.cpp src/TPlayerList.cpp src/TScriptList.cpp src/TRemoteFrame.cpp src/TServerList.cpp src/TStartFrame.cpp)
 if(WIN32)
     target_sources(RemoteControl3 PRIVATE assets/RemoteControl3.rc)
 endif()

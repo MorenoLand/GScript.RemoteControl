@@ -2,6 +2,7 @@
 #include "RCOptions.h"
 #include "TFileBrowserTree.h"
 #include "TPlayerList.h"
+#include "TScriptList.h"
 
 #include <grclib.h>
 
@@ -32,8 +33,8 @@ TRemoteFrame::TRemoteFrame(const RC3::RCOptions& nextOptions, const std::filesys
             addMenuItem(menu, "Folder Config");
         } else if (std::string(menuName) == "Scripts") {
             addMenuItem(menu, "NPCs");
-            addMenuItem(menu, "Classes");
-            addMenuItem(menu, "Weapons (GUI)");
+            addMenuItem(menu, "Classes", G_CALLBACK(onClasses));
+            addMenuItem(menu, "Weapons (GUI)", G_CALLBACK(onWeapons));
         } else {
             addMenuItem(menu, "Server Flags");
             addMenuItem(menu, "Level-NPC dump");
@@ -126,6 +127,8 @@ TRemoteFrame::~TRemoteFrame() {
     if (window != nullptr) gtk_widget_destroy(window);
     delete playerList;
     delete fileBrowser;
+    delete classList;
+    delete weaponList;
 }
 
 void TRemoteFrame::open(void* nextConnection, const std::string& serverName) {
@@ -155,6 +158,20 @@ void TRemoteFrame::onFileBrowser(GtkMenuItem*, gpointer data) {
     if (frame->connection == nullptr) return;
     if (frame->fileBrowser == nullptr) frame->fileBrowser = new TFileBrowserTree();
     frame->fileBrowser->open(frame->connection);
+}
+
+void TRemoteFrame::onClasses(GtkMenuItem*, gpointer data) {
+    TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
+    if (frame->connection == nullptr || rc_is_nc_authenticated(frame->connection) == 0) return;
+    if (frame->classList == nullptr) frame->classList = new TScriptList("classes");
+    frame->classList->open(frame->connection);
+}
+
+void TRemoteFrame::onWeapons(GtkMenuItem*, gpointer data) {
+    TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
+    if (frame->connection == nullptr || rc_is_nc_authenticated(frame->connection) == 0) return;
+    if (frame->weaponList == nullptr) frame->weaponList = new TScriptList("weapons");
+    frame->weaponList->open(frame->connection);
 }
 
 gboolean TRemoteFrame::onGraphicalButton(GtkWidget* button, GdkEventButton* event, gpointer data) {
@@ -231,6 +248,8 @@ void TRemoteFrame::addMenuItem(GtkWidget* menu, const char* label, GCallback cal
 void TRemoteFrame::graphicalAction(int index) {
     if (index == 0) onPlayerList(nullptr, this);
     else if (index == 1) onFileBrowser(nullptr, this);
+    else if (index == 9) onClasses(nullptr, this);
+    else if (index == 10) onWeapons(nullptr, this);
 }
 
 void TRemoteFrame::appendChat(const std::string& message) {
