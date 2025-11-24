@@ -7,6 +7,7 @@
 #include "TToallsWindow.h"
 #include "TAccountsWindow.h"
 #include "TOptionsWindow.h"
+#include "TNPCList.h"
 
 #include <grclib.h>
 
@@ -41,7 +42,7 @@ TRemoteFrame::TRemoteFrame(const RC3::RCOptions& nextOptions, const std::filesys
             addMenuItem(menu, "Server Options", G_CALLBACK(onServerOptions));
             addMenuItem(menu, "Folder Config", G_CALLBACK(onFolderConfig));
         } else if (std::string(menuName) == "Scripts") {
-            addMenuItem(menu, "NPCs");
+            addMenuItem(menu, "NPCs", G_CALLBACK(onNPCs));
             addMenuItem(menu, "Classes", G_CALLBACK(onClasses));
             addMenuItem(menu, "Weapons (GUI)", G_CALLBACK(onWeapons));
         } else {
@@ -156,6 +157,7 @@ TRemoteFrame::~TRemoteFrame() {
     delete toallsWindow;
     delete accountsWindow;
     delete optionsWindow;
+    delete npcList;
 }
 
 void TRemoteFrame::open(void* nextConnection, const std::string& serverName) {
@@ -234,6 +236,13 @@ void TRemoteFrame::onWeapons(GtkMenuItem*, gpointer data) {
     if (frame->connection == nullptr || rc_is_nc_authenticated(frame->connection) == 0) return;
     if (frame->weaponList == nullptr) frame->weaponList = new TScriptList("weapons");
     frame->weaponList->open(frame->connection);
+}
+
+void TRemoteFrame::onNPCs(GtkMenuItem*, gpointer data) {
+    TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
+    if (frame->connection == nullptr || rc_is_nc_authenticated(frame->connection) == 0) return;
+    if (frame->npcList == nullptr) frame->npcList = new TNPCList();
+    frame->npcList->open(frame->connection);
 }
 
 void TRemoteFrame::onServerOptions(GtkMenuItem*, gpointer data) {
@@ -382,6 +391,7 @@ void TRemoteFrame::graphicalAction(int index) {
     else if (index == 3) onToalls(nullptr, this);
     else if (index == 9) onClasses(nullptr, this);
     else if (index == 10) onWeapons(nullptr, this);
+    else if (index == 11) onNPCs(nullptr, this);
     else if (index == 5) onServerFlags(nullptr, this);
     else if (index == 6) onFolderConfig(nullptr, this);
     else if (index == 7) onServerOptions(nullptr, this);

@@ -16,6 +16,7 @@ class TServerTextEditor;
 class TToallsWindow;
 class TAccountsWindow;
 class TOptionsWindow;
+class TNPCList;
 
 class TRemoteFrame {
 public:
@@ -36,6 +37,7 @@ private:
     static void onFileBrowser(GtkMenuItem*, gpointer data);
     static void onClasses(GtkMenuItem*, gpointer data);
     static void onWeapons(GtkMenuItem*, gpointer data);
+    static void onNPCs(GtkMenuItem*, gpointer data);
     static void onServerOptions(GtkMenuItem*, gpointer data);
     static void onServerFlags(GtkMenuItem*, gpointer data);
     static void onFolderConfig(GtkMenuItem*, gpointer data);
@@ -90,6 +92,7 @@ private:
     TToallsWindow* toallsWindow = nullptr;
     TAccountsWindow* accountsWindow = nullptr;
     TOptionsWindow* optionsWindow = nullptr;
+    TNPCList* npcList = nullptr;
     const RC3::RCOptions& options;
     std::filesystem::path applicationDirectory;
     std::unordered_map<std::string, GtkWidget*> channelFields;
