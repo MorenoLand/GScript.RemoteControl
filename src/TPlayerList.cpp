@@ -120,6 +120,11 @@ TPlayerList::TPlayerList() {
             if (isServerTab) serverStore = gtk_tree_store_new(4, GDK_TYPE_PIXBUF, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_BOOLEAN);
             else { guildStore = gtk_list_store_new(3, GDK_TYPE_PIXBUF, G_TYPE_STRING, G_TYPE_STRING); tabStore = guildStore; }
             GtkWidget* tabTree = gtk_tree_view_new_with_model(isServerTab ? GTK_TREE_MODEL(serverStore) : GTK_TREE_MODEL(tabStore));
+            if (isServerTab) {
+                serverTree = tabTree;
+                gtk_tree_view_set_show_expanders(GTK_TREE_VIEW(tabTree), false);
+                g_signal_connect(tabTree, "button-press-event", G_CALLBACK(onServerButtonPress), this);
+            }
             GtkCellRenderer* iconRenderer = gtk_cell_renderer_pixbuf_new();
             GtkTreeViewColumn* iconColumn = gtk_tree_view_column_new_with_attributes("", iconRenderer, "pixbuf", 0, nullptr);
             gtk_tree_view_column_set_sizing(iconColumn, GTK_TREE_VIEW_COLUMN_FIXED);
@@ -134,8 +139,7 @@ TPlayerList::TPlayerList() {
             GtkTreeViewColumn* accountColumn = gtk_tree_view_column_new_with_attributes("Account", renderer, "text", 2, nullptr);
             gtk_tree_view_column_set_sort_column_id(accountColumn, 2);
             gtk_tree_view_append_column(GTK_TREE_VIEW(tabTree), accountColumn);
-            if (isServerTab) g_signal_connect(tabTree, "test-expand-row", G_CALLBACK(onServerExpand), this);
-            else gtk_tree_sortable_set_sort_column_id(GTK_TREE_SORTABLE(tabStore), 0, GTK_SORT_ASCENDING);
+            if (!isServerTab) gtk_tree_sortable_set_sort_column_id(GTK_TREE_SORTABLE(tabStore), 0, GTK_SORT_ASCENDING);
             gtk_container_add(GTK_CONTAINER(page), tabTree);
         } else {
             channelStore = gtk_list_store_new(4, GDK_TYPE_PIXBUF, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING);
@@ -189,10 +193,16 @@ void TPlayerList::onMassPM(GtkButton*, gpointer data) { static_cast<TPlayerList*
 void TPlayerList::onAdminMessage(GtkButton*, gpointer data) { static_cast<TPlayerList*>(data)->sendAdminMessage(); }
 void TPlayerList::onClose(GtkButton*, gpointer data) { gtk_widget_hide(static_cast<TPlayerList*>(data)->window); }
 gboolean TPlayerList::onButtonPress(GtkWidget* widget, GdkEventButton* event, gpointer data) {
-    if (event->type != GDK_BUTTON_PRESS || event->button != GDK_BUTTON_SECONDARY) return false;
+    if (event->type != GDK_BUTTON_PRESS) return false;
     GtkTreePath* path = nullptr;
     if (!gtk_tree_view_get_path_at_pos(GTK_TREE_VIEW(widget), static_cast<gint>(event->x), static_cast<gint>(event->y), &path, nullptr, nullptr, nullptr)) return false;
-    if (gtk_tree_path_get_depth(path) != 2) { gtk_tree_path_free(path); return false; }
+    if (event->button == GDK_BUTTON_PRIMARY && gtk_tree_path_get_depth(path) == 1) {
+        if (gtk_tree_view_row_expanded(GTK_TREE_VIEW(widget), path)) gtk_tree_view_collapse_row(GTK_TREE_VIEW(widget), path);
+        else gtk_tree_view_expand_row(GTK_TREE_VIEW(widget), path, false);
+        gtk_tree_path_free(path);
+        return true;
+    }
+    if (event->button != GDK_BUTTON_SECONDARY || gtk_tree_path_get_depth(path) != 2) { gtk_tree_path_free(path); return false; }
     GtkTreeSelection* selection = gtk_tree_view_get_selection(GTK_TREE_VIEW(widget));
     gtk_tree_selection_unselect_all(selection);
     gtk_tree_selection_select_path(selection, path);
@@ -234,24 +244,47 @@ void TPlayerList::onPMServerPlayers(const char* serverName, const char* playerDa
             while (gtk_tree_model_iter_children(GTK_TREE_MODEL(list->serverStore), &child, &row)) gtk_tree_store_remove(list->serverStore, &child);
             for (const std::string& player : players) {
                 gtk_tree_store_append(list->serverStore, &child, &row);
-                gtk_tree_store_set(list->serverStore, &child, 0, list->channelIcon, 1, player.c_str(), 2, "", 3, true, -1);
+                gtk_tree_store_set(list->serverStore, &child, 0, list->onlineIcon, 1, player.c_str(), 2, "", 3, true, -1);
+            }
+            gtk_tree_store_set(list->serverStore, &row, 0, list->channelIcon, 3, true, -1);
+            if (list->serverTree != nullptr) {
+                GtkTreePath* path = gtk_tree_model_get_path(GTK_TREE_MODEL(list->serverStore), &row);
+                gtk_tree_view_expand_row(GTK_TREE_VIEW(list->serverTree), path, false);
+                gtk_tree_path_free(path);
             }
             break;
         }
         valid = gtk_tree_model_iter_next(GTK_TREE_MODEL(list->serverStore), &row);
     }
 }
-gboolean TPlayerList::onServerExpand(GtkTreeView* tree, GtkTreeIter* row, GtkTreePath*, gpointer data) {
+gboolean TPlayerList::onServerButtonPress(GtkWidget* widget, GdkEventButton* event, gpointer data) {
+    if (event->type != GDK_BUTTON_PRESS || event->button != GDK_BUTTON_PRIMARY) return false;
+    GtkTreePath* path = nullptr;
+    if (!gtk_tree_view_get_path_at_pos(GTK_TREE_VIEW(widget), static_cast<gint>(event->x), static_cast<gint>(event->y), &path, nullptr, nullptr, nullptr)) return false;
+    onServerActivated(GTK_TREE_VIEW(widget), path, nullptr, data);
+    gtk_tree_path_free(path);
+    return true;
+}
+
+void TPlayerList::onServerActivated(GtkTreeView* tree, GtkTreePath* path, GtkTreeViewColumn*, gpointer data) {
     TPlayerList* list = static_cast<TPlayerList*>(data);
+    if (gtk_tree_path_get_depth(path) != 1) return;
+    GtkTreeIter row;
+    if (!gtk_tree_model_get_iter(GTK_TREE_MODEL(list->serverStore), &row, path)) return;
     gboolean requested = false;
     gchar* serverName = nullptr;
-    gtk_tree_model_get(gtk_tree_view_get_model(tree), row, 1, &serverName, 3, &requested, -1);
+    gtk_tree_model_get(gtk_tree_view_get_model(tree), &row, 1, &serverName, 3, &requested, -1);
     if (!requested && serverName != nullptr) {
-        gtk_tree_store_set(list->serverStore, row, 0, list->channelIcon, 3, true, -1);
+        gtk_tree_store_set(list->serverStore, &row, 3, true, -1);
         rc_request_pm_server_players(list->connection, serverName);
+    } else if (gtk_tree_view_row_expanded(tree, path)) {
+        gtk_tree_view_collapse_row(tree, path);
+        gtk_tree_store_set(list->serverStore, &row, 0, list->channelClosedIcon, -1);
+    } else {
+        gtk_tree_view_expand_row(tree, path, false);
+        gtk_tree_store_set(list->serverStore, &row, 0, list->channelIcon, -1);
     }
     g_free(serverName);
-    return false;
 }
 void TPlayerList::onGroupExpanded(GtkTreeView*, GtkTreeIter* row, GtkTreePath*, gpointer data) { TPlayerList* list = static_cast<TPlayerList*>(data); gtk_tree_store_set(list->store, row, PlayerIconColumn, list->channelIcon, -1); }
 void TPlayerList::onGroupCollapsed(GtkTreeView*, GtkTreeIter* row, GtkTreePath*, gpointer data) { TPlayerList* list = static_cast<TPlayerList*>(data); gtk_tree_store_set(list->store, row, PlayerIconColumn, list->channelClosedIcon, -1); }
@@ -316,7 +349,7 @@ void TPlayerList::refreshRemoteLists() {
         gtk_list_store_clear(guildStore);
         const char** guilds = nullptr;
         const int count = rc_get_pm_guilds(connection, &guilds);
-        for (int index = 0; index < count; ++index) { GtkTreeIter row; gtk_list_store_append(guildStore, &row); gtk_list_store_set(guildStore, &row, 0, channelIcon, 1, guilds[index], 2, "", -1); }
+        for (int index = 0; index < count; ++index) { GtkTreeIter row; gtk_list_store_append(guildStore, &row); gtk_list_store_set(guildStore, &row, 0, channelClosedIcon, 1, guilds[index], 2, "", -1); }
     }
     if (serverStore != nullptr) {
         gtk_tree_store_clear(serverStore);
@@ -324,16 +357,13 @@ void TPlayerList::refreshRemoteLists() {
         const int count = rc_get_pm_servers(connection, &servers);
         for (int index = 0; index < count; ++index) {
             GtkTreeIter row;
-            GtkTreeIter child;
             gtk_tree_store_append(serverStore, &row, nullptr);
             gtk_tree_store_set(serverStore, &row, 0, channelClosedIcon, 1, servers[index], 2, "", 3, false, -1);
             const auto found = serverPlayers.find(servers[index]);
-            if (found == serverPlayers.end()) {
+            if (found != serverPlayers.end()) for (const std::string& player : found->second) {
+                GtkTreeIter child;
                 gtk_tree_store_append(serverStore, &child, &row);
-                gtk_tree_store_set(serverStore, &child, 0, channelIcon, 1, "", 2, "", 3, true, -1);
-            } else for (const std::string& player : found->second) {
-                gtk_tree_store_append(serverStore, &child, &row);
-                gtk_tree_store_set(serverStore, &child, 0, channelIcon, 1, player.c_str(), 2, "", 3, true, -1);
+                gtk_tree_store_set(serverStore, &child, 0, onlineIcon, 1, player.c_str(), 2, "", 3, true, -1);
             }
         }
     }

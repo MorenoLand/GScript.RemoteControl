@@ -100,6 +100,7 @@ TRemoteFrame::TRemoteFrame(const RC3::RCOptions& nextOptions, const std::filesys
     }
 
     notebook = gtk_notebook_new();
+    gtk_notebook_set_show_border(GTK_NOTEBOOK(notebook), false);
     gtk_notebook_set_scrollable(GTK_NOTEBOOK(notebook), true);
     chatScrolled = gtk_scrolled_window_new(nullptr, nullptr);
     gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(chatScrolled), GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);

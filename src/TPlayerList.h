@@ -23,7 +23,8 @@ private:
     static void onPMServers(int count, void* data);
     static void onPMGuilds(int count, void* data);
     static void onPMServerPlayers(const char* serverName, const char* playerData, void* data);
-    static gboolean onServerExpand(GtkTreeView*, GtkTreeIter*, GtkTreePath*, gpointer data);
+    static gboolean onServerButtonPress(GtkWidget*, GdkEventButton*, gpointer data);
+    static void onServerActivated(GtkTreeView*, GtkTreePath*, GtkTreeViewColumn*, gpointer data);
     static void onGroupExpanded(GtkTreeView*, GtkTreeIter*, GtkTreePath*, gpointer data);
     static void onGroupCollapsed(GtkTreeView*, GtkTreeIter*, GtkTreePath*, gpointer data);
     static gboolean onDelete(GtkWidget*, GdkEvent*, gpointer data);
@@ -40,6 +41,7 @@ private:
     GtkTreeStore* store = nullptr;
     GtkListStore* guildStore = nullptr;
     GtkTreeStore* serverStore = nullptr;
+    GtkWidget* serverTree = nullptr;
     GtkListStore* channelStore = nullptr;
     GdkPixbuf* onlineIcon = nullptr;
     GdkPixbuf* channelIcon = nullptr;
