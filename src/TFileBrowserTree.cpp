@@ -136,6 +136,14 @@ TFileBrowserTree::TFileBrowserTree() {
     g_signal_connect(gtk_tree_view_get_selection(GTK_TREE_VIEW(folderView)), "changed", G_CALLBACK(onFolderSelected), this);
     g_signal_connect(folderView, "button-press-event", G_CALLBACK(onFolderButtonPress), this);
     g_signal_connect(fileView, "button-press-event", G_CALLBACK(onFileButtonPress), this);
+    GtkTargetEntry fileTarget[] = {{const_cast<gchar*>("application/x-rc3-file-path"), GTK_TARGET_SAME_APP, 1}};
+    GtkTargetEntry dropTargets[] = {{const_cast<gchar*>("application/x-rc3-file-path"), GTK_TARGET_SAME_APP, 1}, {const_cast<gchar*>("text/uri-list"), 0, 2}};
+    gtk_drag_source_set(fileView, GDK_BUTTON1_MASK, fileTarget, G_N_ELEMENTS(fileTarget), GDK_ACTION_MOVE);
+    gtk_drag_dest_set(folderView, GTK_DEST_DEFAULT_ALL, dropTargets, G_N_ELEMENTS(dropTargets), static_cast<GdkDragAction>(GDK_ACTION_COPY | GDK_ACTION_MOVE));
+    gtk_drag_dest_set(fileView, GTK_DEST_DEFAULT_ALL, dropTargets, G_N_ELEMENTS(dropTargets), static_cast<GdkDragAction>(GDK_ACTION_COPY | GDK_ACTION_MOVE));
+    g_signal_connect(fileView, "drag-data-get", G_CALLBACK(onFileDragDataGet), this);
+    g_signal_connect(folderView, "drag-data-received", G_CALLBACK(onDropDataReceived), this);
+    g_signal_connect(fileView, "drag-data-received", G_CALLBACK(onDropDataReceived), this);
     g_signal_connect(closeButton, "clicked", G_CALLBACK(onRefresh), this);
     g_signal_connect(window, "delete-event", G_CALLBACK(onDelete), this);
 }
@@ -205,6 +213,70 @@ gboolean TFileBrowserTree::onFileButtonPress(GtkWidget* widget, GdkEventButton* 
     if (event->type != GDK_BUTTON_PRESS || event->button != GDK_BUTTON_SECONDARY) return false;
     browser->showItemMenu(widget, event, false);
     return true;
+}
+
+void TFileBrowserTree::onFileDragDataGet(GtkWidget* widget, GdkDragContext*, GtkSelectionData* selection, guint, guint, gpointer) {
+    GtkTreeModel* model = nullptr;
+    GtkTreeIter row;
+    if (!gtk_tree_selection_get_selected(gtk_tree_view_get_selection(GTK_TREE_VIEW(widget)), &model, &row)) return;
+    gchar* path = nullptr;
+    gtk_tree_model_get(model, &row, FilePathColumn, &path, -1);
+    if (path != nullptr) gtk_selection_data_set(selection, gtk_selection_data_get_target(selection), 8, reinterpret_cast<const guchar*>(path), static_cast<gint>(strlen(path)));
+    g_free(path);
+}
+
+void TFileBrowserTree::onDropDataReceived(GtkWidget* widget, GdkDragContext* context, gint x, gint y, GtkSelectionData* selection, guint info, guint time, gpointer data) {
+    TFileBrowserTree* browser = static_cast<TFileBrowserTree*>(data);
+    std::string destination = browser->currentFolder;
+    if (widget == browser->folderView) {
+        GtkTreePath* rowPath = nullptr;
+        if (gtk_tree_view_get_dest_row_at_pos(GTK_TREE_VIEW(widget), x, y, &rowPath, nullptr)) {
+            GtkTreeIter row;
+            if (gtk_tree_model_get_iter(GTK_TREE_MODEL(browser->folders), &row, rowPath)) {
+                gchar* value = nullptr;
+                gtk_tree_model_get(GTK_TREE_MODEL(browser->folders), &row, FolderPathColumn, &value, -1);
+                if (value != nullptr) destination = value;
+                g_free(value);
+            }
+            gtk_tree_path_free(rowPath);
+        }
+    }
+    bool success = false;
+    if (info == 1) {
+        const guchar* source = gtk_selection_data_get_data(selection);
+        const gint length = gtk_selection_data_get_length(selection);
+        if (source != nullptr && length > 0) {
+            const std::string filePath(reinterpret_cast<const char*>(source), length);
+            success = rc_filebrowser_move(browser->connection, destination.c_str(), filePath.c_str()) != 0;
+        }
+    } else if (info == 2) {
+        gchar** uris = g_uri_list_extract_uris(reinterpret_cast<const gchar*>(gtk_selection_data_get_data(selection)));
+        if (uris != nullptr) {
+            success = true;
+            for (int index = 0; uris[index] != nullptr; ++index) {
+                GError* error = nullptr;
+                gchar* filename = g_filename_from_uri(uris[index], nullptr, &error);
+                gchar* contents = nullptr;
+                gsize length = 0;
+                if (filename == nullptr || !g_file_get_contents(filename, &contents, &length, &error)) {
+                    success = false;
+                    if (error != nullptr) { browser->appendLog(error->message); g_error_free(error); }
+                } else {
+                    gchar* basename = g_path_get_basename(filename);
+                    std::string remotePath = destination;
+                    if (!remotePath.empty() && remotePath.back() != '/') remotePath += '/';
+                    remotePath += basename;
+                    if (!rc_upload_file(browser->connection, remotePath.c_str(), contents, static_cast<int>(length))) { browser->appendLog(rc_last_error(browser->connection)); success = false; }
+                    g_free(basename);
+                    g_free(contents);
+                }
+                g_free(filename);
+            }
+            g_strfreev(uris);
+        }
+    }
+    if (!success) browser->appendLog(rc_last_error(browser->connection));
+    gtk_drag_finish(context, success, false, time);
 }
 
 void TFileBrowserTree::showItemMenu(GtkWidget* view, GdkEventButton* event, bool folder) {
