@@ -7,6 +7,17 @@ namespace {
     constexpr const char* listserverHost = "listserver.graalonline.com";
     constexpr int listserverPort = 14922;
 
+    int getServerListIcon(const std::string& value) {
+        if (value.size() < 2 || value[1] != ' ') return -1;
+        if (value[0] == 'P') return 0;
+        if (value[0] == 'U') return 1;
+        return -1;
+    }
+
+    std::string getServerListName(const std::string& value) {
+        return value.size() > 1 && value[1] == ' ' ? value.substr(2) : value;
+    }
+
 }
 
 TServerList::TServerList(std::function<void()> onClose) : onCloseCallback(std::move(onClose)) {
@@ -32,22 +43,37 @@ TServerList::TServerList(std::function<void()> onClose) : onCloseCallback(std::m
     gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scrolled), GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
     gtk_paned_pack1(GTK_PANED(pane), scrolled, true, true);
 
-    store = gtk_list_store_new(3, G_TYPE_STRING, G_TYPE_INT, G_TYPE_INT);
+    GError* error = nullptr;
+    serverIcons[0] = gdk_pixbuf_new_from_file("images/rcicon_gold.png", &error);
+    if (error != nullptr) g_error_free(error);
+    error = nullptr;
+    serverIcons[1] = gdk_pixbuf_new_from_file("images/rcicon_uc.png", &error);
+    if (error != nullptr) g_error_free(error);
+
+    store = gtk_list_store_new(4, GDK_TYPE_PIXBUF, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_INT);
     tree = gtk_tree_view_new_with_model(GTK_TREE_MODEL(store));
     gtk_widget_set_name(tree, "ServerListField");
     gtk_tree_view_set_enable_search(GTK_TREE_VIEW(tree), true);
     gtk_container_add(GTK_CONTAINER(scrolled), tree);
 
     GtkCellRenderer* serverRenderer = gtk_cell_renderer_text_new();
-    GtkTreeViewColumn* serverColumn = gtk_tree_view_column_new_with_attributes("Server", serverRenderer, "text", 0, nullptr);
+    GtkCellRenderer* iconRenderer = gtk_cell_renderer_pixbuf_new();
+    GtkTreeViewColumn* iconColumn = gtk_tree_view_column_new_with_attributes("", iconRenderer, "pixbuf", 0, nullptr);
+    gtk_tree_view_column_set_fixed_width(iconColumn, 24);
+    gtk_tree_view_append_column(GTK_TREE_VIEW(tree), iconColumn);
+
+    GtkTreeViewColumn* serverColumn = gtk_tree_view_column_new_with_attributes("Server", serverRenderer, "text", 1, nullptr);
     gtk_tree_view_column_set_resizable(serverColumn, true);
+    gtk_tree_view_column_set_sort_column_id(serverColumn, 1);
     gtk_tree_view_append_column(GTK_TREE_VIEW(tree), serverColumn);
 
     GtkCellRenderer* playerRenderer = gtk_cell_renderer_text_new();
-    GtkTreeViewColumn* playerColumn = gtk_tree_view_column_new_with_attributes("Players", playerRenderer, "text", 1, nullptr);
+    GtkTreeViewColumn* playerColumn = gtk_tree_view_column_new_with_attributes("Players", playerRenderer, "text", 2, nullptr);
     gtk_tree_view_column_set_resizable(playerColumn, true);
+    gtk_tree_view_column_set_sort_column_id(playerColumn, 2);
     gtk_tree_view_column_set_alignment(playerColumn, 1.0F);
     gtk_tree_view_append_column(GTK_TREE_VIEW(tree), playerColumn);
+    gtk_tree_sortable_set_sort_column_id(GTK_TREE_SORTABLE(store), 2, GTK_SORT_ASCENDING);
 
     GtkTreeSelection* selection = gtk_tree_view_get_selection(GTK_TREE_VIEW(tree));
     g_signal_connect(selection, "changed", G_CALLBACK(onSelectionChanged), this);
@@ -89,7 +115,7 @@ TServerList::TServerList(std::function<void()> onClose) : onCloseCallback(std::m
     GtkWidget* buttons = gtk_button_box_new(GTK_ORIENTATION_HORIZONTAL);
     gtk_container_set_border_width(GTK_CONTAINER(buttons), 5);
     gtk_button_box_set_layout(GTK_BUTTON_BOX(buttons), GTK_BUTTONBOX_END);
-    GtkWidget* refreshButton = gtk_button_new_with_label("Refresh");
+    refreshButton = gtk_button_new_with_label("Refresh");
     GtkWidget* connectButton = gtk_button_new_with_label("Connect");
     gtk_container_add(GTK_CONTAINER(buttons), refreshButton);
     gtk_container_add(GTK_CONTAINER(buttons), connectButton);
@@ -104,6 +130,7 @@ TServerList::~TServerList() {
     if (worker.joinable()) worker.join();
     std::lock_guard lock(connectionMutex);
     if (connection != nullptr) rc_disconnect(connection);
+    for (GdkPixbuf* icon : serverIcons) if (icon != nullptr) g_object_unref(icon);
     if (window != nullptr) gtk_widget_destroy(window);
 }
 
@@ -124,7 +151,7 @@ void TServerList::onSelectionChanged(GtkTreeSelection* selection, gpointer data)
     GtkTreeIter iter;
     if (!gtk_tree_selection_get_selected(selection, &model, &iter)) return;
     int index = -1;
-    gtk_tree_model_get(model, &iter, 2, &index, -1);
+    gtk_tree_model_get(model, &iter, 3, &index, -1);
     static_cast<TServerList*>(data)->showEntry(index);
 }
 
@@ -137,21 +164,26 @@ gboolean TServerList::onDelete(GtkWidget*, GdkEvent*, gpointer data) {
 
 gboolean TServerList::finishLoad(gpointer data) {
     std::unique_ptr<LoadResult> result(static_cast<LoadResult*>(data));
+    if (result->serverList->worker.joinable()) result->serverList->worker.join();
     result->serverList->entries = std::move(result->entries);
     gtk_list_store_clear(result->serverList->store);
     for (std::size_t index = 0; index < result->serverList->entries.size(); ++index) {
         const ServerEntry& entry = result->serverList->entries[index];
         GtkTreeIter iter;
         gtk_list_store_append(result->serverList->store, &iter);
-        gtk_list_store_set(result->serverList->store, &iter, 0, entry.name.c_str(), 1, entry.players, 2, static_cast<int>(index), -1);
+        const std::string players = std::to_string(entry.players);
+        const GdkPixbuf* icon = entry.icon < 0 ? nullptr : result->serverList->serverIcons[entry.icon];
+        gtk_list_store_set(result->serverList->store, &iter, 0, icon, 1, entry.name.c_str(), 2, players.c_str(), 3, static_cast<int>(index), -1);
     }
     gtk_label_set_text(GTK_LABEL(result->serverList->statusField), result->error.c_str());
+    gtk_widget_set_sensitive(result->serverList->refreshButton, true);
     return G_SOURCE_REMOVE;
 }
 
 void TServerList::refresh() {
-    if (worker.joinable()) worker.join();
+    if (worker.joinable()) return;
     gtk_label_set_text(GTK_LABEL(statusField), "Loading server list...");
+    gtk_widget_set_sensitive(refreshButton, false);
     worker = std::jthread([this] {
         void* nextConnection = rc_connect(listserverHost, listserverPort, account.c_str(), password.c_str());
         std::vector<ServerEntry> nextEntries;
@@ -160,7 +192,10 @@ void TServerList::refresh() {
         else {
             RCServer* servers = nullptr;
             const int count = rc_get_servers(nextConnection, &servers);
-            for (int index = 0; index < count; ++index) nextEntries.push_back({servers[index].name == nullptr ? "" : servers[index].name, servers[index].language == nullptr ? "" : servers[index].language, servers[index].description == nullptr ? "" : servers[index].description, servers[index].players});
+            for (int index = 0; index < count; ++index) {
+                const std::string rawName = servers[index].name == nullptr ? "" : servers[index].name;
+                nextEntries.push_back({getServerListName(rawName), servers[index].language == nullptr ? "" : servers[index].language, servers[index].description == nullptr ? "" : servers[index].description, servers[index].players, getServerListIcon(rawName)});
+            }
             const char* lastError = rc_last_error(nextConnection);
             if (count == 0 && lastError != nullptr) error = lastError;
         }
@@ -179,7 +214,7 @@ void TServerList::connect() {
     GtkTreeIter iter;
     if (!gtk_tree_selection_get_selected(selection, &model, &iter)) return;
     int index = -1;
-    gtk_tree_model_get(model, &iter, 2, &index, -1);
+    gtk_tree_model_get(model, &iter, 3, &index, -1);
     std::lock_guard lock(connectionMutex);
     if (connection == nullptr) return;
     if (rc_connect_to_server(connection, index)) gtk_label_set_text(GTK_LABEL(statusField), "Connected.");

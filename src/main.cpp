@@ -2,9 +2,14 @@
 #include "TServerList.h"
 #include "TStartFrame.h"
 
+#include <array>
 #include <filesystem>
 #include <gtk/gtk.h>
 #include <gtksourceview/gtksource.h>
+
+#ifdef _WIN32
+#include <windows.h>
+#endif
 
 namespace {
 
@@ -15,12 +20,37 @@ namespace {
         gtk_source_style_scheme_manager_append_search_path(gtk_source_style_scheme_manager_get_default(), languageSpecsDirectory.c_str());
     }
 
+    std::filesystem::path getApplicationDirectory() {
+#ifdef _WIN32
+        std::array<wchar_t, 32768> executablePath;
+        const DWORD length = GetModuleFileNameW(nullptr, executablePath.data(), static_cast<DWORD>(executablePath.size()));
+        if (length != 0 && length < executablePath.size()) return std::filesystem::path(executablePath.data()).parent_path();
+#endif
+        return std::filesystem::current_path();
+    }
+
+    void configureGtkRuntime(const std::filesystem::path& applicationDirectory) {
+#ifdef _WIN32
+        const std::string applicationPath = applicationDirectory.string();
+        const std::string loaders = (applicationDirectory / "lib" / "gdk-pixbuf-2.0" / "2.10.0" / "loaders").string();
+        g_setenv("GTK_DATA_PREFIX", applicationPath.c_str(), true);
+        g_setenv("GDK_PIXBUF_MODULEDIR", loaders.c_str(), true);
+        g_setenv("GDK_PIXBUF_MODULE_FILE", (applicationDirectory / "lib" / "gdk-pixbuf-2.0" / "2.10.0" / "loaders.cache").string().c_str(), true);
+        g_setenv("GSETTINGS_SCHEMA_DIR", (applicationDirectory / "share" / "glib-2.0" / "schemas").string().c_str(), true);
+#endif
+    }
+
 }
 
 int main(int argc, char** argv) {
+    const std::filesystem::path applicationDirectory = getApplicationDirectory();
+    std::filesystem::current_path(applicationDirectory);
+    configureGtkRuntime(applicationDirectory);
     gtk_init(&argc, &argv);
+    GError* iconError = nullptr;
+    gtk_window_set_default_icon_from_file((applicationDirectory / "RemoteControl3.ico").string().c_str(), &iconError);
+    if (iconError != nullptr) g_error_free(iconError);
     RC3::RCOptions options;
-    const std::filesystem::path applicationDirectory = std::filesystem::current_path();
     copySyntaxFiles(applicationDirectory);
     RC3::loadRCOptions(options, applicationDirectory);
     TStartFrame* startFrame = nullptr;

@@ -23,6 +23,7 @@ private:
         std::string language;
         std::string description;
         int players = 0;
+        int icon = -1;
     };
 
     struct LoadResult {
@@ -48,6 +49,8 @@ private:
     GtkWidget* languageField = nullptr;
     GtkWidget* descriptionField = nullptr;
     GtkWidget* statusField = nullptr;
+    GtkWidget* refreshButton = nullptr;
+    GdkPixbuf* serverIcons[2] = {nullptr, nullptr};
     std::jthread worker;
     std::mutex connectionMutex;
     void* connection = nullptr;

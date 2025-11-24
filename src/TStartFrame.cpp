@@ -40,7 +40,7 @@ TStartFrame::TStartFrame(RC3::RCOptions& options, const std::filesystem::path& a
     GtkWidget* accountLabel = gtk_label_new("Account:");
     gtk_widget_set_size_request(accountLabel, 80, -1);
     gtk_label_set_xalign(GTK_LABEL(accountLabel), 0.0F);
-    GtkWidget* accountCombo = gtk_combo_box_text_new_with_entry();
+    accountCombo = gtk_combo_box_text_new_with_entry();
     gtk_widget_set_name(accountCombo, "AccountCombo");
     accountField = gtk_bin_get_child(GTK_BIN(accountCombo));
     gtk_widget_set_name(accountField, "AccountField");
@@ -52,6 +52,9 @@ TStartFrame::TStartFrame(RC3::RCOptions& options, const std::filesystem::path& a
     gtk_widget_set_name(nicknameField, "NicknameField");
     gtk_widget_set_name(passwordField, "PasswordField");
     gtk_entry_set_text(GTK_ENTRY(nicknameField), options.nickname.c_str());
+    for (const std::string& accountName : accounts.names()) gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(accountCombo), accountName.c_str());
+    gtk_entry_set_text(GTK_ENTRY(accountField), accounts.accountName().c_str());
+    gtk_entry_set_text(GTK_ENTRY(passwordField), accounts.password().c_str());
 
     passwordCheck = gtk_check_button_new_with_label("Don't save password");
     gtk_widget_set_name(passwordCheck, "PasswordCheck");
@@ -73,6 +76,7 @@ TStartFrame::TStartFrame(RC3::RCOptions& options, const std::filesystem::path& a
     gtk_box_pack_start(GTK_BOX(root), buttons, false, true, 0);
 
     g_signal_connect(connectButton, "clicked", G_CALLBACK(TStartFrame::onConnect), this);
+    g_signal_connect(accountCombo, "changed", G_CALLBACK(TStartFrame::onAccountChanged), this);
     g_signal_connect(cancelButton, "clicked", G_CALLBACK(gtk_main_quit), nullptr);
     g_signal_connect(window, "delete-event", G_CALLBACK(onDelete), this);
     g_signal_connect(window, "destroy", G_CALLBACK(gtk_main_quit), nullptr);
@@ -89,6 +93,11 @@ void TStartFrame::show() {
 
 void TStartFrame::onConnect(GtkButton*, gpointer data) { static_cast<TStartFrame*>(data)->connect(); }
 
+void TStartFrame::onAccountChanged(GtkComboBox*, gpointer data) {
+    TStartFrame* frame = static_cast<TStartFrame*>(data);
+    gtk_entry_set_text(GTK_ENTRY(frame->passwordField), frame->accounts.passwordFor(frame->getText(frame->accountField)).c_str());
+}
+
 gboolean TStartFrame::onDelete(GtkWidget*, GdkEvent*, gpointer) { return false; }
 
 void TStartFrame::connect() {
@@ -96,6 +105,7 @@ void TStartFrame::connect() {
     options.dontsavepassword = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(passwordCheck));
     options.graphicalmenu = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(graphicsCheck));
     RC3::saveRCOptions(options, applicationDirectory);
+    accounts.save(getText(accountField), getText(passwordField), options.dontsavepassword);
     gtk_widget_hide(window);
     onConnectCallback(getText(accountField), getText(passwordField));
 }
