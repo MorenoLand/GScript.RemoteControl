@@ -333,10 +333,26 @@ void TPlayerList::handleBanData(const char* account, const char* computerId, con
     if (localBanWindow == nullptr) localBanWindow = new TLocalBanWindow();
     localBanWindow->open(connection, account, computerId == nullptr ? "" : computerId, details == nullptr ? "" : details);
 }
-void TPlayerList::handleBanListData(const char* type, const char*, const char* content) {
-    if (type == nullptr || std::string(type) != "bantypes") return;
-    if (localBanWindow == nullptr) localBanWindow = new TLocalBanWindow();
-    localBanWindow->setBanTypes(content);
+void TPlayerList::handleBanListData(const char* type, const char* account, const char* content) {
+    if (type == nullptr) return;
+    const std::string listType(type);
+    if (listType == "bantypes") {
+        if (localBanWindow == nullptr) localBanWindow = new TLocalBanWindow();
+        localBanWindow->setBanTypes(content);
+        return;
+    }
+    if (listType != "banhistory" && listType != "staffactivity") return;
+    GtkWidget* dialog = gtk_dialog_new_with_buttons((std::string(listType == "banhistory" ? "Ban History of " : "Staff Activity of ") + (account == nullptr ? "" : account)).c_str(), GTK_WINDOW(window), GTK_DIALOG_DESTROY_WITH_PARENT, "Close", GTK_RESPONSE_CLOSE, nullptr);
+    gtk_window_set_default_size(GTK_WINDOW(dialog), 440, 300);
+    GtkWidget* scrolled = gtk_scrolled_window_new(nullptr, nullptr);
+    GtkWidget* field = gtk_text_view_new();
+    gtk_text_view_set_editable(GTK_TEXT_VIEW(field), false);
+    gtk_text_view_set_cursor_visible(GTK_TEXT_VIEW(field), false);
+    gtk_text_buffer_set_text(gtk_text_view_get_buffer(GTK_TEXT_VIEW(field)), content == nullptr ? "" : content, -1);
+    gtk_container_add(GTK_CONTAINER(scrolled), field);
+    gtk_box_pack_start(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), scrolled, true, true, 0);
+    g_signal_connect(dialog, "response", G_CALLBACK(+[](GtkDialog* responseDialog, gint, gpointer) { gtk_widget_destroy(GTK_WIDGET(responseDialog)); }), nullptr);
+    gtk_widget_show_all(dialog);
 }
 void TPlayerList::handlePlayerRights(const char* account, int rights, const char* ipRange, const char* folderAccess) {
     if (account == nullptr || *account == '\0') return;
