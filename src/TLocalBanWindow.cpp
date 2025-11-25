@@ -38,6 +38,7 @@ TLocalBanWindow::TLocalBanWindow() {
     const char* titles[] = {"Local Ban", "Global Ban", "Computer Ban", "Global Computer Ban"};
     for (int index = 0; index < 4; ++index) {
         GtkWidget* page = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+        scopes[index].page = page;
         gtk_container_set_border_width(GTK_CONTAINER(page), 5);
         scopes[index].banned = gtk_check_button_new_with_label("Banned for");
         scopes[index].type = gtk_combo_box_text_new();
@@ -70,8 +71,14 @@ TLocalBanWindow::TLocalBanWindow() {
         gtk_box_pack_start(GTK_BOX(page), buttons, false, false, 0);
         g_object_set_data(G_OBJECT(scopes[index].type), "scope", GINT_TO_POINTER(index));
         g_signal_connect(scopes[index].type, "changed", G_CALLBACK(onBanTypeChanged), this);
+        g_signal_connect(scopes[index].banned, "toggled", G_CALLBACK(onBannedChanged), this);
         g_signal_connect(apply, "clicked", G_CALLBACK(onApply), this);
-        gtk_notebook_append_page(GTK_NOTEBOOK(notebook), page, gtk_label_new(titles[index]));
+        GtkWidget* tab = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 3);
+        scopes[index].tab = tab;
+        scopes[index].tabIcon = gtk_image_new_from_file("images/rcicon_unbanned.png");
+        gtk_box_pack_start(GTK_BOX(tab), scopes[index].tabIcon, false, false, 0);
+        gtk_box_pack_start(GTK_BOX(tab), gtk_label_new(titles[index]), false, false, 0);
+        gtk_notebook_append_page(GTK_NOTEBOOK(notebook), page, tab);
     }
     gtk_box_pack_start(GTK_BOX(root), notebook, true, true, 0);
     GtkWidget* buttons = gtk_button_box_new(GTK_ORIENTATION_HORIZONTAL);
@@ -118,6 +125,10 @@ void TLocalBanWindow::updateTimeLeft(int scope) {
     gtk_label_set_text(GTK_LABEL(entry.timeLeft), ("Ban time left: " + banTimeText(seconds)).c_str());
 }
 
+void TLocalBanWindow::updateTabIcon(int scope) {
+    gtk_image_set_from_file(GTK_IMAGE(scopes[scope].tabIcon), gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(scopes[scope].banned)) ? "images/rcicon_banned.png" : "images/rcicon_unbanned.png");
+}
+
 void TLocalBanWindow::open(void* nextConnection, const std::string& nextAccount, const std::string& nextComputerId, const std::string& details) {
     connection = nextConnection;
     account = nextAccount;
@@ -125,6 +136,9 @@ void TLocalBanWindow::open(void* nextConnection, const std::string& nextAccount,
     gtk_window_set_title(GTK_WINDOW(window), ("Edit Access of " + account + (computerId.empty() ? "" : " (computer: " + computerId + ")")).c_str());
     for (int index = 0; index < 4; ++index) {
         scopes[index].target = index < 2 ? account : (computerId.empty() ? "" : "pc:" + computerId);
+        const bool available = !scopes[index].target.empty();
+        gtk_widget_set_visible(scopes[index].page, available);
+        gtk_widget_set_visible(scopes[index].tab, available);
         gtk_widget_set_sensitive(scopes[index].banned, !scopes[index].target.empty());
         gtk_widget_set_sensitive(scopes[index].type, !scopes[index].target.empty());
         gtk_widget_set_sensitive(scopes[index].reset, !scopes[index].target.empty());
@@ -135,6 +149,7 @@ void TLocalBanWindow::open(void* nextConnection, const std::string& nextAccount,
         gtk_entry_set_text(GTK_ENTRY(scopes[index].reason), "");
         scopes[index].releaseTime.clear();
         gtk_label_set_text(GTK_LABEL(scopes[index].timeLeft), "Ban time left: -");
+        updateTabIcon(index);
     }
     std::istringstream records(details);
     for (std::string record; std::getline(records, record);) {
@@ -158,6 +173,7 @@ void TLocalBanWindow::open(void* nextConnection, const std::string& nextAccount,
         const auto reason = fields.find("reason");
         if (reason != fields.end()) gtk_entry_set_text(GTK_ENTRY(scopes[index].reason), reason->second.c_str());
         updateTimeLeft(index);
+        updateTabIcon(index);
     }
     gtk_widget_show_all(window);
     gtk_window_present(GTK_WINDOW(window));
@@ -178,6 +194,7 @@ void TLocalBanWindow::onApply(GtkButton* button, gpointer data) {
 }
 
 void TLocalBanWindow::onCancel(GtkButton*, gpointer data) { gtk_widget_hide(static_cast<TLocalBanWindow*>(data)->window); }
+void TLocalBanWindow::onBannedChanged(GtkToggleButton* button, gpointer data) { TLocalBanWindow* editor = static_cast<TLocalBanWindow*>(data); for (int index = 0; index < 4; ++index) if (editor->scopes[index].banned == GTK_WIDGET(button)) { editor->updateTimeLeft(index); editor->updateTabIcon(index); break; } }
 void TLocalBanWindow::onBanTypeChanged(GtkComboBox* combo, gpointer data) { static_cast<TLocalBanWindow*>(data)->updateTimeLeft(GPOINTER_TO_INT(g_object_get_data(G_OBJECT(combo), "scope"))); }
 void TLocalBanWindow::onBanHistory(GtkButton*, gpointer data) {
     TLocalBanWindow* editor = static_cast<TLocalBanWindow*>(data);
