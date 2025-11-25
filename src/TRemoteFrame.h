@@ -19,6 +19,7 @@ public:
     ~TRemoteFrame();
 
     void open(void* connection, const std::string& serverName);
+    void show();
 
 private:
     static void onSend(GtkButton*, gpointer data);

@@ -15,6 +15,30 @@
 
 namespace {
 
+    TStartFrame* trayStartFrame = nullptr;
+    TRemoteFrame* trayRemoteFrame = nullptr;
+
+    void onTrayOpen(GtkMenuItem*, gpointer) {
+        if (trayRemoteFrame != nullptr) trayRemoteFrame->show();
+        else if (trayStartFrame != nullptr) trayStartFrame->show();
+    }
+
+    void onTrayQuit(GtkMenuItem*, gpointer) { gtk_main_quit(); }
+
+    void onTrayActivate(GtkStatusIcon*, gpointer) { onTrayOpen(nullptr, nullptr); }
+
+    void onTrayPopup(GtkStatusIcon*, guint, guint32, gpointer) {
+        GtkWidget* menu = gtk_menu_new();
+        GtkWidget* open = gtk_menu_item_new_with_label("Open");
+        GtkWidget* quit = gtk_menu_item_new_with_label("Quit");
+        gtk_menu_shell_append(GTK_MENU_SHELL(menu), open);
+        gtk_menu_shell_append(GTK_MENU_SHELL(menu), quit);
+        g_signal_connect(open, "activate", G_CALLBACK(onTrayOpen), nullptr);
+        g_signal_connect(quit, "activate", G_CALLBACK(onTrayQuit), nullptr);
+        gtk_widget_show_all(menu);
+        gtk_menu_popup_at_pointer(GTK_MENU(menu), nullptr);
+    }
+
     void copySyntaxFiles(const std::filesystem::path& applicationDirectory) {
         const auto languageSpecsDirectory = (applicationDirectory / "language-specs").string();
         gchar* searchPaths[] = {const_cast<gchar*>(languageSpecsDirectory.c_str()), nullptr};
@@ -61,14 +85,20 @@ int main(int argc, char** argv) {
     copySyntaxFiles(applicationDirectory);
     RC3::loadRCOptions(options, applicationDirectory);
     applyDarkTheme();
+    GtkStatusIcon* trayIcon = gtk_status_icon_new_from_file((applicationDirectory / "images" / "rcicon_gold.png").string().c_str());
+    gtk_status_icon_set_tooltip_text(trayIcon, "Graal RemoteControl");
+    g_signal_connect(trayIcon, "activate", G_CALLBACK(onTrayActivate), nullptr);
+    g_signal_connect(trayIcon, "popup-menu", G_CALLBACK(onTrayPopup), nullptr);
     TStartFrame* startFrame = nullptr;
     std::unique_ptr<TRemoteFrame> remoteFrame;
     TServerList serverList([&] { startFrame->show(); }, [&](void* connection, const std::string& serverName) {
         remoteFrame = std::make_unique<TRemoteFrame>(options, applicationDirectory, [&] { startFrame->show(); });
+        trayRemoteFrame = remoteFrame.get();
         remoteFrame->open(connection, serverName);
     });
     TStartFrame frame(options, applicationDirectory, [&](const std::string& account, const std::string& password) { serverList.open(account, password); });
     startFrame = &frame;
+    trayStartFrame = startFrame;
     frame.show();
     gtk_main();
     return 0;

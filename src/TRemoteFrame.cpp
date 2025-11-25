@@ -144,6 +144,11 @@ void TRemoteFrame::open(void* nextConnection, const std::string& serverName) {
     gtk_widget_grab_focus(editField);
 }
 
+void TRemoteFrame::show() {
+    gtk_widget_show_all(window);
+    gtk_window_present(GTK_WINDOW(window));
+}
+
 void TRemoteFrame::onSend(GtkButton*, gpointer data) { static_cast<TRemoteFrame*>(data)->send(); }
 
 void TRemoteFrame::onPlayerList(GtkMenuItem*, gpointer data) {
