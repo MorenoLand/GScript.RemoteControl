@@ -38,10 +38,13 @@ private:
     static void onClasses(GtkMenuItem*, gpointer data);
     static void onWeapons(GtkMenuItem*, gpointer data);
     static void onNPCs(GtkMenuItem*, gpointer data);
+    static void onLocalNPCDump(GtkMenuItem*, gpointer data);
     static void onServerOptions(GtkMenuItem*, gpointer data);
     static void onServerFlags(GtkMenuItem*, gpointer data);
     static void onFolderConfig(GtkMenuItem*, gpointer data);
     static gboolean onGraphicalButton(GtkWidget*, GdkEventButton*, gpointer data);
+    static void onLocalNPCSubmit(GtkDialog*, gint response, gpointer data);
+    static void onLocalNPCData(const char* level, const char* content, void* data);
     static gboolean onEditKey(GtkWidget*, GdkEventKey*, gpointer data);
     static gboolean onDelete(GtkWidget*, GdkEvent*, gpointer data);
     static void onGraphicalAllocate(GtkWidget*, GdkRectangle*, gpointer data);

@@ -47,7 +47,7 @@ TRemoteFrame::TRemoteFrame(const RC3::RCOptions& nextOptions, const std::filesys
             addMenuItem(menu, "Weapons (GUI)", G_CALLBACK(onWeapons));
         } else {
             addMenuItem(menu, "Server Flags", G_CALLBACK(onServerFlags));
-            addMenuItem(menu, "Level-NPC dump");
+            addMenuItem(menu, "Level-NPC dump", G_CALLBACK(onLocalNPCDump));
         }
         gtk_menu_item_set_submenu(GTK_MENU_ITEM(item), menu);
         gtk_menu_shell_append(GTK_MENU_SHELL(menuBar), item);
@@ -245,6 +245,48 @@ void TRemoteFrame::onNPCs(GtkMenuItem*, gpointer data) {
     frame->npcList->open(frame->connection);
 }
 
+void TRemoteFrame::onLocalNPCDump(GtkMenuItem*, gpointer data) {
+    TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
+    if (frame->connection == nullptr || rc_is_nc_authenticated(frame->connection) == 0) return;
+    rc_on_local_npcs(frame->connection, onLocalNPCData, frame);
+    GtkWidget* dialog = gtk_dialog_new_with_buttons("Local NPCs", GTK_WINDOW(frame->window), GTK_DIALOG_MODAL, "Cancel", GTK_RESPONSE_CANCEL, "OK", GTK_RESPONSE_OK, nullptr);
+    GtkWidget* content = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
+    GtkWidget* grid = gtk_grid_new();
+    gtk_container_set_border_width(GTK_CONTAINER(grid), 8);
+    gtk_grid_set_row_spacing(GTK_GRID(grid), 6);
+    gtk_grid_set_column_spacing(GTK_GRID(grid), 8);
+    gtk_container_add(GTK_CONTAINER(content), grid);
+    GtkWidget* label = gtk_label_new("Level:");
+    GtkWidget* entry = gtk_entry_new();
+    gtk_entry_set_activates_default(GTK_ENTRY(entry), true);
+    gtk_widget_set_hexpand(entry, true);
+    gtk_grid_attach(GTK_GRID(grid), label, 0, 0, 1, 1);
+    gtk_grid_attach(GTK_GRID(grid), entry, 1, 0, 1, 1);
+    gtk_dialog_set_default_response(GTK_DIALOG(dialog), GTK_RESPONSE_OK);
+    g_object_set_data(G_OBJECT(dialog), "level-entry", entry);
+    g_signal_connect(dialog, "response", G_CALLBACK(onLocalNPCSubmit), frame);
+    gtk_widget_show_all(dialog);
+}
+
+void TRemoteFrame::onLocalNPCSubmit(GtkDialog* dialog, gint response, gpointer data) {
+    if (response != GTK_RESPONSE_OK) {
+        gtk_widget_destroy(GTK_WIDGET(dialog));
+        return;
+    }
+    TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
+    GtkWidget* entry = static_cast<GtkWidget*>(g_object_get_data(G_OBJECT(dialog), "level-entry"));
+    const char* text = gtk_entry_get_text(GTK_ENTRY(entry));
+    gchar* level = g_ascii_strdown(text, -1);
+    if (level[0] != '\0') rc_request_local_npcs(frame->connection, level);
+    g_free(level);
+    gtk_widget_destroy(GTK_WIDGET(dialog));
+}
+
+void TRemoteFrame::onLocalNPCData(const char*, const char* content, void* data) {
+    TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
+    if (content != nullptr && content[0] != '\0') frame->appendChat(content);
+}
+
 void TRemoteFrame::onServerOptions(GtkMenuItem*, gpointer data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
     if (frame->connection == nullptr) return;
@@ -392,6 +434,7 @@ void TRemoteFrame::graphicalAction(int index) {
     else if (index == 9) onClasses(nullptr, this);
     else if (index == 10) onWeapons(nullptr, this);
     else if (index == 11) onNPCs(nullptr, this);
+    else if (index == 8) onLocalNPCDump(nullptr, this);
     else if (index == 5) onServerFlags(nullptr, this);
     else if (index == 6) onFolderConfig(nullptr, this);
     else if (index == 7) onServerOptions(nullptr, this);
