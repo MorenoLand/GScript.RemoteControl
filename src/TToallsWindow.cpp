@@ -13,7 +13,7 @@ TToallsWindow::TToallsWindow() {
     gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scrolled), GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
     gtk_scrolled_window_set_shadow_type(GTK_SCROLLED_WINDOW(scrolled), GTK_SHADOW_IN);
     chat = gtk_text_view_new();
-    gtk_widget_set_name(chat, "ChatField");
+    gtk_widget_set_name(chat, "ToallsChat");
     gtk_text_view_set_left_margin(GTK_TEXT_VIEW(chat), 5);
     gtk_text_view_set_right_margin(GTK_TEXT_VIEW(chat), 5);
     gtk_text_view_set_editable(GTK_TEXT_VIEW(chat), false);
@@ -32,8 +32,10 @@ TToallsWindow::TToallsWindow() {
     gtk_container_add(GTK_CONTAINER(buttons), close);
     gtk_box_pack_start(GTK_BOX(root), buttons, false, false, 0);
     GtkCssProvider* provider = gtk_css_provider_new();
-    gtk_css_provider_load_from_data(provider, "window#ToallsWindow, window#ToallsWindow box, window#ToallsWindow scrolledwindow, window#ToallsWindow viewport, window#ToallsWindow textview.view, window#ToallsWindow textview.view text { background-color: #1e1e1e; color: #d4d4d4; } window#ToallsWindow entry { background-color: #1e1e1e; color: #00ff00; }", -1, nullptr);
+    gtk_css_provider_load_from_data(provider, "window#ToallsWindow, window#ToallsWindow box, window#ToallsWindow scrolledwindow, window#ToallsWindow viewport, #ToallsChat, #ToallsChat text { background-color: #1e1e1e; color: #d4d4d4; } window#ToallsWindow entry { background-color: #1e1e1e; color: #00ff00; }", -1, nullptr);
     gtk_style_context_add_provider_for_screen(gdk_screen_get_default(), GTK_STYLE_PROVIDER(provider), GTK_STYLE_PROVIDER_PRIORITY_USER);
+    gtk_style_context_add_provider(gtk_widget_get_style_context(chat), GTK_STYLE_PROVIDER(provider), GTK_STYLE_PROVIDER_PRIORITY_USER);
+    gtk_style_context_add_provider(gtk_widget_get_style_context(entry), GTK_STYLE_PROVIDER(provider), GTK_STYLE_PROVIDER_PRIORITY_USER);
     g_object_unref(provider);
     GdkColor chatBackground;
     GdkColor chatText;
