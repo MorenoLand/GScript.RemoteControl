@@ -2,6 +2,9 @@
 
 #include <grclib.h>
 
+#include <set>
+#include <string>
+
 TNPCList::TNPCList() {
     window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
     gtk_window_set_title(GTK_WINDOW(window), "NPCs");
@@ -31,17 +34,51 @@ TNPCList::TNPCList() {
     gtk_button_box_set_layout(GTK_BUTTON_BOX(buttons), GTK_BUTTONBOX_END);
     gtk_container_set_border_width(GTK_CONTAINER(buttons), 5);
     GtkWidget* refresh = gtk_button_new_with_label("Refresh");
+    GtkWidget* add = gtk_button_new_with_label("Add");
     GtkWidget* close = gtk_button_new_with_label("Close");
     gtk_container_add(GTK_CONTAINER(buttons), refresh);
+    gtk_container_add(GTK_CONTAINER(buttons), add);
     gtk_container_add(GTK_CONTAINER(buttons), close);
     gtk_box_pack_start(GTK_BOX(root), buttons, false, false, 0);
     g_signal_connect(refresh, "clicked", G_CALLBACK(onRefresh), this);
+    g_signal_connect(add, "clicked", G_CALLBACK(onAdd), this);
     g_signal_connect(close, "clicked", G_CALLBACK(onClose), this);
     g_signal_connect(window, "delete-event", G_CALLBACK(onDelete), this);
 }
 TNPCList::~TNPCList() { if (window != nullptr) gtk_widget_destroy(window); }
 void TNPCList::open(void* nextConnection) { connection = nextConnection; rc_on_npc_added(connection, onNPCChanged, this); rc_on_npc_deleted(connection, [](int, void* data) { static_cast<TNPCList*>(data)->refresh(); }, this); refresh(); gtk_widget_show_all(window); gtk_window_present(GTK_WINDOW(window)); }
 void TNPCList::onRefresh(GtkButton*, gpointer data) { static_cast<TNPCList*>(data)->refresh(); }
+void TNPCList::onAdd(GtkButton*, gpointer data) {
+    TNPCList* list = static_cast<TNPCList*>(data);
+    GtkWidget* dialog = gtk_dialog_new_with_buttons("Add NPC", GTK_WINDOW(list->window), GTK_DIALOG_MODAL, "Cancel", GTK_RESPONSE_CANCEL, "Send", GTK_RESPONSE_OK, nullptr);
+    GtkWidget* grid = gtk_grid_new();
+    gtk_container_set_border_width(GTK_CONTAINER(grid), 8);
+    gtk_grid_set_row_spacing(GTK_GRID(grid), 5);
+    gtk_grid_set_column_spacing(GTK_GRID(grid), 8);
+    const std::string nextId = std::to_string(list->firstFreeNPCId());
+    const struct { const char* label; const char* key; const char* value; } fields[] = {{"Name:", "name", ""}, {"ID:", "id", nextId.c_str()}, {"Type:", "type", ""}, {"Scripter:", "scripter", ""}, {"Level:", "level", ""}, {"X:", "x", "0"}, {"Y:", "y", "0"}};
+    for (int index = 0; index < static_cast<int>(G_N_ELEMENTS(fields)); ++index) {
+        GtkWidget* label = gtk_label_new(fields[index].label);
+        GtkWidget* entry = gtk_entry_new();
+        gtk_entry_set_text(GTK_ENTRY(entry), fields[index].value);
+        gtk_widget_set_hexpand(entry, true);
+        gtk_grid_attach(GTK_GRID(grid), label, 0, index, 1, 1);
+        gtk_grid_attach(GTK_GRID(grid), entry, 1, index, 1, 1);
+        g_object_set_data(G_OBJECT(dialog), fields[index].key, entry);
+    }
+    gtk_container_add(GTK_CONTAINER(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), grid);
+    gtk_dialog_set_default_response(GTK_DIALOG(dialog), GTK_RESPONSE_OK);
+    g_signal_connect(dialog, "response", G_CALLBACK(onAddResponse), list);
+    gtk_widget_show_all(dialog);
+}
+void TNPCList::onAddResponse(GtkDialog* dialog, gint response, gpointer data) {
+    TNPCList* list = static_cast<TNPCList*>(data);
+    if (response == GTK_RESPONSE_OK) {
+        const auto value = [dialog](const char* key) { return gtk_entry_get_text(GTK_ENTRY(g_object_get_data(G_OBJECT(dialog), key))); };
+        rc_create_npc_on_server(list->connection, value("name"), std::atoi(value("id")), value("type"), value("scripter"), value("level"), value("x"), value("y"));
+    }
+    gtk_widget_destroy(GTK_WIDGET(dialog));
+}
 void TNPCList::onClose(GtkButton*, gpointer data) { gtk_widget_hide(static_cast<TNPCList*>(data)->window); }
 void TNPCList::onNPCChanged(int, const char*, void* data) { static_cast<TNPCList*>(data)->refresh(); }
 gboolean TNPCList::onDelete(GtkWidget*, GdkEvent*, gpointer data) { gtk_widget_hide(static_cast<TNPCList*>(data)->window); return true; }
@@ -54,4 +91,13 @@ void TNPCList::refresh() {
         gtk_list_store_append(store, &row);
         gtk_list_store_set(store, &row, 0, npcs[index].id, 1, npcs[index].name == nullptr ? "" : npcs[index].name, 2, npcs[index].type == nullptr ? "" : npcs[index].type, 3, npcs[index].image == nullptr ? "" : npcs[index].image, -1);
     }
+}
+int TNPCList::firstFreeNPCId() const {
+    RCNPC* npcs = nullptr;
+    const int count = rc_get_npcs(connection, &npcs);
+    std::set<int> ids;
+    for (int index = 0; index < count; ++index) ids.insert(npcs[index].id);
+    int id = 1000;
+    while (ids.find(id) != ids.end()) ++id;
+    return id;
 }
