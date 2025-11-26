@@ -288,6 +288,7 @@ gboolean TPlayerList::onButtonPress(GtkWidget* widget, GdkEventButton* event, gp
     GtkWidget* reset = gtk_menu_item_new_with_label("Reset");
     GtkWidget* editAccount = gtk_menu_item_new_with_label("Edit Account");
     GtkWidget* warp = gtk_menu_item_new_with_label("Warp");
+    GtkWidget* updateLevel = gtk_menu_item_new_with_label("Update Level");
     GtkWidget* adminMessage = gtk_menu_item_new_with_label("Admin Message");
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), privateMessage);
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), history);
@@ -306,6 +307,7 @@ gboolean TPlayerList::onButtonPress(GtkWidget* widget, GdkEventButton* event, gp
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), gtk_separator_menu_item_new());
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), editAccount);
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), warp);
+    gtk_menu_shell_append(GTK_MENU_SHELL(menu), updateLevel);
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), adminMessage);
     g_signal_connect(privateMessage, "activate", G_CALLBACK(onPrivateMessageMenu), data);
     g_signal_connect(history, "activate", G_CALLBACK(onHistoryMenu), data);
@@ -318,6 +320,7 @@ gboolean TPlayerList::onButtonPress(GtkWidget* widget, GdkEventButton* event, gp
     g_signal_connect(reset, "activate", G_CALLBACK(onResetPlayer), data);
     g_signal_connect(editAccount, "activate", G_CALLBACK(+[](GtkMenuItem*, gpointer userData) { static_cast<TPlayerList*>(userData)->editAccount(); }), data);
     g_signal_connect(warp, "activate", G_CALLBACK(+[](GtkMenuItem*, gpointer userData) { static_cast<TPlayerList*>(userData)->warpSelectedPlayer(); }), data);
+    g_signal_connect(updateLevel, "activate", G_CALLBACK(+[](GtkMenuItem*, gpointer userData) { static_cast<TPlayerList*>(userData)->updateSelectedPlayerLevel(); }), data);
     g_signal_connect(adminMessage, "activate", G_CALLBACK(+[](GtkMenuItem*, gpointer userData) { static_cast<TPlayerList*>(userData)->adminMessageSelectedPlayer(); }), data);
     gtk_widget_show_all(menu);
     gtk_menu_popup_at_pointer(GTK_MENU(menu), reinterpret_cast<GdkEvent*>(event));
@@ -958,6 +961,15 @@ void TPlayerList::resetSelectedPlayer() {
     gtk_tree_model_get(model, &row, PlayerAccountColumn, &account, -1);
     if (account != nullptr && *account != '\0') rc_reset_player(connection, account);
     g_free(account);
+}
+void TPlayerList::updateSelectedPlayerLevel() {
+    GtkTreeModel* model = nullptr;
+    GtkTreeIter row;
+    if (!gtk_tree_selection_get_selected(gtk_tree_view_get_selection(GTK_TREE_VIEW(tree)), &model, &row)) return;
+    gchar* level = nullptr;
+    gtk_tree_model_get(model, &row, PlayerLevelColumn, &level, -1);
+    if (level != nullptr && *level != '\0') rc_update_level(connection, level);
+    g_free(level);
 }
 void TPlayerList::warpSelectedPlayer() {
     GtkTreeModel* model = nullptr;

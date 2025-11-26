@@ -53,6 +53,7 @@ private:
     void openSelectedHistory();
     void disconnectSelectedPlayer();
     void resetSelectedPlayer();
+    void updateSelectedPlayerLevel();
     void warpSelectedPlayer();
     void adminMessageSelectedPlayer();
     void updatePMIcons();
