@@ -415,7 +415,6 @@ void TRemoteFrame::onGraphicalAllocate(GtkWidget*, GdkRectangle* allocation, gpo
     gtk_widget_set_size_request(frame->backgroundImage, allocation->width, 160);
     const int positions[12][2] = {{5, 15}, {5, 48}, {38, 15}, {71, 15}, {394, 15}, {427, 15}, {460, 15}, {460, 48}, {460, 81}, {460, 114}, {427, 114}, {394, 114}};
     for (int index = 4; index < 12; ++index) gtk_fixed_move(GTK_FIXED(frame->graphicalFixed), frame->graphicalButtons[index], allocation->width - (500 - positions[index][0]), positions[index][1]);
-    if (allocation->height > 128) gtk_widget_set_size_request(frame->notebook, allocation->width, allocation->height - 128);
 }
 
 gboolean TRemoteFrame::processEvents(gpointer data) {
