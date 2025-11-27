@@ -93,6 +93,7 @@ TRemoteFrame::TRemoteFrame(const RC3::RCOptions& nextOptions, const std::filesys
     gtk_notebook_set_scrollable(GTK_NOTEBOOK(notebook), true);
     GtkWidget* chatScrolled = gtk_scrolled_window_new(nullptr, nullptr);
     gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(chatScrolled), GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
+    gtk_scrolled_window_set_shadow_type(GTK_SCROLLED_WINDOW(chatScrolled), GTK_SHADOW_NONE);
     chatField = gtk_text_view_new();
     gtk_widget_set_name(chatField, "ChatField");
     gtk_text_view_set_editable(GTK_TEXT_VIEW(chatField), false);

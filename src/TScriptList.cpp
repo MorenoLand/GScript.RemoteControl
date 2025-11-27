@@ -1,6 +1,7 @@
 #include "TScriptList.h"
 
 #include <grclib.h>
+#include <gtksourceview/gtksource.h>
 
 TScriptList::TScriptList(std::string nextType) : type(std::move(nextType)) {
     window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
@@ -81,9 +82,12 @@ void TScriptList::onScript(const char* scriptType, const char* name, int, const 
 void TScriptList::showEditor(const char* name, const char* script) {
     GtkWidget* dialog = gtk_dialog_new_with_buttons(name, GTK_WINDOW(window), GTK_DIALOG_MODAL, "Cancel", GTK_RESPONSE_CANCEL, "Save", GTK_RESPONSE_ACCEPT, nullptr);
     gtk_window_set_default_size(GTK_WINDOW(dialog), 700, 520);
-    GtkWidget* editor = gtk_text_view_new();
+    GtkSourceLanguage* language = gtk_source_language_manager_get_language(gtk_source_language_manager_get_default(), "graal");
+    GtkSourceBuffer* sourceBuffer = gtk_source_buffer_new_with_language(language);
+    GtkWidget* editor = gtk_source_view_new_with_buffer(sourceBuffer);
+    g_object_unref(sourceBuffer);
     gtk_text_view_set_monospace(GTK_TEXT_VIEW(editor), true);
-    gtk_text_buffer_set_text(gtk_text_view_get_buffer(GTK_TEXT_VIEW(editor)), script, -1);
+    gtk_text_buffer_set_text(GTK_TEXT_BUFFER(sourceBuffer), script, -1);
     GtkWidget* scrolled = gtk_scrolled_window_new(nullptr, nullptr);
     gtk_container_add(GTK_CONTAINER(scrolled), editor);
     gtk_box_pack_start(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), scrolled, true, true, 5);
