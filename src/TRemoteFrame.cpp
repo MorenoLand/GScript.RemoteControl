@@ -131,10 +131,12 @@ TRemoteFrame::TRemoteFrame(const RC3::RCOptions& nextOptions, const std::filesys
     gtk_widget_set_name(chatField, "ChatField");
     gtk_text_view_set_editable(GTK_TEXT_VIEW(chatField), false);
     gtk_text_view_set_cursor_visible(GTK_TEXT_VIEW(chatField), false);
+    gtk_text_view_set_left_margin(GTK_TEXT_VIEW(chatField), 5);
+    gtk_text_view_set_right_margin(GTK_TEXT_VIEW(chatField), 5);
     gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(chatField), GTK_WRAP_WORD_CHAR);
     configureChatField(chatField);
     gtk_container_add(GTK_CONTAINER(chatScrolled), chatField);
-    gtk_notebook_append_page(GTK_NOTEBOOK(notebook), chatScrolled, gtk_label_new("RC Chat"));
+    gtk_notebook_append_page(GTK_NOTEBOOK(notebook), chatScrolled, gtk_label_new("RC Chat "));
     gtk_notebook_set_tab_detachable(GTK_NOTEBOOK(notebook), chatScrolled, true);
     gtk_notebook_set_tab_reorderable(GTK_NOTEBOOK(notebook), chatScrolled, true);
     GtkCssProvider* tabProvider = gtk_css_provider_new();
@@ -144,7 +146,7 @@ TRemoteFrame::TRemoteFrame(const RC3::RCOptions& nextOptions, const std::filesys
     g_object_unref(tabProvider);
     if (graphicalFixed != nullptr) {
         gtk_widget_set_size_request(notebook, 500, 194);
-        gtk_fixed_put(GTK_FIXED(graphicalFixed), notebook, 0, 128);
+        gtk_fixed_put(GTK_FIXED(graphicalFixed), notebook, 0, 136);
     } else gtk_box_pack_start(GTK_BOX(root), notebook, true, true, 0);
 
     editField = gtk_entry_new();
