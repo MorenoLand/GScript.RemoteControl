@@ -17,7 +17,7 @@ TNPCList::TNPCList() {
     GtkWidget* scrolled = gtk_scrolled_window_new(nullptr, nullptr);
     gtk_scrolled_window_set_shadow_type(GTK_SCROLLED_WINDOW(scrolled), GTK_SHADOW_IN);
     store = gtk_list_store_new(4, G_TYPE_INT, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING);
-    GtkWidget* tree = gtk_tree_view_new_with_model(GTK_TREE_MODEL(store));
+    tree = gtk_tree_view_new_with_model(GTK_TREE_MODEL(store));
     const struct { const char* title; int column; int width; } columns[] = {{"ID", 0, 60}, {"Name", 1, 180}, {"Type", 2, 120}, {"Image", 3, 120}};
     for (const auto& column : columns) {
         GtkCellRenderer* renderer = gtk_cell_renderer_text_new();
@@ -29,6 +29,7 @@ TNPCList::TNPCList() {
     }
     gtk_tree_sortable_set_sort_column_id(GTK_TREE_SORTABLE(store), 0, GTK_SORT_ASCENDING);
     gtk_container_add(GTK_CONTAINER(scrolled), tree);
+    g_signal_connect(tree, "button-press-event", G_CALLBACK(onTreeButton), this);
     gtk_container_add(GTK_CONTAINER(frame), scrolled);
     GtkWidget* buttons = gtk_button_box_new(GTK_ORIENTATION_HORIZONTAL);
     gtk_button_box_set_layout(GTK_BUTTON_BOX(buttons), GTK_BUTTONBOX_END);
@@ -78,6 +79,39 @@ void TNPCList::onAddResponse(GtkDialog* dialog, gint response, gpointer data) {
         rc_create_npc_on_server(list->connection, value("name"), std::atoi(value("id")), value("type"), value("scripter"), value("level"), value("x"), value("y"));
     }
     gtk_widget_destroy(GTK_WIDGET(dialog));
+}
+gboolean TNPCList::onTreeButton(GtkWidget* widget, GdkEventButton* event, gpointer data) {
+    if (event->type != GDK_BUTTON_PRESS || event->button != 3) return false;
+    TNPCList* list = static_cast<TNPCList*>(data);
+    GtkTreePath* path = nullptr;
+    if (!gtk_tree_view_get_path_at_pos(GTK_TREE_VIEW(widget), static_cast<gint>(event->x), static_cast<gint>(event->y), &path, nullptr, nullptr, nullptr)) return false;
+    GtkTreeSelection* selection = gtk_tree_view_get_selection(GTK_TREE_VIEW(widget));
+    gtk_tree_selection_select_path(selection, path);
+    GtkTreeIter row;
+    if (gtk_tree_model_get_iter(GTK_TREE_MODEL(list->store), &row, path)) gtk_tree_model_get(GTK_TREE_MODEL(list->store), &row, 0, &list->selectedNPCId, -1);
+    gtk_tree_path_free(path);
+    GtkWidget* menu = gtk_menu_new();
+    GtkWidget* reset = gtk_menu_item_new_with_label("Reset");
+    GtkWidget* remove = gtk_menu_item_new_with_label("Delete");
+    gtk_menu_shell_append(GTK_MENU_SHELL(menu), reset);
+    gtk_menu_shell_append(GTK_MENU_SHELL(menu), remove);
+    g_signal_connect(reset, "activate", G_CALLBACK(onReset), list);
+    g_signal_connect(remove, "activate", G_CALLBACK(onDeleteNPC), list);
+    gtk_widget_show_all(menu);
+    gtk_menu_popup_at_pointer(GTK_MENU(menu), reinterpret_cast<GdkEvent*>(event));
+    return true;
+}
+void TNPCList::onReset(GtkMenuItem*, gpointer data) {
+    TNPCList* list = static_cast<TNPCList*>(data);
+    if (list->selectedNPCId >= 0) rc_reset_npc(list->connection, list->selectedNPCId);
+}
+void TNPCList::onDeleteNPC(GtkMenuItem*, gpointer data) {
+    TNPCList* list = static_cast<TNPCList*>(data);
+    if (list->selectedNPCId < 0) return;
+    GtkWidget* dialog = gtk_message_dialog_new(GTK_WINDOW(list->window), GTK_DIALOG_MODAL, GTK_MESSAGE_WARNING, GTK_BUTTONS_OK_CANCEL, "Delete NPC %d?", list->selectedNPCId);
+    const gint response = gtk_dialog_run(GTK_DIALOG(dialog));
+    gtk_widget_destroy(dialog);
+    if (response == GTK_RESPONSE_OK) rc_delete_npc(list->connection, list->selectedNPCId);
 }
 void TNPCList::onClose(GtkButton*, gpointer data) { gtk_widget_hide(static_cast<TNPCList*>(data)->window); }
 void TNPCList::onNPCChanged(int, const char*, void* data) { static_cast<TNPCList*>(data)->refresh(); }
