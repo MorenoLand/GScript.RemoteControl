@@ -27,7 +27,7 @@ TToallsWindow::TToallsWindow() {
     GtkWidget* buttons = gtk_button_box_new(GTK_ORIENTATION_HORIZONTAL);
     gtk_container_set_border_width(GTK_CONTAINER(buttons), 5);
     gtk_button_box_set_layout(GTK_BUTTON_BOX(buttons), GTK_BUTTONBOX_END);
-    GtkWidget* close = gtk_button_new_with_label("Close");
+    GtkWidget* close = gtk_button_new_from_stock(GTK_STOCK_CLOSE);
     gtk_widget_set_size_request(close, 80, 24);
     gtk_container_add(GTK_CONTAINER(buttons), close);
     gtk_box_pack_start(GTK_BOX(root), buttons, false, false, 0);
