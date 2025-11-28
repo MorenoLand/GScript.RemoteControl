@@ -84,6 +84,8 @@ void TScriptList::showEditor(const char* name, const char* script) {
     gtk_window_set_default_size(GTK_WINDOW(dialog), 700, 520);
     GtkSourceLanguage* language = gtk_source_language_manager_get_language(gtk_source_language_manager_get_default(), "graal");
     GtkSourceBuffer* sourceBuffer = gtk_source_buffer_new_with_language(language);
+    GtkSourceStyleScheme* scheme = gtk_source_style_scheme_manager_get_scheme(gtk_source_style_scheme_manager_get_default(), "graalcolors");
+    gtk_source_buffer_set_style_scheme(sourceBuffer, scheme);
     GtkWidget* editor = gtk_source_view_new_with_buffer(sourceBuffer);
     g_object_unref(sourceBuffer);
     gtk_text_view_set_monospace(GTK_TEXT_VIEW(editor), true);

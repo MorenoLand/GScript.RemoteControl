@@ -81,6 +81,7 @@ int main(int argc, char** argv) {
     std::filesystem::current_path(applicationDirectory);
     configureGtkRuntime(applicationDirectory);
     gtk_init(&argc, &argv);
+    gtk_icon_theme_append_search_path(gtk_icon_theme_get_default(), (applicationDirectory / "share" / "icons").string().c_str());
     RC3::RCOptions options;
     copySyntaxFiles(applicationDirectory);
     RC3::loadRCOptions(options, applicationDirectory);
