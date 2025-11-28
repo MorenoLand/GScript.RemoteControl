@@ -356,7 +356,10 @@ gboolean TRemoteFrame::processEvents(gpointer data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
     if (frame->connection != nullptr) {
         rc_process_events(frame->connection);
-        if (!frame->ncConnectionAttempted && rc_is_nc_connected(frame->connection) == 0 && rc_connect_to_nc_server(frame->connection) != 0) frame->ncConnectionAttempted = true;
+        if (!frame->ncConnectionAttempted && rc_has_nc_server(frame->connection) != 0 && rc_is_nc_connected(frame->connection) == 0) {
+            frame->ncConnectionAttempted = true;
+            rc_connect_to_nc_server(frame->connection);
+        }
         const bool npcServerConnected = rc_is_nc_authenticated(frame->connection) != 0;
         for (int index = 8; index < 12; ++index) {
             if (frame->graphicalButtons[index] == nullptr) continue;
