@@ -55,6 +55,7 @@ private:
     std::array<GtkWidget*, 12> graphicalButtons{};
     void* connection = nullptr;
     guint eventSource = 0;
+    gint64 nextNcConnectAttempt = 0;
     TPlayerList* playerList = nullptr;
     TFileBrowserTree* fileBrowser = nullptr;
     TScriptList* classList = nullptr;

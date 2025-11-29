@@ -49,11 +49,11 @@ TRemoteFrame::TRemoteFrame(const RC3::RCOptions& nextOptions, const std::filesys
         gtk_widget_set_size_request(fixed, 500, 330);
         const std::filesystem::path background = applicationDirectory / "images" / options.background;
         GError* imageError = nullptr;
-        GdkPixbuf* backgroundPixbuf = gdk_pixbuf_new_from_file_at_scale(background.string().c_str(), 500, 160, false, &imageError);
+        GdkPixbuf* backgroundPixbuf = gdk_pixbuf_new_from_file_at_scale(background.string().c_str(), 500, 165, false, &imageError);
         GtkWidget* image = gtk_image_new_from_pixbuf(backgroundPixbuf);
         if (backgroundPixbuf != nullptr) g_object_unref(backgroundPixbuf);
         if (imageError != nullptr) g_error_free(imageError);
-        gtk_widget_set_size_request(image, 500, 160);
+        gtk_widget_set_size_request(image, 500, 165);
         gtk_fixed_put(GTK_FIXED(fixed), image, 0, 0);
         const int positions[12][2] = {{5, 15}, {5, 48}, {38, 15}, {71, 15}, {394, 15}, {427, 15}, {460, 15}, {460, 48}, {460, 81}, {460, 114}, {427, 114}, {394, 114}};
         for (int index = 0; index < 12; ++index) {
@@ -215,6 +215,11 @@ gboolean TRemoteFrame::processEvents(gpointer data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
     if (frame->connection != nullptr) {
         rc_process_events(frame->connection);
+        const gint64 now = g_get_monotonic_time();
+        if (rc_is_nc_connected(frame->connection) == 0 && now >= frame->nextNcConnectAttempt) {
+            rc_connect_to_nc_server(frame->connection);
+            frame->nextNcConnectAttempt = now + G_TIME_SPAN_SECOND;
+        }
         const bool npcServerConnected = rc_is_nc_authenticated(frame->connection) != 0;
         for (int index = 8; index < 12; ++index) {
             if (frame->graphicalButtons[index] == nullptr) continue;
