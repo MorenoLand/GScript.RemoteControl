@@ -72,7 +72,7 @@ TStartFrame::TStartFrame(RC3::RCOptions& options, const std::filesystem::path& a
     gtk_container_add(GTK_CONTAINER(buttons), cancelButton);
     gtk_box_pack_start(GTK_BOX(root), buttons, false, true, 0);
 
-    g_signal_connect(connectButton, "clicked", G_CALLBACK(onConnect), this);
+    g_signal_connect(connectButton, "clicked", G_CALLBACK(TStartFrame::onConnect), this);
     g_signal_connect(cancelButton, "clicked", G_CALLBACK(gtk_main_quit), nullptr);
     g_signal_connect(window, "delete-event", G_CALLBACK(onDelete), this);
     g_signal_connect(window, "destroy", G_CALLBACK(gtk_main_quit), nullptr);

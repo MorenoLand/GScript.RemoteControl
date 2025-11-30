@@ -10,7 +10,7 @@ namespace {
 
     void copySyntaxFiles(const std::filesystem::path& applicationDirectory) {
         const auto languageSpecsDirectory = (applicationDirectory / "language-specs").string();
-        const char* searchPaths[] = {languageSpecsDirectory.c_str(), nullptr};
+        gchar* searchPaths[] = {const_cast<gchar*>(languageSpecsDirectory.c_str()), nullptr};
         gtk_source_language_manager_set_search_path(gtk_source_language_manager_get_default(), searchPaths);
         gtk_source_style_scheme_manager_append_search_path(gtk_source_style_scheme_manager_get_default(), languageSpecsDirectory.c_str());
     }
