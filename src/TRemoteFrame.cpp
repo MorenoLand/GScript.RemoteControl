@@ -140,7 +140,7 @@ TRemoteFrame::TRemoteFrame(const RC3::RCOptions& nextOptions, const std::filesys
     gtk_notebook_set_tab_detachable(GTK_NOTEBOOK(notebook), chatScrolled, true);
     gtk_notebook_set_tab_reorderable(GTK_NOTEBOOK(notebook), chatScrolled, true);
     GtkCssProvider* tabProvider = gtk_css_provider_new();
-    const std::string notebookCss = "#RemoteFrame notebook, #RemoteFrame notebook > header, #RemoteFrame notebook > header.top, #RemoteFrame notebook > header.top > tabs, #RemoteFrame notebook > header.top > tabs > tab { margin: 0; padding: 0; border: 0; background-color: transparent; background-image: none; box-shadow: none; } #RemoteFrame notebook > stack, #RemoteFrame notebook > stack > scrolledwindow, #RemoteFrame notebook > stack > scrolledwindow > viewport { margin: 0; padding: 0; border: 0; background-color: " + options.colorchatback + "; } #RemoteFrame notebook > header.top > tabs > tab { min-height: 12px; padding: 0 8px; } #RemoteFrame notebook > header.top > tabs > tab label { margin: 0; padding: 0; font-size: 10px; }";
+    const std::string notebookCss = "#RemoteFrame notebook, #RemoteFrame notebook > header, #RemoteFrame notebook > header.top, #RemoteFrame notebook > header.top > tabs, #RemoteFrame notebook > header.top > tabs > tab { margin: 0; padding: 0; border: 0; background-color: transparent; background-image: none; box-shadow: none; } #RemoteFrame notebook > header, #RemoteFrame notebook > header.top, #RemoteFrame notebook > header.top > tabs { min-height: 0; } #RemoteFrame notebook > stack, #RemoteFrame notebook > stack > scrolledwindow, #RemoteFrame notebook > stack > scrolledwindow > viewport { margin: 0; padding: 0; border: 0; background-color: " + options.colorchatback + "; } #RemoteFrame notebook > header.top > tabs > tab { min-height: 0; padding: 0 6px; } #RemoteFrame notebook > header.top > tabs > tab label { margin: 0; padding: 0; font-size: 10px; }";
     gtk_css_provider_load_from_data(tabProvider, notebookCss.c_str(), -1, nullptr);
     gtk_style_context_add_provider(gtk_widget_get_style_context(window), GTK_STYLE_PROVIDER(tabProvider), GTK_STYLE_PROVIDER_PRIORITY_USER);
     g_object_unref(tabProvider);
@@ -162,6 +162,7 @@ TRemoteFrame::TRemoteFrame(const RC3::RCOptions& nextOptions, const std::filesys
     gtk_box_pack_start(GTK_BOX(root), editField, false, false, 0);
 
     g_signal_connect(editField, "key-press-event", G_CALLBACK(onEditKey), this);
+    g_signal_connect(window, "key-press-event", G_CALLBACK(onWindowKey), this);
     g_signal_connect(window, "delete-event", G_CALLBACK(onDelete), this);
 }
 
@@ -398,6 +399,12 @@ gboolean TRemoteFrame::onEditKey(GtkWidget*, GdkEventKey* event, gpointer data) 
     return true;
 }
 
+gboolean TRemoteFrame::onWindowKey(GtkWidget*, GdkEventKey* event, gpointer data) {
+    if (event->keyval != GDK_KEY_F8) return false;
+    static_cast<TRemoteFrame*>(data)->onCloseCallback();
+    return true;
+}
+
 gboolean TRemoteFrame::onDelete(GtkWidget*, GdkEvent*, gpointer data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
     gtk_widget_hide(frame->window);
@@ -513,20 +520,20 @@ void TRemoteFrame::appendChat(const std::string& message) {
     const bool colorAlert = message.rfind("#ALERT", 0) == 0;
     std::string display = message;
     const bool alert = applyAlertTag(display);
-    display = chatTimestamp(options) + display;
     GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(chatField));
     GtkTextIter end;
     gtk_text_buffer_get_end_iter(buffer, &end);
+    const std::string timestamp = chatTimestamp(options);
+    if (!timestamp.empty()) {
+        gtk_text_buffer_insert(buffer, &end, (timestamp + " ").c_str(), -1);
+        gtk_text_buffer_get_end_iter(buffer, &end);
+    }
     const gint startOffset = gtk_text_iter_get_offset(&end);
     if (colorAlert) {
         GtkTextTag* tag = gtk_text_buffer_create_tag(buffer, nullptr, "foreground", options.coloralert.c_str(), "weight", PANGO_WEIGHT_BOLD, nullptr);
         gtk_text_buffer_insert_with_tags(buffer, &end, (display + "\n").c_str(), -1, tag, nullptr);
     } else {
-        std::size_t separator = display.find(':');
-        if (!display.empty() && display.front() == '[') {
-            const std::size_t timestampEnd = display.find(']');
-            separator = timestampEnd == std::string::npos ? separator : display.find(':', timestampEnd + 1);
-        }
+        const std::size_t separator = display.find(':');
         if (separator != std::string::npos && separator > 0) {
             const std::string prefix = display.substr(0, separator + 1);
             GtkTextTag* tag = gtk_text_buffer_create_tag(buffer, nullptr, "foreground", options.colorchatbold.c_str(), "weight", PANGO_WEIGHT_BOLD, nullptr);

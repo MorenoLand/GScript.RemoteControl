@@ -351,7 +351,7 @@ void TPlayerList::handleBanListData(const char* type, const char* account, const
     GtkWidget* field = gtk_text_view_new();
     gtk_text_view_set_editable(GTK_TEXT_VIEW(field), false);
     gtk_text_view_set_cursor_visible(GTK_TEXT_VIEW(field), false);
-    gtk_text_buffer_set_text(gtk_text_view_get_buffer(GTK_TEXT_VIEW(field)), content == nullptr ? "" : content, -1);
+    gtk_text_buffer_set_text(gtk_text_view_get_buffer(GTK_TEXT_VIEW(field)), content == nullptr || *content == '\0' ? "(none)" : content, -1);
     gtk_container_add(GTK_CONTAINER(scrolled), field);
     gtk_box_pack_start(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), scrolled, true, true, 0);
     g_signal_connect(dialog, "response", G_CALLBACK(+[](GtkDialog* responseDialog, gint, gpointer) { gtk_widget_destroy(GTK_WIDGET(responseDialog)); }), nullptr);
@@ -441,7 +441,7 @@ void TPlayerList::handlePlayerAttributes(const char* account, const char*, const
     const std::map<std::string, std::string> values = fieldValues(editorText);
     GtkWidget* dialog = gtk_dialog_new_with_buttons(("Edit Attributes of " + std::string(account)).c_str(), GTK_WINDOW(window), GTK_DIALOG_DESTROY_WITH_PARENT, "Cancel", GTK_RESPONSE_CANCEL, "Apply", GTK_RESPONSE_ACCEPT, nullptr);
     gtk_widget_set_name(dialog, "EditAttributesWindow");
-    gtk_window_set_default_size(GTK_WINDOW(dialog), 400, 360);
+    gtk_window_set_default_size(GTK_WINDOW(dialog), 440, 430);
     GtkWidget* notebook = gtk_notebook_new();
     gtk_container_set_border_width(GTK_CONTAINER(notebook), 5);
     auto* state = new AttributeState{this, account, {}, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr};
@@ -613,9 +613,12 @@ void TPlayerList::handlePlayerText(const char* type, const char* account, const 
     struct TextState { TPlayerList* list; std::string account; std::string type; GtkWidget* text; };
     const std::string title = (dataType == "profile" ? "Profile of " : "Edit Comments of ") + std::string(account);
     GtkWidget* dialog = gtk_dialog_new_with_buttons(title.c_str(), GTK_WINDOW(window), GTK_DIALOG_DESTROY_WITH_PARENT, "Cancel", GTK_RESPONSE_CANCEL, "Save", GTK_RESPONSE_ACCEPT, nullptr);
+    gtk_window_set_default_size(GTK_WINDOW(dialog), 420, 280);
+    GtkWidget* scrolled = gtk_scrolled_window_new(nullptr, nullptr);
     GtkWidget* text = gtk_text_view_new();
     gtk_text_buffer_set_text(gtk_text_view_get_buffer(GTK_TEXT_VIEW(text)), content == nullptr ? "" : content, -1);
-    gtk_box_pack_start(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), text, true, true, 0);
+    gtk_container_add(GTK_CONTAINER(scrolled), text);
+    gtk_box_pack_start(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), scrolled, true, true, 0);
     auto* state = new TextState{this, account, dataType, text};
     g_signal_connect(dialog, "response", G_CALLBACK(+[](GtkDialog* responseDialog, gint response, gpointer userData) { auto* state = static_cast<TextState*>(userData); if (response == GTK_RESPONSE_ACCEPT) { GtkTextIter start; GtkTextIter end; GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(state->text)); gtk_text_buffer_get_bounds(buffer, &start, &end); gchar* value = gtk_text_buffer_get_text(buffer, &start, &end, false); if (state->type == "profile") rc_set_player_profile(state->list->connection, state->account.c_str(), value == nullptr ? "" : value); else rc_set_player_comments(state->list->connection, state->account.c_str(), value == nullptr ? "" : value); g_free(value); } else gtk_widget_destroy(GTK_WIDGET(responseDialog)); }), state);
     g_signal_connect(dialog, "destroy", G_CALLBACK(+[](GtkWidget*, gpointer userData) { delete static_cast<TextState*>(userData); }), state);
@@ -680,6 +683,7 @@ void TPlayerList::onServerActivated(GtkTreeView* tree, GtkTreePath* path, GtkTre
     } else if (received && gtk_tree_view_row_expanded(tree, path)) {
         gtk_tree_view_collapse_row(tree, path);
         gtk_tree_store_set(list->serverStore, &row, 0, list->channelClosedIcon, -1);
+        rc_unmap_pm_server(list->connection, serverName);
     } else if (received) {
         gtk_tree_view_expand_row(tree, path, false);
         gtk_tree_store_set(list->serverStore, &row, 0, list->channelIcon, -1);
@@ -768,7 +772,7 @@ void TPlayerList::openPrivateMessage(int playerId, const char* account, const ch
     gtk_widget_set_name(data->reply, "PrivateMessageText");
     gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(data->reply), GTK_WRAP_WORD_CHAR);
     GtkCssProvider* pmProvider = gtk_css_provider_new();
-    gtk_css_provider_load_from_data(pmProvider, "#PrivateMessage, #PrivateMessage box, #PrivateMessage scrolledwindow, #PrivateMessage viewport, #PrivateMessageText, #PrivateMessageText text { background-color: #1e1e1e; color: #d4d4d4; }", -1, nullptr);
+    gtk_css_provider_load_from_data(pmProvider, "#PrivateMessage, #PrivateMessage box, #PrivateMessage scrolledwindow, #PrivateMessage viewport { background-color: #454545; color: #d4d4d4; } #PrivateMessageText, #PrivateMessageText text { background-color: #252525; color: #f0f0f0; caret-color: #00ff00; }", -1, nullptr);
     gtk_style_context_add_provider(gtk_widget_get_style_context(data->window), GTK_STYLE_PROVIDER(pmProvider), GTK_STYLE_PROVIDER_PRIORITY_USER);
     gtk_style_context_add_provider(gtk_widget_get_style_context(data->reply), GTK_STYLE_PROVIDER(pmProvider), GTK_STYLE_PROVIDER_PRIORITY_USER);
     g_object_unref(pmProvider);

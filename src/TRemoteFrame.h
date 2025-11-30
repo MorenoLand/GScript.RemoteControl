@@ -51,6 +51,7 @@ private:
     static void onLocalNPCSubmit(GtkDialog*, gint response, gpointer data);
     static void onLocalNPCData(const char* level, const char* content, void* data);
     static gboolean onEditKey(GtkWidget*, GdkEventKey*, gpointer data);
+    static gboolean onWindowKey(GtkWidget*, GdkEventKey*, gpointer data);
     static gboolean onDelete(GtkWidget*, GdkEvent*, gpointer data);
     static void onGraphicalAllocate(GtkWidget*, GdkRectangle*, gpointer data);
     static gboolean processEvents(gpointer data);
