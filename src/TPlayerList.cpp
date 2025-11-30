@@ -48,11 +48,19 @@ namespace {
     void onPMHistory(GtkButton*, gpointer data) {
         PMWindowData* windowData = static_cast<PMWindowData*>(data);
         GtkWidget* history = gtk_window_new(GTK_WINDOW_TOPLEVEL);
+        gtk_widget_set_name(history, "PrivateMessageHistory");
         gtk_window_set_title(GTK_WINDOW(history), ("History: " + windowData->account + " - " + windowData->nick).c_str());
         gtk_window_set_default_size(GTK_WINDOW(history), 440, 320);
         GtkWidget* scrolled = gtk_scrolled_window_new(nullptr, nullptr);
         GtkWidget* field = gtk_text_view_new();
+        gtk_widget_set_name(field, "PrivateMessageHistoryText");
         gtk_text_view_set_editable(GTK_TEXT_VIEW(field), false);
+        gtk_text_view_set_cursor_visible(GTK_TEXT_VIEW(field), false);
+        GtkCssProvider* provider = gtk_css_provider_new();
+        gtk_css_provider_load_from_data(provider, "#PrivateMessageHistory, #PrivateMessageHistory scrolledwindow, #PrivateMessageHistory viewport, #PrivateMessageHistoryText, #PrivateMessageHistoryText text { background-color: #1e1e1e; color: #d4d4d4; }", -1, nullptr);
+        gtk_style_context_add_provider(gtk_widget_get_style_context(history), GTK_STYLE_PROVIDER(provider), GTK_STYLE_PROVIDER_PRIORITY_USER);
+        gtk_style_context_add_provider(gtk_widget_get_style_context(field), GTK_STYLE_PROVIDER(provider), GTK_STYLE_PROVIDER_PRIORITY_USER);
+        g_object_unref(provider);
         gtk_container_add(GTK_CONTAINER(scrolled), field);
         gtk_container_add(GTK_CONTAINER(history), scrolled);
         const std::filesystem::path path = windowData->historyDirectory / (windowData->account + ".txt");
