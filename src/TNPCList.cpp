@@ -1,4 +1,5 @@
 #include "TNPCList.h"
+#include "EditorFind.h"
 #include "TScriptList.h"
 
 #include <grclib.h>
@@ -195,6 +196,7 @@ void TNPCList::showScriptEditor(const char* name, int id, const char* script) {
     GtkSourceStyleScheme* scheme = gtk_source_style_scheme_manager_get_scheme(gtk_source_style_scheme_manager_get_default(), "graalcolors");
     if (scheme != nullptr) gtk_source_buffer_set_style_scheme(sourceBuffer, scheme);
     GtkWidget* editor = gtk_source_view_new_with_buffer(sourceBuffer);
+    addEditorFindButton(dialog, editor);
     gtk_text_view_set_monospace(GTK_TEXT_VIEW(editor), true);
     gtk_text_buffer_set_text(GTK_TEXT_BUFFER(sourceBuffer), script, -1);
     g_object_unref(sourceBuffer);

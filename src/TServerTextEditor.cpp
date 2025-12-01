@@ -1,4 +1,5 @@
 #include "TServerTextEditor.h"
+#include "EditorFind.h"
 
 #include <grclib.h>
 #include <gtksourceview/gtksource.h>
@@ -28,10 +29,13 @@ TServerTextEditor::TServerTextEditor(Kind nextKind, const char* title) : kind(ne
     GtkWidget* buttons = gtk_button_box_new(GTK_ORIENTATION_HORIZONTAL);
     gtk_button_box_set_layout(GTK_BUTTON_BOX(buttons), GTK_BUTTONBOX_END);
     GtkWidget* saveButton = gtk_button_new_with_label("Save");
+    GtkWidget* findButton = gtk_button_new_with_label("Find");
     GtkWidget* closeButton = gtk_button_new_with_label("Close");
+    gtk_container_add(GTK_CONTAINER(buttons), findButton);
     gtk_container_add(GTK_CONTAINER(buttons), saveButton);
     gtk_container_add(GTK_CONTAINER(buttons), closeButton);
     gtk_box_pack_start(GTK_BOX(root), buttons, false, false, 5);
+    g_signal_connect(findButton, "clicked", G_CALLBACK(editorFind), text);
     g_signal_connect(saveButton, "clicked", G_CALLBACK(onSave), this);
     g_signal_connect(closeButton, "clicked", G_CALLBACK(onClose), this);
     g_signal_connect(window, "delete-event", G_CALLBACK(onDelete), this);
