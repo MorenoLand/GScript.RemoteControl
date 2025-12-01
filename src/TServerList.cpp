@@ -50,7 +50,7 @@ TServerList::TServerList(std::function<void()> onClose, std::function<void(void*
     serverIcons[1] = gdk_pixbuf_new_from_file("images/rcicon_uc.png", &error);
     if (error != nullptr) g_error_free(error);
 
-    store = gtk_list_store_new(4, GDK_TYPE_PIXBUF, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_INT);
+    store = gtk_list_store_new(5, GDK_TYPE_PIXBUF, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_INT, G_TYPE_INT);
     tree = gtk_tree_view_new_with_model(GTK_TREE_MODEL(store));
     gtk_widget_set_name(tree, "ServerListField");
     gtk_tree_view_set_enable_search(GTK_TREE_VIEW(tree), true);
@@ -189,7 +189,7 @@ void TServerList::onSelectionChanged(GtkTreeSelection* selection, gpointer data)
     GtkTreeIter iter;
     if (!gtk_tree_selection_get_selected(selection, &model, &iter)) return;
     int index = -1;
-    gtk_tree_model_get(model, &iter, 3, &index, -1);
+    gtk_tree_model_get(model, &iter, 4, &index, -1);
     static_cast<TServerList*>(data)->showEntry(index);
 }
 
@@ -224,7 +224,7 @@ gboolean TServerList::finishLoad(gpointer data) {
         gtk_list_store_append(result->serverList->store, &iter);
         const std::string players = std::to_string(entry.players);
         const GdkPixbuf* icon = entry.icon < 0 ? nullptr : result->serverList->serverIcons[entry.icon];
-        gtk_list_store_set(result->serverList->store, &iter, 0, icon, 1, entry.name.c_str(), 2, players.c_str(), 3, static_cast<int>(index), -1);
+        gtk_list_store_set(result->serverList->store, &iter, 0, icon, 1, entry.name.c_str(), 2, players.c_str(), 3, entry.players, 4, static_cast<int>(index), -1);
     }
     gtk_label_set_text(GTK_LABEL(result->serverList->statusField), result->error.c_str());
     gtk_widget_set_sensitive(result->serverList->refreshButton, true);
@@ -265,7 +265,7 @@ void TServerList::connect() {
     GtkTreeIter iter;
     if (!gtk_tree_selection_get_selected(selection, &model, &iter)) return;
     int index = -1;
-    gtk_tree_model_get(model, &iter, 3, &index, -1);
+    gtk_tree_model_get(model, &iter, 4, &index, -1);
     std::lock_guard lock(connectionMutex);
     if (connection == nullptr) return;
     if (rc_connect_to_server(connection, index)) {
