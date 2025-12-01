@@ -186,7 +186,9 @@ void TFileBrowserTree::onFolderSelected(GtkTreeSelection* selection, gpointer da
     gchar* folder = nullptr;
     gtk_tree_model_get(GTK_TREE_MODEL(browser->folders), &row, FolderPathColumn, &folder, -1);
     if (folder != nullptr) {
-        if (!rc_filebrowser_cd(browser->connection, folder)) browser->appendLog(rc_last_error(browser->connection));
+        std::string folderPath(folder);
+        if (!folderPath.empty() && folderPath.back() != '/') folderPath += '/';
+        if (!rc_filebrowser_cd(browser->connection, folderPath.c_str())) browser->appendLog(rc_last_error(browser->connection));
         g_free(folder);
     }
 }
@@ -353,6 +355,7 @@ void TFileBrowserTree::onEditAsText(GtkMenuItem*, gpointer data) {
 void TFileBrowserTree::onDeleteItem(GtkMenuItem*, gpointer data) {
     FileMenuItem* item = static_cast<FileMenuItem*>(data);
     if (!rc_filebrowser_delete(item->browser->connection, item->path.c_str())) item->browser->appendLog(rc_last_error(item->browser->connection));
+    else if (!item->browser->currentFolder.empty() && !rc_filebrowser_cd(item->browser->connection, item->browser->currentFolder.c_str())) item->browser->appendLog(rc_last_error(item->browser->connection));
 }
 
 void TFileBrowserTree::onRename(GtkMenuItem*, gpointer data) {
@@ -362,7 +365,10 @@ void TFileBrowserTree::onRename(GtkMenuItem*, gpointer data) {
     gtk_entry_set_text(GTK_ENTRY(entry), item->path.c_str());
     gtk_box_pack_start(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), entry, false, false, 8);
     gtk_widget_show_all(dialog);
-    if (gtk_dialog_run(GTK_DIALOG(dialog)) == GTK_RESPONSE_ACCEPT && !rc_filebrowser_rename(item->browser->connection, item->path.c_str(), gtk_entry_get_text(GTK_ENTRY(entry)))) item->browser->appendLog(rc_last_error(item->browser->connection));
+    if (gtk_dialog_run(GTK_DIALOG(dialog)) == GTK_RESPONSE_ACCEPT) {
+        if (!rc_filebrowser_rename(item->browser->connection, item->path.c_str(), gtk_entry_get_text(GTK_ENTRY(entry)))) item->browser->appendLog(rc_last_error(item->browser->connection));
+        else if (!item->browser->currentFolder.empty() && !rc_filebrowser_cd(item->browser->connection, item->browser->currentFolder.c_str())) item->browser->appendLog(rc_last_error(item->browser->connection));
+    }
     gtk_widget_destroy(dialog);
 }
 
