@@ -1,4 +1,5 @@
 #include "TNPCList.h"
+#include "TScriptList.h"
 
 #include <grclib.h>
 #include <gtksourceview/gtksource.h>
@@ -115,7 +116,9 @@ void TNPCList::onEditScript(GtkMenuItem*, gpointer data) {
 }
 void TNPCList::onNPCScript(const char* scriptType, const char* name, int id, const char* script, void* data) {
     if (scriptType == nullptr || std::string(scriptType) != "npc") return;
-    static_cast<TNPCList*>(data)->showScriptEditor(name == nullptr ? "NPC" : name, id, script == nullptr ? "" : script);
+    TNPCList* list = static_cast<TNPCList*>(data);
+    list->showScriptEditor(name == nullptr ? "NPC" : name, id, script == nullptr ? "" : script);
+    TScriptList::restoreScriptReceiver(list->connection);
 }
 void TNPCList::onReset(GtkMenuItem*, gpointer data) {
     TNPCList* list = static_cast<TNPCList*>(data);

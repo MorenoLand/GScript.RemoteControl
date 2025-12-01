@@ -46,11 +46,12 @@ void TScriptList::open(void* nextConnection) {
     connection = nextConnection;
     if (type == "classes") classList = this;
     else weaponList = this;
-    rc_on_script_received(connection, onScript, nullptr);
+    restoreScriptReceiver(connection);
     refresh();
     gtk_widget_show_all(window);
     gtk_window_present(GTK_WINDOW(window));
 }
+void TScriptList::restoreScriptReceiver(void* connection) { rc_on_script_received(connection, onScript, nullptr); }
 
 void TScriptList::onEdit(GtkButton*, gpointer data) { static_cast<TScriptList*>(data)->edit(); }
 void TScriptList::onClose(GtkButton*, gpointer data) { gtk_widget_hide(static_cast<TScriptList*>(data)->window); }

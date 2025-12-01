@@ -8,6 +8,7 @@ public:
     explicit TScriptList(std::string type);
     ~TScriptList();
     void open(void* connection);
+    static void restoreScriptReceiver(void* connection);
 private:
     static void onEdit(GtkButton*, gpointer data);
     static void onClose(GtkButton*, gpointer data);
