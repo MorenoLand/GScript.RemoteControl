@@ -235,9 +235,14 @@ void TNPCList::showFlagsEditor(int id, const char* flags) {
     GtkWidget* dialog = gtk_dialog_new_with_buttons("Edit Flags", GTK_WINDOW(window), GTK_DIALOG_DESTROY_WITH_PARENT, "Cancel", GTK_RESPONSE_CANCEL, "Save", GTK_RESPONSE_ACCEPT, nullptr);
     gtk_window_set_default_size(GTK_WINDOW(dialog), 500, 360);
     GtkWidget* scrolled = gtk_scrolled_window_new(nullptr, nullptr);
-    GtkWidget* text = gtk_text_view_new();
+    GtkSourceLanguage* language = gtk_source_language_manager_get_language(gtk_source_language_manager_get_default(), "ini");
+    GtkSourceBuffer* sourceBuffer = language != nullptr ? gtk_source_buffer_new_with_language(language) : gtk_source_buffer_new(nullptr);
+    GtkSourceStyleScheme* scheme = gtk_source_style_scheme_manager_get_scheme(gtk_source_style_scheme_manager_get_default(), "graalcolors");
+    if (scheme != nullptr) gtk_source_buffer_set_style_scheme(sourceBuffer, scheme);
+    GtkWidget* text = gtk_source_view_new_with_buffer(sourceBuffer);
     gtk_text_view_set_monospace(GTK_TEXT_VIEW(text), true);
-    gtk_text_buffer_set_text(gtk_text_view_get_buffer(GTK_TEXT_VIEW(text)), flags, -1);
+    gtk_text_buffer_set_text(GTK_TEXT_BUFFER(sourceBuffer), flags, -1);
+    g_object_unref(sourceBuffer);
     gtk_container_add(GTK_CONTAINER(scrolled), text);
     gtk_box_pack_start(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), scrolled, true, true, 0);
     auto* state = new FlagState{this, id, text};
