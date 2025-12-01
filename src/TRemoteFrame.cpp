@@ -603,7 +603,6 @@ void TRemoteFrame::appendChannelMessage(const std::string& channel, const std::s
     const bool colorAlert = message.rfind("#ALERT", 0) == 0;
     std::string display = message;
     const bool alert = applyAlertTag(display);
-    display = chatTimestamp(options) + display;
     GtkWidget*& field = channelFields[channel];
     if (field == nullptr) {
         GtkWidget* scrolled = gtk_scrolled_window_new(nullptr, nullptr);
@@ -621,16 +620,17 @@ void TRemoteFrame::appendChannelMessage(const std::string& channel, const std::s
     GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(field));
     GtkTextIter end;
     gtk_text_buffer_get_end_iter(buffer, &end);
+    const std::string timestamp = chatTimestamp(options);
+    if (!timestamp.empty()) {
+        gtk_text_buffer_insert(buffer, &end, (timestamp + " ").c_str(), -1);
+        gtk_text_buffer_get_end_iter(buffer, &end);
+    }
     const gint startOffset = gtk_text_iter_get_offset(&end);
     if (colorAlert) {
         GtkTextTag* tag = gtk_text_buffer_create_tag(buffer, nullptr, "foreground", options.coloralert.c_str(), "weight", PANGO_WEIGHT_BOLD, nullptr);
         gtk_text_buffer_insert_with_tags(buffer, &end, (display + "\n").c_str(), -1, tag, nullptr);
     } else {
-        std::size_t separator = display.find(':');
-        if (!display.empty() && display.front() == '[') {
-            const std::size_t timestampEnd = display.find(']');
-            separator = timestampEnd == std::string::npos ? separator : display.find(':', timestampEnd + 1);
-        }
+        const std::size_t separator = display.find(':');
         if (separator != std::string::npos && separator > 0) {
             const std::string prefix = display.substr(0, separator + 1);
             GtkTextTag* tag = gtk_text_buffer_create_tag(buffer, nullptr, "foreground", options.colorchatbold.c_str(), "weight", PANGO_WEIGHT_BOLD, nullptr);
