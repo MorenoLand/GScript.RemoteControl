@@ -117,7 +117,7 @@ TPlayerList::TPlayerList() {
         if (std::string(title) == "Guilds" || std::string(title) == "Servers") {
             const bool isServerTab = std::string(title) == "Servers";
             GtkListStore* tabStore = nullptr;
-            if (isServerTab) serverStore = gtk_tree_store_new(4, GDK_TYPE_PIXBUF, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_BOOLEAN);
+            if (isServerTab) serverStore = gtk_tree_store_new(5, GDK_TYPE_PIXBUF, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_BOOLEAN, G_TYPE_BOOLEAN);
             else { guildStore = gtk_list_store_new(3, GDK_TYPE_PIXBUF, G_TYPE_STRING, G_TYPE_STRING); tabStore = guildStore; }
             GtkWidget* tabTree = gtk_tree_view_new_with_model(isServerTab ? GTK_TREE_MODEL(serverStore) : GTK_TREE_MODEL(tabStore));
             if (isServerTab) {
@@ -246,7 +246,7 @@ void TPlayerList::onPMServerPlayers(const char* serverName, const char* playerDa
                 gtk_tree_store_append(list->serverStore, &child, &row);
                 gtk_tree_store_set(list->serverStore, &child, 0, list->onlineIcon, 1, player.c_str(), 2, "", 3, true, -1);
             }
-            gtk_tree_store_set(list->serverStore, &row, 0, list->channelIcon, 3, true, -1);
+            gtk_tree_store_set(list->serverStore, &row, 0, list->channelIcon, 3, true, 4, true, -1);
             if (list->serverTree != nullptr) {
                 GtkTreePath* path = gtk_tree_model_get_path(GTK_TREE_MODEL(list->serverStore), &row);
                 gtk_tree_view_expand_row(GTK_TREE_VIEW(list->serverTree), path, false);
@@ -272,15 +272,16 @@ void TPlayerList::onServerActivated(GtkTreeView* tree, GtkTreePath* path, GtkTre
     GtkTreeIter row;
     if (!gtk_tree_model_get_iter(GTK_TREE_MODEL(list->serverStore), &row, path)) return;
     gboolean requested = false;
+    gboolean received = false;
     gchar* serverName = nullptr;
-    gtk_tree_model_get(gtk_tree_view_get_model(tree), &row, 1, &serverName, 3, &requested, -1);
+    gtk_tree_model_get(gtk_tree_view_get_model(tree), &row, 1, &serverName, 3, &requested, 4, &received, -1);
     if (!requested && serverName != nullptr) {
         gtk_tree_store_set(list->serverStore, &row, 3, true, -1);
         rc_request_pm_server_players(list->connection, serverName);
-    } else if (gtk_tree_view_row_expanded(tree, path)) {
+    } else if (received && gtk_tree_view_row_expanded(tree, path)) {
         gtk_tree_view_collapse_row(tree, path);
         gtk_tree_store_set(list->serverStore, &row, 0, list->channelClosedIcon, -1);
-    } else {
+    } else if (received) {
         gtk_tree_view_expand_row(tree, path, false);
         gtk_tree_store_set(list->serverStore, &row, 0, list->channelIcon, -1);
     }
@@ -358,8 +359,9 @@ void TPlayerList::refreshRemoteLists() {
         for (int index = 0; index < count; ++index) {
             GtkTreeIter row;
             gtk_tree_store_append(serverStore, &row, nullptr);
-            gtk_tree_store_set(serverStore, &row, 0, channelClosedIcon, 1, servers[index], 2, "", 3, false, -1);
             const auto found = serverPlayers.find(servers[index]);
+            const gboolean received = found != serverPlayers.end();
+            gtk_tree_store_set(serverStore, &row, 0, received ? channelIcon : channelClosedIcon, 1, servers[index], 2, "", 3, received, 4, received, -1);
             if (found != serverPlayers.end()) for (const std::string& player : found->second) {
                 GtkTreeIter child;
                 gtk_tree_store_append(serverStore, &child, &row);
