@@ -81,7 +81,7 @@ TRemoteFrame::TRemoteFrame(const RC3::RCOptions& nextOptions, const std::filesys
         backgroundPixbuf = gdk_pixbuf_new_from_file(background.string().c_str(), &imageError);
         backgroundImage = gtk_image_new_from_pixbuf(backgroundPixbuf);
         if (imageError != nullptr) g_error_free(imageError);
-        gtk_widget_set_size_request(backgroundImage, 500, 160);
+        gtk_widget_set_size_request(backgroundImage, 500, 166);
         gtk_fixed_put(GTK_FIXED(fixed), backgroundImage, 0, 0);
         const int positions[12][2] = {{5, 15}, {5, 48}, {38, 15}, {71, 15}, {394, 15}, {427, 15}, {460, 15}, {460, 48}, {460, 81}, {460, 114}, {427, 114}, {394, 114}};
         for (int index = 0; index < 12; ++index) {
@@ -417,11 +417,11 @@ void TRemoteFrame::onGraphicalAllocate(GtkWidget*, GdkRectangle* allocation, gpo
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
     if (allocation->width <= 0 || allocation->height <= 0) return;
     if (frame->backgroundPixbuf != nullptr) {
-        GdkPixbuf* scaled = gdk_pixbuf_scale_simple(frame->backgroundPixbuf, allocation->width, 160, GDK_INTERP_BILINEAR);
+        GdkPixbuf* scaled = gdk_pixbuf_scale_simple(frame->backgroundPixbuf, allocation->width, 166, GDK_INTERP_BILINEAR);
         gtk_image_set_from_pixbuf(GTK_IMAGE(frame->backgroundImage), scaled);
         if (scaled != nullptr) g_object_unref(scaled);
     }
-    gtk_widget_set_size_request(frame->backgroundImage, allocation->width, 160);
+    gtk_widget_set_size_request(frame->backgroundImage, allocation->width, 166);
     const int positions[12][2] = {{5, 15}, {5, 48}, {38, 15}, {71, 15}, {394, 15}, {427, 15}, {460, 15}, {460, 48}, {460, 81}, {460, 114}, {427, 114}, {394, 114}};
     for (int index = 4; index < 12; ++index) gtk_fixed_move(GTK_FIXED(frame->graphicalFixed), frame->graphicalButtons[index], allocation->width - (500 - positions[index][0]), positions[index][1]);
 }
