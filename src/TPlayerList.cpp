@@ -441,7 +441,7 @@ void TPlayerList::handlePlayerAttributes(const char* account, const char*, const
     const std::map<std::string, std::string> values = fieldValues(editorText);
     GtkWidget* dialog = gtk_dialog_new_with_buttons(("Edit Attributes of " + std::string(account)).c_str(), GTK_WINDOW(window), GTK_DIALOG_DESTROY_WITH_PARENT, "Cancel", GTK_RESPONSE_CANCEL, "Apply", GTK_RESPONSE_ACCEPT, nullptr);
     gtk_widget_set_name(dialog, "EditAttributesWindow");
-    gtk_window_set_default_size(GTK_WINDOW(dialog), 440, 430);
+    gtk_window_set_default_size(GTK_WINDOW(dialog), 400, 360);
     GtkWidget* notebook = gtk_notebook_new();
     gtk_container_set_border_width(GTK_CONTAINER(notebook), 5);
     auto* state = new AttributeState{this, account, {}, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr};
@@ -585,6 +585,20 @@ void TPlayerList::handlePlayerText(const char* type, const char* account, const 
         gtk_box_pack_start(GTK_BOX(stats), level, false, false, 0);
         gtk_box_pack_start(GTK_BOX(stats), gtk_label_new("Online time:"), false, false, 0);
         gtk_box_pack_start(GTK_BOX(stats), online, false, false, 0);
+        if (values.size() > 12) {
+            GtkWidget* variables = gtk_frame_new(" Profile variables ");
+            GtkWidget* variableScroll = gtk_scrolled_window_new(nullptr, nullptr);
+            gtk_widget_set_size_request(variableScroll, 170, 110);
+            GtkWidget* variableText = gtk_text_view_new();
+            gtk_text_view_set_editable(GTK_TEXT_VIEW(variableText), false);
+            gtk_text_view_set_cursor_visible(GTK_TEXT_VIEW(variableText), false);
+            std::ostringstream profileVariables;
+            for (std::size_t index = 12; index < values.size(); ++index) profileVariables << values[index] << '\n';
+            gtk_text_buffer_set_text(gtk_text_view_get_buffer(GTK_TEXT_VIEW(variableText)), profileVariables.str().c_str(), -1);
+            gtk_container_add(GTK_CONTAINER(variableScroll), variableText);
+            gtk_container_add(GTK_CONTAINER(variables), variableScroll);
+            gtk_box_pack_start(GTK_BOX(stats), variables, false, false, 4);
+        }
         gtk_box_pack_start(GTK_BOX(split), statsFrame, false, false, 0);
         auto onProfileResponse = +[](GtkDialog* responseDialog, gint response, gpointer userData) {
             auto* state = static_cast<ProfileState*>(userData);
