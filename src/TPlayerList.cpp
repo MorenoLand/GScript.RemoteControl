@@ -73,8 +73,8 @@ namespace {
         gtk_widget_show_all(history);
     }
 
-    bool getMessage(GtkWindow* parent, const char* title, const char* label, std::string& message) {
-        GtkWidget* dialog = gtk_dialog_new_with_buttons(title, parent, GTK_DIALOG_MODAL, "Cancel", GTK_RESPONSE_CANCEL, "Send", GTK_RESPONSE_ACCEPT, nullptr);
+    bool getMessage(GtkWindow* parent, const char* title, const char* label, std::string& message, const char* acceptLabel = "Send") {
+        GtkWidget* dialog = gtk_dialog_new_with_buttons(title, parent, GTK_DIALOG_MODAL, "Cancel", GTK_RESPONSE_CANCEL, acceptLabel, GTK_RESPONSE_ACCEPT, nullptr);
         GtkWidget* content = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
         GtkWidget* text = gtk_text_view_new();
         gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(text), GTK_WRAP_WORD_CHAR);
@@ -968,7 +968,8 @@ void TPlayerList::disconnectSelectedPlayer() {
     if (!gtk_tree_selection_get_selected(gtk_tree_view_get_selection(GTK_TREE_VIEW(tree)), &model, &row)) return;
     int playerId = 0;
     gtk_tree_model_get(model, &row, PlayerIdColumn, &playerId, -1);
-    if (playerId != 0) rc_disconnect_player(connection, playerId, "");
+    std::string reason;
+    if (playerId != 0 && getMessage(GTK_WINDOW(window), "Disconnect Player", "Reason:", reason, "Disconnect")) rc_disconnect_player(connection, playerId, reason.c_str());
 }
 
 void TPlayerList::resetSelectedPlayer() {
