@@ -121,7 +121,12 @@ TAccountsWindow::TAccountsWindow() {
     gtk_editable_set_editable(GTK_EDITABLE(banTimeField), false);
     gtk_grid_attach(GTK_GRID(editorGrid), gtk_label_new("Ban-Reason / Comments:"), 0, 7, 2, 1);
     reasonField = gtk_text_view_new();
+    gtk_widget_set_name(reasonField, "AccountReason");
     gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(reasonField), GTK_WRAP_WORD_CHAR);
+    GtkCssProvider* reasonProvider = gtk_css_provider_new();
+    gtk_css_provider_load_from_data(reasonProvider, "#AccountReason, #AccountReason text { background-color: #1e1e1e; color: #dddddd; }", -1, nullptr);
+    gtk_style_context_add_provider(gtk_widget_get_style_context(reasonField), GTK_STYLE_PROVIDER(reasonProvider), GTK_STYLE_PROVIDER_PRIORITY_USER);
+    g_object_unref(reasonProvider);
     GdkColor reasonBackground;
     GdkColor reasonText;
     gdk_color_parse("#1e1e1e", &reasonBackground);
