@@ -434,6 +434,7 @@ void TRemoteFrame::graphicalAction(int index) {
     else if (index == 1) onFileBrowser(nullptr, this);
     else if (index == 2) onAccounts(nullptr, this);
     else if (index == 3) onToalls(nullptr, this);
+    else if (index == 4) onRCOptions(nullptr, this);
     else if (index == 9) onClasses(nullptr, this);
     else if (index == 10) onWeapons(nullptr, this);
     else if (index == 11) onNPCs(nullptr, this);
