@@ -236,7 +236,7 @@ TPlayerList::TPlayerList(const std::filesystem::path& nextApplicationDirectory) 
 }
 
 TPlayerList::~TPlayerList() { if (pmBlinkSource != 0) g_source_remove(pmBlinkSource); delete localBanWindow; if (onlineIcon != nullptr) g_object_unref(onlineIcon); if (channelIcon != nullptr) g_object_unref(channelIcon); if (channelClosedIcon != nullptr) g_object_unref(channelClosedIcon); if (pmNormalIcon != nullptr) g_object_unref(pmNormalIcon); if (pmGuildIcon != nullptr) g_object_unref(pmGuildIcon); if (pmAdminIcon != nullptr) g_object_unref(pmAdminIcon); if (pmMassIcon != nullptr) g_object_unref(pmMassIcon); if (window != nullptr) gtk_widget_destroy(window); }
-void TPlayerList::open(void* nextConnection) { connection = nextConnection; rc_on_pm_servers_updated(connection, onPMServers, this); rc_on_pm_guilds_updated(connection, onPMGuilds, this); rc_on_pm_server_players(connection, onPMServerPlayers, this); rc_on_ban_data(connection, onBanData, this); refresh(); gtk_widget_show_all(window); gtk_window_present(GTK_WINDOW(window)); }
+void TPlayerList::open(void* nextConnection) { connection = nextConnection; rc_on_pm_servers_updated(connection, onPMServers, this); rc_on_pm_guilds_updated(connection, onPMGuilds, this); rc_on_pm_server_players(connection, onPMServerPlayers, this); rc_on_ban_data(connection, onBanData, this); rc_on_ban_list_data(connection, onBanListData, this); refresh(); gtk_widget_show_all(window); gtk_window_present(GTK_WINDOW(window)); }
 void TPlayerList::onRefresh(GtkButton*, gpointer data) { static_cast<TPlayerList*>(data)->refresh(); }
 void TPlayerList::onMassPM(GtkButton*, gpointer data) { static_cast<TPlayerList*>(data)->sendMassPM(); }
 void TPlayerList::onAdminMessage(GtkButton*, gpointer data) { static_cast<TPlayerList*>(data)->sendAdminMessage(); }
@@ -291,11 +291,17 @@ void TPlayerList::onEditAccess(GtkMenuItem*, gpointer data) { static_cast<TPlaye
 void TPlayerList::onPrivateMessageMenu(GtkMenuItem*, gpointer data) { static_cast<TPlayerList*>(data)->openSelectedPrivateMessage(); }
 void TPlayerList::onHistoryMenu(GtkMenuItem*, gpointer data) { static_cast<TPlayerList*>(data)->openSelectedHistory(); }
 void TPlayerList::onDisconnectPlayer(GtkMenuItem*, gpointer data) { static_cast<TPlayerList*>(data)->disconnectSelectedPlayer(); }
-void TPlayerList::onBanData(const char* account, const char*, const char* details, void* data) {
+void TPlayerList::onBanData(const char* account, const char* computerId, const char* details, void* data) {
     TPlayerList* list = static_cast<TPlayerList*>(data);
     if (account == nullptr || *account == '\0') return;
     if (list->localBanWindow == nullptr) list->localBanWindow = new TLocalBanWindow();
-    list->localBanWindow->open(list->connection, account, details == nullptr ? "" : details);
+    list->localBanWindow->open(list->connection, account, computerId == nullptr ? "" : computerId, details == nullptr ? "" : details);
+}
+void TPlayerList::onBanListData(const char* type, const char*, const char* content, void* data) {
+    if (type == nullptr || std::string(type) != "bantypes") return;
+    TPlayerList* list = static_cast<TPlayerList*>(data);
+    if (list->localBanWindow == nullptr) list->localBanWindow = new TLocalBanWindow();
+    list->localBanWindow->setBanTypes(content);
 }
 gboolean TPlayerList::onPMBlink(gpointer data) { TPlayerList* list = static_cast<TPlayerList*>(data); list->pmIconsVisible = !list->pmIconsVisible; list->updatePMIcons(); return G_SOURCE_CONTINUE; }
 void TPlayerList::onPMServers(int, void* data) { static_cast<TPlayerList*>(data)->refreshRemoteLists(); }
@@ -536,7 +542,7 @@ void TPlayerList::editAccess() {
     gchar* account = nullptr;
     int playerId = 0;
     gtk_tree_model_get(model, &row, PlayerAccountColumn, &account, PlayerIdColumn, &playerId, -1);
-    if (account != nullptr && *account != '\0' && playerId != 0) rc_request_player_ban(connection, account, playerId);
+    if (account != nullptr && *account != '\0' && playerId != 0) { rc_request_ban_types(connection); rc_request_player_ban(connection, account, playerId); }
     g_free(account);
 }
 
