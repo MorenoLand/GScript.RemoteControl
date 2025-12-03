@@ -4,6 +4,7 @@
 #include "TPlayerList.h"
 #include "TScriptList.h"
 #include "TServerTextEditor.h"
+#include "TToallsWindow.h"
 
 #include <grclib.h>
 
@@ -28,7 +29,7 @@ TRemoteFrame::TRemoteFrame(const RC3::RCOptions& nextOptions, const std::filesys
         if (std::string(menuName) == "Players") {
             addMenuItem(menu, "Playerlist", G_CALLBACK(onPlayerList));
             addMenuItem(menu, "Accounts");
-            addMenuItem(menu, "Toalls");
+            addMenuItem(menu, "Toalls", G_CALLBACK(onToalls));
         } else if (std::string(menuName) == "Files") {
             addMenuItem(menu, "File Browser", G_CALLBACK(onFileBrowser));
         } else if (std::string(menuName) == "Configuration") {
@@ -97,7 +98,7 @@ TRemoteFrame::TRemoteFrame(const RC3::RCOptions& nextOptions, const std::filesys
 
     notebook = gtk_notebook_new();
     gtk_notebook_set_scrollable(GTK_NOTEBOOK(notebook), true);
-    GtkWidget* chatScrolled = gtk_scrolled_window_new(nullptr, nullptr);
+    chatScrolled = gtk_scrolled_window_new(nullptr, nullptr);
     gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(chatScrolled), GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
     gtk_scrolled_window_set_shadow_type(GTK_SCROLLED_WINDOW(chatScrolled), GTK_SHADOW_NONE);
     chatField = gtk_text_view_new();
@@ -108,6 +109,10 @@ TRemoteFrame::TRemoteFrame(const RC3::RCOptions& nextOptions, const std::filesys
     configureChatField(chatField);
     gtk_container_add(GTK_CONTAINER(chatScrolled), chatField);
     gtk_notebook_append_page(GTK_NOTEBOOK(notebook), chatScrolled, gtk_label_new("RC Chat"));
+    GtkCssProvider* tabProvider = gtk_css_provider_new();
+    gtk_css_provider_load_from_data(tabProvider, "#RemoteFrame notebook tab { padding: 1px 8px; margin: 0; } #RemoteFrame notebook header { padding: 0; }", -1, nullptr);
+    gtk_style_context_add_provider(gtk_widget_get_style_context(window), GTK_STYLE_PROVIDER(tabProvider), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+    g_object_unref(tabProvider);
     if (graphicalFixed != nullptr) {
         gtk_widget_set_size_request(notebook, 500, 194);
         gtk_fixed_put(GTK_FIXED(graphicalFixed), notebook, 0, 136);
@@ -143,6 +148,7 @@ TRemoteFrame::~TRemoteFrame() {
     delete serverOptionsEditor;
     delete serverFlagsEditor;
     delete folderConfigEditor;
+    delete toallsWindow;
 }
 
 void TRemoteFrame::open(void* nextConnection, const std::string& serverName) {
@@ -172,6 +178,13 @@ void TRemoteFrame::onPlayerList(GtkMenuItem*, gpointer data) {
     if (frame->connection == nullptr) return;
     if (frame->playerList == nullptr) frame->playerList = new TPlayerList();
     frame->playerList->open(frame->connection);
+}
+
+void TRemoteFrame::onToalls(GtkMenuItem*, gpointer data) {
+    TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
+    if (frame->connection == nullptr) return;
+    if (frame->toallsWindow == nullptr) frame->toallsWindow = new TToallsWindow();
+    frame->toallsWindow->open(frame->connection);
 }
 
 void TRemoteFrame::onFileBrowser(GtkMenuItem*, gpointer data) {
@@ -308,9 +321,17 @@ void TRemoteFrame::onIrcMessage(const char* channel, const char* line, void* dat
 void TRemoteFrame::onServerData(const char* type, const char* content, void* data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
     const std::string value = content == nullptr ? "" : content;
-    if (type != nullptr && std::string(type) == "options" && frame->serverOptionsEditor != nullptr) frame->serverOptionsEditor->setContent(value.c_str());
+    if (type != nullptr && std::string(type) == "toall" && frame->toallsWindow != nullptr) frame->toallsWindow->append(value.c_str());
+    else if (type != nullptr && std::string(type) == "options" && frame->serverOptionsEditor != nullptr) frame->serverOptionsEditor->setContent(value.c_str());
     else if (type != nullptr && std::string(type) == "flags" && frame->serverFlagsEditor != nullptr) frame->serverFlagsEditor->setContent(value.c_str());
     else if (type != nullptr && std::string(type) == "folder_config" && frame->folderConfigEditor != nullptr) frame->folderConfigEditor->setContent(value.c_str());
+}
+
+gboolean TRemoteFrame::scrollChatToBottom(gpointer data) {
+    TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
+    GtkAdjustment* adjustment = gtk_scrolled_window_get_vadjustment(GTK_SCROLLED_WINDOW(frame->chatScrolled));
+    gtk_adjustment_set_value(adjustment, gtk_adjustment_get_upper(adjustment) - gtk_adjustment_get_page_size(adjustment));
+    return G_SOURCE_REMOVE;
 }
 
 void TRemoteFrame::addMenuItem(GtkWidget* menu, const char* label, GCallback callback) {
@@ -322,6 +343,7 @@ void TRemoteFrame::addMenuItem(GtkWidget* menu, const char* label, GCallback cal
 void TRemoteFrame::graphicalAction(int index) {
     if (index == 0) onPlayerList(nullptr, this);
     else if (index == 1) onFileBrowser(nullptr, this);
+    else if (index == 3) onToalls(nullptr, this);
     else if (index == 9) onClasses(nullptr, this);
     else if (index == 10) onWeapons(nullptr, this);
     else if (index == 5) onServerFlags(nullptr, this);
@@ -362,6 +384,7 @@ void TRemoteFrame::appendChat(const std::string& message) {
     }
     gtk_text_buffer_get_end_iter(buffer, &end);
     gtk_text_view_scroll_to_iter(GTK_TEXT_VIEW(chatField), &end, 0.0, false, 0.0, 1.0);
+    g_idle_add(scrollChatToBottom, this);
 }
 
 void TRemoteFrame::configureChatField(GtkWidget* field) {

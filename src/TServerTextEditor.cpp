@@ -1,6 +1,7 @@
 #include "TServerTextEditor.h"
 
 #include <grclib.h>
+#include <gtksourceview/gtksource.h>
 
 TServerTextEditor::TServerTextEditor(Kind nextKind, const char* title) : kind(nextKind) {
     window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
@@ -9,7 +10,12 @@ TServerTextEditor::TServerTextEditor(Kind nextKind, const char* title) : kind(ne
     GtkWidget* root = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
     gtk_container_add(GTK_CONTAINER(window), root);
     GtkWidget* scrolled = gtk_scrolled_window_new(nullptr, nullptr);
-    GtkWidget* text = gtk_text_view_new();
+    GtkSourceLanguage* language = gtk_source_language_manager_get_language(gtk_source_language_manager_get_default(), "graal");
+    GtkSourceBuffer* sourceBuffer = gtk_source_buffer_new_with_language(language);
+    GtkSourceStyleScheme* scheme = gtk_source_style_scheme_manager_get_scheme(gtk_source_style_scheme_manager_get_default(), "graalcolors");
+    gtk_source_buffer_set_style_scheme(sourceBuffer, scheme);
+    GtkWidget* text = gtk_source_view_new_with_buffer(sourceBuffer);
+    g_object_unref(sourceBuffer);
     buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(text));
     gtk_text_view_set_monospace(GTK_TEXT_VIEW(text), true);
     gtk_container_add(GTK_CONTAINER(scrolled), text);

@@ -13,6 +13,7 @@ class TPlayerList;
 class TFileBrowserTree;
 class TScriptList;
 class TServerTextEditor;
+class TToallsWindow;
 
 class TRemoteFrame {
 public:
@@ -25,6 +26,7 @@ public:
 private:
     static void onSend(GtkButton*, gpointer data);
     static void onPlayerList(GtkMenuItem*, gpointer data);
+    static void onToalls(GtkMenuItem*, gpointer data);
     static void onFileBrowser(GtkMenuItem*, gpointer data);
     static void onClasses(GtkMenuItem*, gpointer data);
     static void onWeapons(GtkMenuItem*, gpointer data);
@@ -41,6 +43,7 @@ private:
     static void onMessage(const char* message, void* data);
     static void onIrcMessage(const char* channel, const char* line, void* data);
     static void onServerData(const char* type, const char* content, void* data);
+    static gboolean scrollChatToBottom(gpointer data);
 
     void appendChat(const std::string& message);
     void appendChannelMessage(const std::string& channel, const std::string& message);
@@ -54,6 +57,7 @@ private:
     std::function<void()> onCloseCallback;
     GtkWidget* window = nullptr;
     GtkWidget* chatField = nullptr;
+    GtkWidget* chatScrolled = nullptr;
     GtkWidget* notebook = nullptr;
     GtkWidget* graphicalFixed = nullptr;
     GtkWidget* backgroundImage = nullptr;
@@ -76,6 +80,7 @@ private:
     TServerTextEditor* serverOptionsEditor = nullptr;
     TServerTextEditor* serverFlagsEditor = nullptr;
     TServerTextEditor* folderConfigEditor = nullptr;
+    TToallsWindow* toallsWindow = nullptr;
     const RC3::RCOptions& options;
     std::filesystem::path applicationDirectory;
     std::unordered_map<std::string, GtkWidget*> channelFields;

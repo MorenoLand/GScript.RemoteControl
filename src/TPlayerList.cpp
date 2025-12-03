@@ -68,9 +68,12 @@ TPlayerList::TPlayerList() {
     tree = gtk_tree_view_new_with_model(GTK_TREE_MODEL(store));
     gtk_widget_set_name(tree, "PlayerListField");
     gtk_tree_view_set_fixed_height_mode(GTK_TREE_VIEW(tree), true);
+    g_signal_connect(tree, "row-expanded", G_CALLBACK(onGroupExpanded), this);
+    g_signal_connect(tree, "row-collapsed", G_CALLBACK(onGroupCollapsed), this);
     gtk_tree_selection_set_mode(gtk_tree_view_get_selection(GTK_TREE_VIEW(tree)), GTK_SELECTION_MULTIPLE);
     onlineIcon = gdk_pixbuf_new_from_file("images/plisticononline.png", nullptr);
     channelIcon = gdk_pixbuf_new_from_file("images/rcicon_channelopen.png", nullptr);
+    channelClosedIcon = gdk_pixbuf_new_from_file("images/rcicon_channelclosed.png", nullptr);
     GtkCellRenderer* imageRenderer = gtk_cell_renderer_pixbuf_new();
     gtk_tree_view_append_column(GTK_TREE_VIEW(tree), gtk_tree_view_column_new_with_attributes("", imageRenderer, "pixbuf", PlayerIconColumn, nullptr));
     const struct { const char* title; int column; } columns[] = {{"Nick", PlayerNickColumn}, {"Account", PlayerAccountColumn}, {"Level", PlayerLevelColumn}, {"ID", PlayerIdColumn}};
@@ -164,7 +167,7 @@ TPlayerList::TPlayerList() {
     g_signal_connect(window, "delete-event", G_CALLBACK(onDelete), this);
 }
 
-TPlayerList::~TPlayerList() { if (onlineIcon != nullptr) g_object_unref(onlineIcon); if (channelIcon != nullptr) g_object_unref(channelIcon); if (window != nullptr) gtk_widget_destroy(window); }
+TPlayerList::~TPlayerList() { if (onlineIcon != nullptr) g_object_unref(onlineIcon); if (channelIcon != nullptr) g_object_unref(channelIcon); if (channelClosedIcon != nullptr) g_object_unref(channelClosedIcon); if (window != nullptr) gtk_widget_destroy(window); }
 void TPlayerList::open(void* nextConnection) { connection = nextConnection; rc_on_pm_servers_updated(connection, onPMServers, this); rc_on_pm_guilds_updated(connection, onPMGuilds, this); rc_on_pm_server_players(connection, onPMServerPlayers, this); refresh(); gtk_widget_show_all(window); gtk_window_present(GTK_WINDOW(window)); }
 void TPlayerList::onRefresh(GtkButton*, gpointer data) { static_cast<TPlayerList*>(data)->refresh(); }
 void TPlayerList::onMassPM(GtkButton*, gpointer data) { static_cast<TPlayerList*>(data)->sendMassPM(); }
@@ -210,6 +213,8 @@ gboolean TPlayerList::onServerExpand(GtkTreeView* tree, GtkTreeIter* row, GtkTre
     g_free(serverName);
     return false;
 }
+void TPlayerList::onGroupExpanded(GtkTreeView*, GtkTreeIter* row, GtkTreePath*, gpointer data) { TPlayerList* list = static_cast<TPlayerList*>(data); gtk_tree_store_set(list->store, row, PlayerIconColumn, list->channelIcon, -1); }
+void TPlayerList::onGroupCollapsed(GtkTreeView*, GtkTreeIter* row, GtkTreePath*, gpointer data) { TPlayerList* list = static_cast<TPlayerList*>(data); gtk_tree_store_set(list->store, row, PlayerIconColumn, list->channelClosedIcon, -1); }
 gboolean TPlayerList::onDelete(GtkWidget*, GdkEvent*, gpointer data) { gtk_widget_hide(static_cast<TPlayerList*>(data)->window); return true; }
 void TPlayerList::refresh() {
     gtk_tree_store_clear(store);
@@ -218,9 +223,9 @@ void TPlayerList::refresh() {
     GtkTreeIter admins;
     GtkTreeIter playersGroup;
     gtk_tree_store_append(store, &admins, nullptr);
-    gtk_tree_store_set(store, &admins, PlayerNickColumn, "Admins", PlayerIdColumn, 0, -1);
+    gtk_tree_store_set(store, &admins, PlayerIconColumn, channelIcon, PlayerNickColumn, "Admins", PlayerIdColumn, 0, -1);
     gtk_tree_store_append(store, &playersGroup, nullptr);
-    gtk_tree_store_set(store, &playersGroup, PlayerNickColumn, "Players", PlayerIdColumn, 0, -1);
+    gtk_tree_store_set(store, &playersGroup, PlayerIconColumn, channelIcon, PlayerNickColumn, "Players", PlayerIdColumn, 0, -1);
     for (int index = 0; index < count; ++index) {
         GtkTreeIter row;
         const bool admin = players[index].level == nullptr || *players[index].level == '\0';
@@ -230,6 +235,7 @@ void TPlayerList::refresh() {
     rc_request_pm_server_list(connection);
     rc_request_pm_guild_list(connection);
     refreshRemoteLists();
+    gtk_tree_view_expand_all(GTK_TREE_VIEW(tree));
 }
 
 void TPlayerList::refreshRemoteLists() {
