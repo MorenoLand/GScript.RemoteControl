@@ -51,6 +51,8 @@ private:
     void openSelectedHistory();
     void disconnectSelectedPlayer();
     void resetSelectedPlayer();
+    void warpSelectedPlayer();
+    void adminMessageSelectedPlayer();
     void updatePMIcons();
     void openPrivateMessage(int playerId, const char* account, const char* nick);
     void appendHistory(const char* account, const char* direction, const char* message) const;

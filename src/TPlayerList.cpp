@@ -284,6 +284,8 @@ gboolean TPlayerList::onButtonPress(GtkWidget* widget, GdkEventButton* event, gp
     GtkWidget* profile = gtk_menu_item_new_with_label("Profile");
     GtkWidget* disconnect = gtk_menu_item_new_with_label("Disconnect");
     GtkWidget* reset = gtk_menu_item_new_with_label("Reset");
+    GtkWidget* warp = gtk_menu_item_new_with_label("Warp");
+    GtkWidget* adminMessage = gtk_menu_item_new_with_label("Admin Message");
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), privateMessage);
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), history);
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), profile);
@@ -298,6 +300,9 @@ gboolean TPlayerList::onButtonPress(GtkWidget* widget, GdkEventButton* event, gp
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), access);
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), disconnect);
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), reset);
+    gtk_menu_shell_append(GTK_MENU_SHELL(menu), gtk_separator_menu_item_new());
+    gtk_menu_shell_append(GTK_MENU_SHELL(menu), warp);
+    gtk_menu_shell_append(GTK_MENU_SHELL(menu), adminMessage);
     g_signal_connect(privateMessage, "activate", G_CALLBACK(onPrivateMessageMenu), data);
     g_signal_connect(history, "activate", G_CALLBACK(onHistoryMenu), data);
     g_signal_connect(profile, "activate", G_CALLBACK(+[](GtkMenuItem*, gpointer userData) { static_cast<TPlayerList*>(userData)->editProfile(); }), data);
@@ -307,6 +312,8 @@ gboolean TPlayerList::onButtonPress(GtkWidget* widget, GdkEventButton* event, gp
     g_signal_connect(comments, "activate", G_CALLBACK(+[](GtkMenuItem*, gpointer userData) { static_cast<TPlayerList*>(userData)->editComments(); }), data);
     g_signal_connect(disconnect, "activate", G_CALLBACK(onDisconnectPlayer), data);
     g_signal_connect(reset, "activate", G_CALLBACK(onResetPlayer), data);
+    g_signal_connect(warp, "activate", G_CALLBACK(+[](GtkMenuItem*, gpointer userData) { static_cast<TPlayerList*>(userData)->warpSelectedPlayer(); }), data);
+    g_signal_connect(adminMessage, "activate", G_CALLBACK(+[](GtkMenuItem*, gpointer userData) { static_cast<TPlayerList*>(userData)->adminMessageSelectedPlayer(); }), data);
     gtk_widget_show_all(menu);
     gtk_menu_popup_at_pointer(GTK_MENU(menu), reinterpret_cast<GdkEvent*>(event));
     return true;
@@ -746,4 +753,47 @@ void TPlayerList::resetSelectedPlayer() {
     gtk_tree_model_get(model, &row, PlayerAccountColumn, &account, -1);
     if (account != nullptr && *account != '\0') rc_reset_player(connection, account);
     g_free(account);
+}
+void TPlayerList::warpSelectedPlayer() {
+    GtkTreeModel* model = nullptr;
+    GtkTreeIter row;
+    if (!gtk_tree_selection_get_selected(gtk_tree_view_get_selection(GTK_TREE_VIEW(tree)), &model, &row)) return;
+    int playerId = 0;
+    gtk_tree_model_get(model, &row, PlayerIdColumn, &playerId, -1);
+    if (playerId == 0) return;
+    struct WarpState { TPlayerList* list; int playerId; GtkWidget* level; GtkWidget* x; GtkWidget* y; };
+    GtkWidget* dialog = gtk_dialog_new_with_buttons("Warp Player", GTK_WINDOW(window), GTK_DIALOG_MODAL, "Cancel", GTK_RESPONSE_CANCEL, "Warp", GTK_RESPONSE_ACCEPT, nullptr);
+    GtkWidget* grid = gtk_grid_new();
+    gtk_container_set_border_width(GTK_CONTAINER(grid), 8);
+    gtk_grid_set_row_spacing(GTK_GRID(grid), 5);
+    gtk_grid_set_column_spacing(GTK_GRID(grid), 6);
+    GtkWidget* level = gtk_entry_new();
+    GtkWidget* x = gtk_entry_new();
+    GtkWidget* y = gtk_entry_new();
+    gtk_entry_set_text(GTK_ENTRY(x), "0");
+    gtk_entry_set_text(GTK_ENTRY(y), "0");
+    gtk_grid_attach(GTK_GRID(grid), gtk_label_new("Level:"), 0, 0, 1, 1);
+    gtk_grid_attach(GTK_GRID(grid), level, 1, 0, 1, 1);
+    gtk_grid_attach(GTK_GRID(grid), gtk_label_new("X:"), 0, 1, 1, 1);
+    gtk_grid_attach(GTK_GRID(grid), x, 1, 1, 1, 1);
+    gtk_grid_attach(GTK_GRID(grid), gtk_label_new("Y:"), 0, 2, 1, 1);
+    gtk_grid_attach(GTK_GRID(grid), y, 1, 2, 1, 1);
+    gtk_container_add(GTK_CONTAINER(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), grid);
+    auto* state = new WarpState{this, playerId, level, x, y};
+    g_signal_connect(dialog, "response", G_CALLBACK(+[](GtkDialog* responseDialog, gint response, gpointer userData) {
+        auto* state = static_cast<WarpState*>(userData);
+        if (response == GTK_RESPONSE_ACCEPT) rc_warp_player(state->list->connection, state->playerId, gtk_entry_get_text(GTK_ENTRY(state->level)), std::strtof(gtk_entry_get_text(GTK_ENTRY(state->x)), nullptr), std::strtof(gtk_entry_get_text(GTK_ENTRY(state->y)), nullptr));
+        gtk_widget_destroy(GTK_WIDGET(responseDialog));
+    }), state);
+    g_signal_connect(dialog, "destroy", G_CALLBACK(+[](GtkWidget*, gpointer userData) { delete static_cast<WarpState*>(userData); }), state);
+    gtk_widget_show_all(dialog);
+}
+void TPlayerList::adminMessageSelectedPlayer() {
+    GtkTreeModel* model = nullptr;
+    GtkTreeIter row;
+    if (!gtk_tree_selection_get_selected(gtk_tree_view_get_selection(GTK_TREE_VIEW(tree)), &model, &row)) return;
+    int playerId = 0;
+    gtk_tree_model_get(model, &row, PlayerIdColumn, &playerId, -1);
+    std::string message;
+    if (playerId != 0 && getMessage(GTK_WINDOW(window), "Admin Message", "Message:", message)) rc_send_admin_message(connection, playerId, message.c_str());
 }
