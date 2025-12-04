@@ -3,6 +3,7 @@
 #include <grclib.h>
 
 #include <sstream>
+#include <map>
 
 TLocalBanWindow::TLocalBanWindow() {
     window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
@@ -67,7 +68,7 @@ void TLocalBanWindow::setBanTypes(const char* types) {
     }
 }
 
-void TLocalBanWindow::open(void* nextConnection, const std::string& nextAccount, const std::string& nextComputerId, const std::string&) {
+void TLocalBanWindow::open(void* nextConnection, const std::string& nextAccount, const std::string& nextComputerId, const std::string& details) {
     connection = nextConnection;
     account = nextAccount;
     computerId = nextComputerId;
@@ -80,6 +81,29 @@ void TLocalBanWindow::open(void* nextConnection, const std::string& nextAccount,
         gtk_entry_set_text(GTK_ENTRY(scopes[index].release), "");
         gtk_entry_set_text(GTK_ENTRY(scopes[index].reason), "");
         if (scopes[index].world != nullptr) gtk_entry_set_text(GTK_ENTRY(scopes[index].world), "");
+    }
+    std::istringstream records(details);
+    for (std::string record; std::getline(records, record);) {
+        std::map<std::string, std::string> fields;
+        std::istringstream values(record);
+        for (std::string value; std::getline(values, value, ',');) {
+            const size_t separator = value.find('=');
+            if (separator != std::string::npos) fields[value.substr(0, separator)] = value.substr(separator + 1);
+        }
+        const auto target = fields.find("account");
+        const auto world = fields.find("world");
+        if (target == fields.end() || world == fields.end()) continue;
+        const bool computer = target->second.rfind("pc:", 0) == 0;
+        const int index = (computer ? 2 : 0) + (world->second == "all" ? 1 : 0);
+        Scope& scope = scopes[index];
+        gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(scope.banned), true);
+        if (scope.world != nullptr) gtk_entry_set_text(GTK_ENTRY(scope.world), world->second.c_str());
+        const auto banType = fields.find("bantype");
+        if (banType != fields.end()) {
+            for (int typeIndex = 0; typeIndex < static_cast<int>(banTypes.size()); ++typeIndex) if (banTypes[typeIndex] == banType->second) gtk_combo_box_set_active(GTK_COMBO_BOX(scope.type), typeIndex);
+        }
+        const auto release = fields.find("releasetime");
+        if (release != fields.end()) gtk_entry_set_text(GTK_ENTRY(scope.release), release->second.c_str());
     }
     gtk_widget_show_all(window);
     gtk_window_present(GTK_WINDOW(window));
