@@ -4,6 +4,7 @@
 #include <grclib.h>
 
 #include <string>
+#include <cstdlib>
 #include <vector>
 #include <sstream>
 #include <filesystem>
@@ -236,7 +237,7 @@ TPlayerList::TPlayerList(const std::filesystem::path& nextApplicationDirectory) 
 }
 
 TPlayerList::~TPlayerList() { if (pmBlinkSource != 0) g_source_remove(pmBlinkSource); delete localBanWindow; if (onlineIcon != nullptr) g_object_unref(onlineIcon); if (channelIcon != nullptr) g_object_unref(channelIcon); if (channelClosedIcon != nullptr) g_object_unref(channelClosedIcon); if (pmNormalIcon != nullptr) g_object_unref(pmNormalIcon); if (pmGuildIcon != nullptr) g_object_unref(pmGuildIcon); if (pmAdminIcon != nullptr) g_object_unref(pmAdminIcon); if (pmMassIcon != nullptr) g_object_unref(pmMassIcon); if (window != nullptr) gtk_widget_destroy(window); }
-void TPlayerList::open(void* nextConnection) { connection = nextConnection; rc_on_pm_servers_updated(connection, onPMServers, this); rc_on_pm_guilds_updated(connection, onPMGuilds, this); rc_on_pm_server_players(connection, onPMServerPlayers, this); rc_on_ban_data(connection, onBanData, this); rc_on_ban_list_data(connection, onBanListData, this); refresh(); gtk_widget_show_all(window); gtk_window_present(GTK_WINDOW(window)); }
+void TPlayerList::open(void* nextConnection) { connection = nextConnection; rc_on_pm_servers_updated(connection, onPMServers, this); rc_on_pm_guilds_updated(connection, onPMGuilds, this); rc_on_pm_server_players(connection, onPMServerPlayers, this); rc_on_ban_data(connection, onBanData, this); rc_on_ban_list_data(connection, onBanListData, this); rc_on_player_attributes(connection, onPlayerAttributes, this); refresh(); gtk_widget_show_all(window); gtk_window_present(GTK_WINDOW(window)); }
 void TPlayerList::onRefresh(GtkButton*, gpointer data) { static_cast<TPlayerList*>(data)->refresh(); }
 void TPlayerList::onMassPM(GtkButton*, gpointer data) { static_cast<TPlayerList*>(data)->sendMassPM(); }
 void TPlayerList::onAdminMessage(GtkButton*, gpointer data) { static_cast<TPlayerList*>(data)->sendAdminMessage(); }
@@ -277,11 +278,14 @@ gboolean TPlayerList::onButtonPress(GtkWidget* widget, GdkEventButton* event, gp
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), history);
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), gtk_separator_menu_item_new());
     GtkWidget* access = gtk_menu_item_new_with_label("Edit Access");
+    GtkWidget* attributes = gtk_menu_item_new_with_label("Edit Attributes");
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), access);
+    gtk_menu_shell_append(GTK_MENU_SHELL(menu), attributes);
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), disconnect);
     g_signal_connect(privateMessage, "activate", G_CALLBACK(onPrivateMessageMenu), data);
     g_signal_connect(history, "activate", G_CALLBACK(onHistoryMenu), data);
     g_signal_connect(access, "activate", G_CALLBACK(onEditAccess), data);
+    g_signal_connect(attributes, "activate", G_CALLBACK(+[](GtkMenuItem*, gpointer userData) { static_cast<TPlayerList*>(userData)->editAttributes(); }), data);
     g_signal_connect(disconnect, "activate", G_CALLBACK(onDisconnectPlayer), data);
     gtk_widget_show_all(menu);
     gtk_menu_popup_at_pointer(GTK_MENU(menu), reinterpret_cast<GdkEvent*>(event));
@@ -302,6 +306,38 @@ void TPlayerList::onBanListData(const char* type, const char*, const char* conte
     TPlayerList* list = static_cast<TPlayerList*>(data);
     if (list->localBanWindow == nullptr) list->localBanWindow = new TLocalBanWindow();
     list->localBanWindow->setBanTypes(content);
+}
+void TPlayerList::onPlayerAttributes(const char* account, const char*, const char* editorText, void* data) {
+    TPlayerList* list = static_cast<TPlayerList*>(data);
+    if (account == nullptr || *account == '\0') return;
+    struct AttributeState { TPlayerList* list; std::string account; GtkWidget* text; };
+    GtkWidget* dialog = gtk_dialog_new_with_buttons(("Edit Attributes of " + std::string(account)).c_str(), GTK_WINDOW(list->window), GTK_DIALOG_DESTROY_WITH_PARENT, "Cancel", GTK_RESPONSE_CANCEL, "Apply", GTK_RESPONSE_ACCEPT, nullptr);
+    gtk_window_set_default_size(GTK_WINDOW(dialog), 480, 360);
+    GtkWidget* scrolled = gtk_scrolled_window_new(nullptr, nullptr);
+    GtkWidget* text = gtk_text_view_new();
+    gtk_text_view_set_monospace(GTK_TEXT_VIEW(text), true);
+    gtk_text_buffer_set_text(gtk_text_view_get_buffer(GTK_TEXT_VIEW(text)), editorText == nullptr ? "" : editorText, -1);
+    gtk_container_add(GTK_CONTAINER(scrolled), text);
+    gtk_box_pack_start(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), scrolled, true, true, 0);
+    auto* state = new AttributeState{list, account, text};
+    g_signal_connect(dialog, "response", G_CALLBACK(+[](GtkDialog* responseDialog, gint response, gpointer userData) {
+        auto* state = static_cast<AttributeState*>(userData);
+        if (response == GTK_RESPONSE_ACCEPT) {
+            GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(state->text));
+            GtkTextIter start;
+            GtkTextIter end;
+            gtk_text_buffer_get_bounds(buffer, &start, &end);
+            gchar* value = gtk_text_buffer_get_text(buffer, &start, &end, false);
+            char* properties = rc_parse_player_attributes_text(value == nullptr ? "" : value);
+            if (properties != nullptr) {
+                rc_set_player_attributes(state->list->connection, state->account.c_str(), properties);
+                free(properties);
+            }
+            g_free(value);
+        } else gtk_widget_destroy(GTK_WIDGET(responseDialog));
+    }), state);
+    g_signal_connect(dialog, "destroy", G_CALLBACK(+[](GtkWidget*, gpointer userData) { delete static_cast<AttributeState*>(userData); }), state);
+    gtk_widget_show_all(dialog);
 }
 gboolean TPlayerList::onPMBlink(gpointer data) { TPlayerList* list = static_cast<TPlayerList*>(data); list->pmIconsVisible = !list->pmIconsVisible; list->updatePMIcons(); return G_SOURCE_CONTINUE; }
 void TPlayerList::onPMServers(int, void* data) { static_cast<TPlayerList*>(data)->refreshRemoteLists(); }
@@ -543,6 +579,15 @@ void TPlayerList::editAccess() {
     int playerId = 0;
     gtk_tree_model_get(model, &row, PlayerAccountColumn, &account, PlayerIdColumn, &playerId, -1);
     if (account != nullptr && *account != '\0' && playerId != 0) { rc_request_ban_types(connection); rc_request_player_ban(connection, account, playerId); }
+    g_free(account);
+}
+void TPlayerList::editAttributes() {
+    GtkTreeModel* model = nullptr;
+    GtkTreeIter row;
+    if (!gtk_tree_selection_get_selected(gtk_tree_view_get_selection(GTK_TREE_VIEW(tree)), &model, &row)) return;
+    gchar* account = nullptr;
+    gtk_tree_model_get(model, &row, PlayerAccountColumn, &account, -1);
+    if (account != nullptr && *account != '\0') rc_request_player_attrs(connection, account);
     g_free(account);
 }
 
