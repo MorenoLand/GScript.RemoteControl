@@ -30,6 +30,7 @@ private:
     static gboolean onGraphicalButton(GtkWidget*, GdkEventButton*, gpointer data);
     static gboolean onEditKey(GtkWidget*, GdkEventKey*, gpointer data);
     static gboolean onDelete(GtkWidget*, GdkEvent*, gpointer data);
+    static void onGraphicalAllocate(GtkWidget*, GdkRectangle*, gpointer data);
     static gboolean processEvents(gpointer data);
     static void onConnected(void* data);
     static void onDisconnected(const char* reason, void* data);
@@ -39,6 +40,7 @@ private:
     void appendChat(const std::string& message);
     void appendChannelMessage(const std::string& channel, const std::string& message);
     void configureChatField(GtkWidget* field);
+    void applyEmotes(GtkTextBuffer* buffer, gint startOffset, const std::string& message);
     bool applyAlertTag(std::string& message);
     void send();
     void addMenuItem(GtkWidget* menu, const char* label, GCallback callback = nullptr);
@@ -49,10 +51,15 @@ private:
     GtkWidget* chatField = nullptr;
     GtkWidget* notebook = nullptr;
     GtkWidget* graphicalFixed = nullptr;
+    GtkWidget* backgroundImage = nullptr;
     GtkWidget* editField = nullptr;
     GtkWidget* serverLabel = nullptr;
     GtkWidget* playersLabel = nullptr;
     std::array<GtkWidget*, 12> graphicalButtons{};
+    GdkPixbuf* kappaEmote = nullptr;
+    GdkPixbuf* pmNormalEmote = nullptr;
+    GdkPixbuf* pacmanEmote = nullptr;
+    GdkPixbuf* backgroundPixbuf = nullptr;
     void* connection = nullptr;
     guint eventSource = 0;
     gint64 nextNcConnectAttempt = 0;

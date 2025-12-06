@@ -7,6 +7,9 @@
 #include <grclib.h>
 
 TRemoteFrame::TRemoteFrame(const RC3::RCOptions& nextOptions, const std::filesystem::path& nextApplicationDirectory, std::function<void()> onClose) : onCloseCallback(std::move(onClose)), options(nextOptions), applicationDirectory(nextApplicationDirectory) {
+    kappaEmote = gdk_pixbuf_new_from_file((applicationDirectory / "images" / "emote_kappa.png").string().c_str(), nullptr);
+    pmNormalEmote = gdk_pixbuf_new_from_file((applicationDirectory / "images" / "pmicon_normal.png").string().c_str(), nullptr);
+    pacmanEmote = gdk_pixbuf_new_from_file((applicationDirectory / "images" / "emote_pacman.png").string().c_str(), nullptr);
     window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
     gtk_widget_set_name(window, "RemoteFrame");
     gtk_window_set_title(GTK_WINDOW(window), (std::string("Remote Control ") + RC3_BUILD_DATE).c_str());
@@ -46,15 +49,13 @@ TRemoteFrame::TRemoteFrame(const RC3::RCOptions& nextOptions, const std::filesys
     } else {
         GtkWidget* fixed = gtk_fixed_new();
         graphicalFixed = fixed;
-        gtk_widget_set_size_request(fixed, 500, 330);
         const std::filesystem::path background = applicationDirectory / "images" / options.background;
         GError* imageError = nullptr;
-        GdkPixbuf* backgroundPixbuf = gdk_pixbuf_new_from_file_at_scale(background.string().c_str(), 500, 165, false, &imageError);
-        GtkWidget* image = gtk_image_new_from_pixbuf(backgroundPixbuf);
-        if (backgroundPixbuf != nullptr) g_object_unref(backgroundPixbuf);
+        backgroundPixbuf = gdk_pixbuf_new_from_file(background.string().c_str(), &imageError);
+        backgroundImage = gtk_image_new_from_pixbuf(backgroundPixbuf);
         if (imageError != nullptr) g_error_free(imageError);
-        gtk_widget_set_size_request(image, 500, 165);
-        gtk_fixed_put(GTK_FIXED(fixed), image, 0, 0);
+        gtk_widget_set_size_request(backgroundImage, 500, 165);
+        gtk_fixed_put(GTK_FIXED(fixed), backgroundImage, 0, 0);
         const int positions[12][2] = {{5, 15}, {5, 48}, {38, 15}, {71, 15}, {394, 15}, {427, 15}, {460, 15}, {460, 48}, {460, 81}, {460, 114}, {427, 114}, {394, 114}};
         for (int index = 0; index < 12; ++index) {
             GtkWidget* button = gtk_event_box_new();
@@ -87,6 +88,7 @@ TRemoteFrame::TRemoteFrame(const RC3::RCOptions& nextOptions, const std::filesys
         addLabel(options.labelplayers, 10, 110, &playersLabel);
         pango_font_description_free(labelFont);
         gtk_box_pack_start(GTK_BOX(root), fixed, true, true, 0);
+        g_signal_connect(fixed, "size-allocate", G_CALLBACK(onGraphicalAllocate), this);
     }
 
     notebook = gtk_notebook_new();
@@ -126,6 +128,10 @@ TRemoteFrame::TRemoteFrame(const RC3::RCOptions& nextOptions, const std::filesys
 TRemoteFrame::~TRemoteFrame() {
     if (eventSource != 0) g_source_remove(eventSource);
     if (window != nullptr) gtk_widget_destroy(window);
+    if (backgroundPixbuf != nullptr) g_object_unref(backgroundPixbuf);
+    if (kappaEmote != nullptr) g_object_unref(kappaEmote);
+    if (pmNormalEmote != nullptr) g_object_unref(pmNormalEmote);
+    if (pacmanEmote != nullptr) g_object_unref(pacmanEmote);
     delete playerList;
     delete fileBrowser;
     delete classList;
@@ -211,6 +217,20 @@ gboolean TRemoteFrame::onDelete(GtkWidget*, GdkEvent*, gpointer data) {
     return true;
 }
 
+void TRemoteFrame::onGraphicalAllocate(GtkWidget*, GdkRectangle* allocation, gpointer data) {
+    TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
+    if (allocation->width <= 0 || allocation->height <= 0) return;
+    if (frame->backgroundPixbuf != nullptr) {
+        GdkPixbuf* scaled = gdk_pixbuf_scale_simple(frame->backgroundPixbuf, allocation->width, 165, GDK_INTERP_BILINEAR);
+        gtk_image_set_from_pixbuf(GTK_IMAGE(frame->backgroundImage), scaled);
+        if (scaled != nullptr) g_object_unref(scaled);
+    }
+    gtk_widget_set_size_request(frame->backgroundImage, allocation->width, 165);
+    const int positions[12][2] = {{5, 15}, {5, 48}, {38, 15}, {71, 15}, {394, 15}, {427, 15}, {460, 15}, {460, 48}, {460, 81}, {460, 114}, {427, 114}, {394, 114}};
+    for (int index = 4; index < 12; ++index) gtk_fixed_move(GTK_FIXED(frame->graphicalFixed), frame->graphicalButtons[index], allocation->width - (500 - positions[index][0]), positions[index][1]);
+    gtk_widget_set_size_request(frame->notebook, allocation->width, MAX(194, allocation->height - 136));
+}
+
 gboolean TRemoteFrame::processEvents(gpointer data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
     if (frame->connection != nullptr) {
@@ -270,10 +290,14 @@ void TRemoteFrame::appendChat(const std::string& message) {
     GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(chatField));
     GtkTextIter end;
     gtk_text_buffer_get_end_iter(buffer, &end);
+    const gint startOffset = gtk_text_iter_get_offset(&end);
     if (colorAlert) {
         GtkTextTag* tag = gtk_text_buffer_create_tag(buffer, nullptr, "foreground", options.coloralert.c_str(), "weight", PANGO_WEIGHT_BOLD, nullptr);
         gtk_text_buffer_insert_with_tags(buffer, &end, (display + "\n").c_str(), -1, tag, nullptr);
-    } else gtk_text_buffer_insert(buffer, &end, (display + "\n").c_str(), -1);
+    } else {
+        gtk_text_buffer_insert(buffer, &end, (display + "\n").c_str(), -1);
+        applyEmotes(buffer, startOffset, display);
+    }
     if (alert) {
         gtk_window_set_urgency_hint(GTK_WINDOW(window), true);
         gdk_beep();
@@ -295,6 +319,26 @@ void TRemoteFrame::configureChatField(GtkWidget* field) {
     gtk_css_provider_load_from_data(provider, css.c_str(), -1, nullptr);
     gtk_style_context_add_provider(gtk_widget_get_style_context(field), GTK_STYLE_PROVIDER(provider), GTK_STYLE_PROVIDER_PRIORITY_USER);
     g_object_unref(provider);
+}
+
+void TRemoteFrame::applyEmotes(GtkTextBuffer* buffer, gint startOffset, const std::string& message) {
+    const struct { const char* text; GdkPixbuf* pixbuf; } emotes[] = {{"Kappa", kappaEmote}, {"PMNormal", pmNormalEmote}, {":v", pacmanEmote}};
+    for (const auto& emote : emotes) {
+        if (emote.pixbuf == nullptr) continue;
+        std::size_t position = message.find(emote.text);
+        gint inserted = 0;
+        while (position != std::string::npos) {
+            GtkTextIter start;
+            GtkTextIter end;
+            gtk_text_buffer_get_iter_at_offset(buffer, &start, startOffset + static_cast<gint>(position) + inserted);
+            gtk_text_buffer_get_iter_at_offset(buffer, &end, startOffset + static_cast<gint>(position + std::char_traits<char>::length(emote.text)) + inserted);
+            GtkTextTag* hidden = gtk_text_buffer_create_tag(buffer, nullptr, "invisible", true, nullptr);
+            gtk_text_buffer_apply_tag(buffer, hidden, &start, &end);
+            gtk_text_buffer_insert_pixbuf(buffer, &start, emote.pixbuf);
+            ++inserted;
+            position = message.find(emote.text, position + std::char_traits<char>::length(emote.text));
+        }
+    }
 }
 
 void TRemoteFrame::appendChannelMessage(const std::string& channel, const std::string& message) {
@@ -320,10 +364,14 @@ void TRemoteFrame::appendChannelMessage(const std::string& channel, const std::s
     GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(field));
     GtkTextIter end;
     gtk_text_buffer_get_end_iter(buffer, &end);
+    const gint startOffset = gtk_text_iter_get_offset(&end);
     if (colorAlert) {
         GtkTextTag* tag = gtk_text_buffer_create_tag(buffer, nullptr, "foreground", options.coloralert.c_str(), "weight", PANGO_WEIGHT_BOLD, nullptr);
         gtk_text_buffer_insert_with_tags(buffer, &end, (display + "\n").c_str(), -1, tag, nullptr);
-    } else gtk_text_buffer_insert(buffer, &end, (display + "\n").c_str(), -1);
+    } else {
+        gtk_text_buffer_insert(buffer, &end, (display + "\n").c_str(), -1);
+        applyEmotes(buffer, startOffset, display);
+    }
     if (alert) {
         gtk_window_set_urgency_hint(GTK_WINDOW(window), true);
         gdk_beep();

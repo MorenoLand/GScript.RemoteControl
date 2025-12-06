@@ -86,7 +86,7 @@ int main(int argc, char** argv) {
     copySyntaxFiles(applicationDirectory);
     RC3::loadRCOptions(options, applicationDirectory);
     applyDarkTheme();
-    GtkStatusIcon* trayIcon = gtk_status_icon_new_from_file((applicationDirectory / "images" / "rcicon_gold.png").string().c_str());
+    GtkStatusIcon* trayIcon = gtk_status_icon_new_from_file((applicationDirectory / "images" / "rcicon.png").string().c_str());
     gtk_status_icon_set_tooltip_text(trayIcon, "Graal RemoteControl");
     g_signal_connect(trayIcon, "activate", G_CALLBACK(onTrayActivate), nullptr);
     g_signal_connect(trayIcon, "popup-menu", G_CALLBACK(onTrayPopup), nullptr);
