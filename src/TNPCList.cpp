@@ -94,14 +94,17 @@ gboolean TNPCList::onTreeButton(GtkWidget* widget, GdkEventButton* event, gpoint
     gtk_tree_path_free(path);
     GtkWidget* menu = gtk_menu_new();
     GtkWidget* editScript = gtk_menu_item_new_with_label("Edit Script");
+    GtkWidget* editFlags = gtk_menu_item_new_with_label("Edit Flags");
     GtkWidget* separator = gtk_separator_menu_item_new();
     GtkWidget* reset = gtk_menu_item_new_with_label("Reset");
     GtkWidget* remove = gtk_menu_item_new_with_label("Delete");
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), editScript);
+    gtk_menu_shell_append(GTK_MENU_SHELL(menu), editFlags);
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), separator);
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), reset);
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), remove);
     g_signal_connect(editScript, "activate", G_CALLBACK(onEditScript), list);
+    g_signal_connect(editFlags, "activate", G_CALLBACK(onEditFlags), list);
     g_signal_connect(reset, "activate", G_CALLBACK(onReset), list);
     g_signal_connect(remove, "activate", G_CALLBACK(onDeleteNPC), list);
     gtk_widget_show_all(menu);
@@ -114,12 +117,19 @@ void TNPCList::onEditScript(GtkMenuItem*, gpointer data) {
     rc_on_script_received(list->connection, onNPCScript, list);
     rc_request_npc_script(list->connection, list->selectedNPCId);
 }
+void TNPCList::onEditFlags(GtkMenuItem*, gpointer data) {
+    TNPCList* list = static_cast<TNPCList*>(data);
+    if (list->selectedNPCId < 0) return;
+    rc_on_npc_flags(list->connection, onNPCFlags, list);
+    rc_get_npc_flags(list->connection, list->selectedNPCId);
+}
 void TNPCList::onNPCScript(const char* scriptType, const char* name, int id, const char* script, void* data) {
     if (scriptType == nullptr || std::string(scriptType) != "npc") return;
     TNPCList* list = static_cast<TNPCList*>(data);
     list->showScriptEditor(name == nullptr ? "NPC" : name, id, script == nullptr ? "" : script);
     TScriptList::restoreScriptReceiver(list->connection);
 }
+void TNPCList::onNPCFlags(int id, const char* flags, void* data) { static_cast<TNPCList*>(data)->showFlagsEditor(id, flags == nullptr ? "" : flags); }
 void TNPCList::onReset(GtkMenuItem*, gpointer data) {
     TNPCList* list = static_cast<TNPCList*>(data);
     if (list->selectedNPCId >= 0) rc_reset_npc(list->connection, list->selectedNPCId);
@@ -170,6 +180,32 @@ void TNPCList::showScriptEditor(const char* name, int id, const char* script) {
         } else gtk_widget_destroy(GTK_WIDGET(responseDialog));
     }), state);
     g_signal_connect(dialog, "destroy", G_CALLBACK(+[](GtkWidget*, gpointer data) { delete static_cast<EditorState*>(data); }), state);
+    gtk_widget_show_all(dialog);
+}
+void TNPCList::showFlagsEditor(int id, const char* flags) {
+    struct FlagState { TNPCList* list; int id; GtkWidget* text; };
+    GtkWidget* dialog = gtk_dialog_new_with_buttons("Edit Flags", GTK_WINDOW(window), GTK_DIALOG_DESTROY_WITH_PARENT, "Cancel", GTK_RESPONSE_CANCEL, "Save", GTK_RESPONSE_ACCEPT, nullptr);
+    gtk_window_set_default_size(GTK_WINDOW(dialog), 500, 360);
+    GtkWidget* scrolled = gtk_scrolled_window_new(nullptr, nullptr);
+    GtkWidget* text = gtk_text_view_new();
+    gtk_text_view_set_monospace(GTK_TEXT_VIEW(text), true);
+    gtk_text_buffer_set_text(gtk_text_view_get_buffer(GTK_TEXT_VIEW(text)), flags, -1);
+    gtk_container_add(GTK_CONTAINER(scrolled), text);
+    gtk_box_pack_start(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), scrolled, true, true, 0);
+    auto* state = new FlagState{this, id, text};
+    g_signal_connect(dialog, "response", G_CALLBACK(+[](GtkDialog* responseDialog, gint response, gpointer data) {
+        auto* state = static_cast<FlagState*>(data);
+        if (response == GTK_RESPONSE_ACCEPT) {
+            GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(state->text));
+            GtkTextIter start;
+            GtkTextIter end;
+            gtk_text_buffer_get_bounds(buffer, &start, &end);
+            gchar* content = gtk_text_buffer_get_text(buffer, &start, &end, false);
+            rc_set_npc_flags(state->list->connection, state->id, content == nullptr ? "" : content);
+            g_free(content);
+        } else gtk_widget_destroy(GTK_WIDGET(responseDialog));
+    }), state);
+    g_signal_connect(dialog, "destroy", G_CALLBACK(+[](GtkWidget*, gpointer data) { delete static_cast<FlagState*>(data); }), state);
     gtk_widget_show_all(dialog);
 }
 void TNPCList::onClose(GtkButton*, gpointer data) { gtk_widget_hide(static_cast<TNPCList*>(data)->window); }
