@@ -96,6 +96,7 @@ gboolean TNPCList::onTreeButton(GtkWidget* widget, GdkEventButton* event, gpoint
     GtkWidget* editScript = gtk_menu_item_new_with_label("Edit Script");
     GtkWidget* editFlags = gtk_menu_item_new_with_label("Edit Flags");
     GtkWidget* separator = gtk_separator_menu_item_new();
+    GtkWidget* warp = gtk_menu_item_new_with_label("Warp");
     GtkWidget* reset = gtk_menu_item_new_with_label("Reset");
     GtkWidget* remove = gtk_menu_item_new_with_label("Delete");
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), editScript);
@@ -103,8 +104,11 @@ gboolean TNPCList::onTreeButton(GtkWidget* widget, GdkEventButton* event, gpoint
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), separator);
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), reset);
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), remove);
+    gtk_menu_shell_append(GTK_MENU_SHELL(menu), gtk_separator_menu_item_new());
+    gtk_menu_shell_append(GTK_MENU_SHELL(menu), warp);
     g_signal_connect(editScript, "activate", G_CALLBACK(onEditScript), list);
     g_signal_connect(editFlags, "activate", G_CALLBACK(onEditFlags), list);
+    g_signal_connect(warp, "activate", G_CALLBACK(onWarp), list);
     g_signal_connect(reset, "activate", G_CALLBACK(onReset), list);
     g_signal_connect(remove, "activate", G_CALLBACK(onDeleteNPC), list);
     gtk_widget_show_all(menu);
@@ -122,6 +126,36 @@ void TNPCList::onEditFlags(GtkMenuItem*, gpointer data) {
     if (list->selectedNPCId < 0) return;
     rc_on_npc_flags(list->connection, onNPCFlags, list);
     rc_get_npc_flags(list->connection, list->selectedNPCId);
+}
+void TNPCList::onWarp(GtkMenuItem*, gpointer data) {
+    TNPCList* list = static_cast<TNPCList*>(data);
+    if (list->selectedNPCId < 0) return;
+    GtkWidget* dialog = gtk_dialog_new_with_buttons("Warp NPC", GTK_WINDOW(list->window), GTK_DIALOG_MODAL, "Cancel", GTK_RESPONSE_CANCEL, "Warp", GTK_RESPONSE_OK, nullptr);
+    GtkWidget* grid = gtk_grid_new();
+    gtk_container_set_border_width(GTK_CONTAINER(grid), 8);
+    gtk_grid_set_row_spacing(GTK_GRID(grid), 6);
+    gtk_grid_set_column_spacing(GTK_GRID(grid), 8);
+    const char* labels[] = {"Level:", "X:", "Y:"};
+    const char* keys[] = {"level", "x", "y"};
+    for (int index = 0; index < 3; ++index) {
+        GtkWidget* entry = gtk_entry_new();
+        gtk_entry_set_text(GTK_ENTRY(entry), index == 0 ? "" : "0");
+        gtk_grid_attach(GTK_GRID(grid), gtk_label_new(labels[index]), 0, index, 1, 1);
+        gtk_grid_attach(GTK_GRID(grid), entry, 1, index, 1, 1);
+        g_object_set_data(G_OBJECT(dialog), keys[index], entry);
+    }
+    g_object_set_data(G_OBJECT(dialog), "npc-list", list);
+    gtk_container_add(GTK_CONTAINER(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), grid);
+    g_signal_connect(dialog, "response", G_CALLBACK(onWarpResponse), list);
+    gtk_widget_show_all(dialog);
+}
+void TNPCList::onWarpResponse(GtkDialog* dialog, gint response, gpointer data) {
+    if (response == GTK_RESPONSE_OK) {
+        TNPCList* list = static_cast<TNPCList*>(data);
+        const auto value = [dialog](const char* key) { return gtk_entry_get_text(GTK_ENTRY(g_object_get_data(G_OBJECT(dialog), key))); };
+        rc_warp_npc(list->connection, list->selectedNPCId, std::strtof(value("x"), nullptr), std::strtof(value("y"), nullptr), value("level"));
+    }
+    gtk_widget_destroy(GTK_WIDGET(dialog));
 }
 void TNPCList::onNPCScript(const char* scriptType, const char* name, int id, const char* script, void* data) {
     if (scriptType == nullptr || std::string(scriptType) != "npc") return;
