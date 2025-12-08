@@ -1,16 +1,17 @@
 #pragma once
 
 #include <gtk/gtk.h>
+#include <filesystem>
 #include <map>
 #include <string>
 #include <vector>
 
 class TPlayerList {
 public:
-    TPlayerList();
+    explicit TPlayerList(const std::filesystem::path& applicationDirectory);
     ~TPlayerList();
     void open(void* connection);
-    void notePrivateMessage(int playerId, const char* type);
+    void notePrivateMessage(int playerId, const char* account, const char* nick, const char* message, const char* type);
 private:
     static void onRefresh(GtkButton*, gpointer data);
     static void onMassPM(GtkButton*, gpointer data);
@@ -34,6 +35,8 @@ private:
     void sendAdminMessage();
     void editAccess();
     void updatePMIcons();
+    void openPrivateMessage(int playerId, const char* account, const char* nick);
+    void appendHistory(const char* account, const char* direction, const char* message) const;
     GdkPixbuf* pmIconFor(const std::string& type) const;
     std::vector<int> playerIds() const;
     GtkWidget* window = nullptr;
@@ -56,4 +59,5 @@ private:
     guint pmBlinkSource = 0;
     bool pmIconsVisible = true;
     void* connection = nullptr;
+    std::filesystem::path applicationDirectory;
 };

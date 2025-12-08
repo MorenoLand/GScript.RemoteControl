@@ -183,7 +183,7 @@ void TRemoteFrame::onSend(GtkButton*, gpointer data) { static_cast<TRemoteFrame*
 void TRemoteFrame::onPlayerList(GtkMenuItem*, gpointer data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
     if (frame->connection == nullptr) return;
-    if (frame->playerList == nullptr) frame->playerList = new TPlayerList();
+    if (frame->playerList == nullptr) frame->playerList = new TPlayerList(frame->applicationDirectory);
     frame->playerList->open(frame->connection);
 }
 
@@ -334,10 +334,10 @@ void TRemoteFrame::onIrcMessage(const char* channel, const char* line, void* dat
     static_cast<TRemoteFrame*>(data)->appendChannelMessage(channel == nullptr ? "" : channel, line == nullptr ? "" : line);
 }
 
-void TRemoteFrame::onPrivateMessage(int playerId, const char*, const char*, const char*, const char* type, void* data) {
+void TRemoteFrame::onPrivateMessage(int playerId, const char* account, const char* nick, const char* message, const char* type, void* data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
-    if (frame->playerList == nullptr) frame->playerList = new TPlayerList();
-    frame->playerList->notePrivateMessage(playerId, type);
+    if (frame->playerList == nullptr) frame->playerList = new TPlayerList(frame->applicationDirectory);
+    frame->playerList->notePrivateMessage(playerId, account, nick, message, type);
     rc3_begin_pm_tray_alert();
 }
 
