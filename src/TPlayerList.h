@@ -26,6 +26,7 @@ private:
     static void onBanData(const char* account, const char* computerId, const char* details, void* data);
     static void onBanListData(const char* type, const char* account, const char* content, void* data);
     static void onPlayerAttributes(const char* account, const char* properties, const char* editorText, void* data);
+    static void onPlayerText(const char* type, const char* account, const char* content, void* data);
     static gboolean onPMBlink(gpointer data);
     static void onPMServers(int count, void* data);
     static void onPMGuilds(int count, void* data);
@@ -41,6 +42,7 @@ private:
     void sendAdminMessage();
     void editAccess();
     void editAttributes();
+    void editComments();
     void openSelectedPrivateMessage();
     void openSelectedHistory();
     void disconnectSelectedPlayer();

@@ -237,7 +237,7 @@ TPlayerList::TPlayerList(const std::filesystem::path& nextApplicationDirectory) 
 }
 
 TPlayerList::~TPlayerList() { if (pmBlinkSource != 0) g_source_remove(pmBlinkSource); delete localBanWindow; if (onlineIcon != nullptr) g_object_unref(onlineIcon); if (channelIcon != nullptr) g_object_unref(channelIcon); if (channelClosedIcon != nullptr) g_object_unref(channelClosedIcon); if (pmNormalIcon != nullptr) g_object_unref(pmNormalIcon); if (pmGuildIcon != nullptr) g_object_unref(pmGuildIcon); if (pmAdminIcon != nullptr) g_object_unref(pmAdminIcon); if (pmMassIcon != nullptr) g_object_unref(pmMassIcon); if (window != nullptr) gtk_widget_destroy(window); }
-void TPlayerList::open(void* nextConnection) { connection = nextConnection; rc_on_pm_servers_updated(connection, onPMServers, this); rc_on_pm_guilds_updated(connection, onPMGuilds, this); rc_on_pm_server_players(connection, onPMServerPlayers, this); rc_on_ban_data(connection, onBanData, this); rc_on_ban_list_data(connection, onBanListData, this); rc_on_player_attributes(connection, onPlayerAttributes, this); refresh(); gtk_widget_show_all(window); gtk_window_present(GTK_WINDOW(window)); }
+void TPlayerList::open(void* nextConnection) { connection = nextConnection; rc_on_pm_servers_updated(connection, onPMServers, this); rc_on_pm_guilds_updated(connection, onPMGuilds, this); rc_on_pm_server_players(connection, onPMServerPlayers, this); rc_on_ban_data(connection, onBanData, this); rc_on_ban_list_data(connection, onBanListData, this); rc_on_player_attributes(connection, onPlayerAttributes, this); rc_on_player_text_data(connection, onPlayerText, this); refresh(); gtk_widget_show_all(window); gtk_window_present(GTK_WINDOW(window)); }
 void TPlayerList::onRefresh(GtkButton*, gpointer data) { static_cast<TPlayerList*>(data)->refresh(); }
 void TPlayerList::onMassPM(GtkButton*, gpointer data) { static_cast<TPlayerList*>(data)->sendMassPM(); }
 void TPlayerList::onAdminMessage(GtkButton*, gpointer data) { static_cast<TPlayerList*>(data)->sendAdminMessage(); }
@@ -279,13 +279,16 @@ gboolean TPlayerList::onButtonPress(GtkWidget* widget, GdkEventButton* event, gp
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), gtk_separator_menu_item_new());
     GtkWidget* access = gtk_menu_item_new_with_label("Edit Access");
     GtkWidget* attributes = gtk_menu_item_new_with_label("Edit Attributes");
+    GtkWidget* comments = gtk_menu_item_new_with_label("Edit Comments");
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), access);
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), attributes);
+    gtk_menu_shell_append(GTK_MENU_SHELL(menu), comments);
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), disconnect);
     g_signal_connect(privateMessage, "activate", G_CALLBACK(onPrivateMessageMenu), data);
     g_signal_connect(history, "activate", G_CALLBACK(onHistoryMenu), data);
     g_signal_connect(access, "activate", G_CALLBACK(onEditAccess), data);
     g_signal_connect(attributes, "activate", G_CALLBACK(+[](GtkMenuItem*, gpointer userData) { static_cast<TPlayerList*>(userData)->editAttributes(); }), data);
+    g_signal_connect(comments, "activate", G_CALLBACK(+[](GtkMenuItem*, gpointer userData) { static_cast<TPlayerList*>(userData)->editComments(); }), data);
     g_signal_connect(disconnect, "activate", G_CALLBACK(onDisconnectPlayer), data);
     gtk_widget_show_all(menu);
     gtk_menu_popup_at_pointer(GTK_MENU(menu), reinterpret_cast<GdkEvent*>(event));
@@ -337,6 +340,19 @@ void TPlayerList::onPlayerAttributes(const char* account, const char*, const cha
         } else gtk_widget_destroy(GTK_WIDGET(responseDialog));
     }), state);
     g_signal_connect(dialog, "destroy", G_CALLBACK(+[](GtkWidget*, gpointer userData) { delete static_cast<AttributeState*>(userData); }), state);
+    gtk_widget_show_all(dialog);
+}
+void TPlayerList::onPlayerText(const char* type, const char* account, const char* content, void* data) {
+    if (type == nullptr || std::string(type) != "comments" || account == nullptr) return;
+    TPlayerList* list = static_cast<TPlayerList*>(data);
+    struct TextState { TPlayerList* list; std::string account; GtkWidget* text; };
+    GtkWidget* dialog = gtk_dialog_new_with_buttons(("Edit Comments of " + std::string(account)).c_str(), GTK_WINDOW(list->window), GTK_DIALOG_DESTROY_WITH_PARENT, "Cancel", GTK_RESPONSE_CANCEL, "Save", GTK_RESPONSE_ACCEPT, nullptr);
+    GtkWidget* text = gtk_text_view_new();
+    gtk_text_buffer_set_text(gtk_text_view_get_buffer(GTK_TEXT_VIEW(text)), content == nullptr ? "" : content, -1);
+    gtk_box_pack_start(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), text, true, true, 0);
+    auto* state = new TextState{list, account, text};
+    g_signal_connect(dialog, "response", G_CALLBACK(+[](GtkDialog* responseDialog, gint response, gpointer userData) { auto* state = static_cast<TextState*>(userData); if (response == GTK_RESPONSE_ACCEPT) { GtkTextIter start; GtkTextIter end; GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(state->text)); gtk_text_buffer_get_bounds(buffer, &start, &end); gchar* value = gtk_text_buffer_get_text(buffer, &start, &end, false); rc_set_player_comments(state->list->connection, state->account.c_str(), value == nullptr ? "" : value); g_free(value); } else gtk_widget_destroy(GTK_WIDGET(responseDialog)); }), state);
+    g_signal_connect(dialog, "destroy", G_CALLBACK(+[](GtkWidget*, gpointer userData) { delete static_cast<TextState*>(userData); }), state);
     gtk_widget_show_all(dialog);
 }
 gboolean TPlayerList::onPMBlink(gpointer data) { TPlayerList* list = static_cast<TPlayerList*>(data); list->pmIconsVisible = !list->pmIconsVisible; list->updatePMIcons(); return G_SOURCE_CONTINUE; }
@@ -588,6 +604,15 @@ void TPlayerList::editAttributes() {
     gchar* account = nullptr;
     gtk_tree_model_get(model, &row, PlayerAccountColumn, &account, -1);
     if (account != nullptr && *account != '\0') rc_request_player_attrs(connection, account);
+    g_free(account);
+}
+void TPlayerList::editComments() {
+    GtkTreeModel* model = nullptr;
+    GtkTreeIter row;
+    if (!gtk_tree_selection_get_selected(gtk_tree_view_get_selection(GTK_TREE_VIEW(tree)), &model, &row)) return;
+    gchar* account = nullptr;
+    gtk_tree_model_get(model, &row, PlayerAccountColumn, &account, -1);
+    if (account != nullptr && *account != '\0') rc_request_player_comments(connection, account);
     g_free(account);
 }
 
