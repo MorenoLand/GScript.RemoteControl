@@ -78,6 +78,7 @@ TFileBrowserTree::TFileBrowserTree() {
     files = gtk_list_store_new(5, GDK_TYPE_PIXBUF, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING);
     folderView = gtk_tree_view_new_with_model(GTK_TREE_MODEL(folders));
     fileView = gtk_tree_view_new_with_model(GTK_TREE_MODEL(files));
+    gtk_tree_selection_set_mode(gtk_tree_view_get_selection(GTK_TREE_VIEW(fileView)), GTK_SELECTION_MULTIPLE);
     gtk_tree_view_set_headers_visible(GTK_TREE_VIEW(folderView), false);
     GtkTreeViewColumn* folderColumn = gtk_tree_view_column_new();
     GtkCellRenderer* image = gtk_cell_renderer_pixbuf_new();
@@ -216,13 +217,20 @@ gboolean TFileBrowserTree::onFileButtonPress(GtkWidget* widget, GdkEventButton* 
 }
 
 void TFileBrowserTree::onFileDragDataGet(GtkWidget* widget, GdkDragContext*, GtkSelectionData* selection, guint, guint, gpointer) {
+    GtkTreeSelection* selected = gtk_tree_view_get_selection(GTK_TREE_VIEW(widget));
     GtkTreeModel* model = nullptr;
-    GtkTreeIter row;
-    if (!gtk_tree_selection_get_selected(gtk_tree_view_get_selection(GTK_TREE_VIEW(widget)), &model, &row)) return;
-    gchar* path = nullptr;
-    gtk_tree_model_get(model, &row, FilePathColumn, &path, -1);
-    if (path != nullptr) gtk_selection_data_set(selection, gtk_selection_data_get_target(selection), 8, reinterpret_cast<const guchar*>(path), static_cast<gint>(strlen(path)));
-    g_free(path);
+    GList* rows = gtk_tree_selection_get_selected_rows(selected, &model);
+    std::string paths;
+    for (GList* node = rows; node != nullptr; node = node->next) {
+        GtkTreeIter row;
+        gchar* path = nullptr;
+        if (gtk_tree_model_get_iter(model, &row, static_cast<GtkTreePath*>(node->data))) gtk_tree_model_get(model, &row, FilePathColumn, &path, -1);
+        if (path != nullptr && *path != '\0') { if (!paths.empty()) paths += '\n'; paths += path; }
+        g_free(path);
+        gtk_tree_path_free(static_cast<GtkTreePath*>(node->data));
+    }
+    g_list_free(rows);
+    if (!paths.empty()) gtk_selection_data_set(selection, gtk_selection_data_get_target(selection), 8, reinterpret_cast<const guchar*>(paths.data()), static_cast<gint>(paths.size()));
 }
 
 void TFileBrowserTree::onDropDataReceived(GtkWidget* widget, GdkDragContext* context, gint x, gint y, GtkSelectionData* selection, guint info, guint time, gpointer data) {
@@ -246,8 +254,9 @@ void TFileBrowserTree::onDropDataReceived(GtkWidget* widget, GdkDragContext* con
         const guchar* source = gtk_selection_data_get_data(selection);
         const gint length = gtk_selection_data_get_length(selection);
         if (source != nullptr && length > 0) {
-            const std::string filePath(reinterpret_cast<const char*>(source), length);
-            success = rc_filebrowser_move(browser->connection, destination.c_str(), filePath.c_str()) != 0;
+            success = true;
+            std::istringstream files(std::string(reinterpret_cast<const char*>(source), length));
+            for (std::string filePath; std::getline(files, filePath);) if (!filePath.empty() && !rc_filebrowser_move(browser->connection, destination.c_str(), filePath.c_str())) { browser->appendLog(rc_last_error(browser->connection)); success = false; }
         }
     } else if (info == 2) {
         gchar** uris = g_uri_list_extract_uris(reinterpret_cast<const gchar*>(gtk_selection_data_get_data(selection)));
