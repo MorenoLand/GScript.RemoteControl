@@ -14,6 +14,7 @@ class TFileBrowserTree;
 class TScriptList;
 class TServerTextEditor;
 class TToallsWindow;
+class TAccountsWindow;
 
 class TRemoteFrame {
 public:
@@ -27,6 +28,8 @@ private:
     static void onSend(GtkButton*, gpointer data);
     static void onPlayerList(GtkMenuItem*, gpointer data);
     static void onToalls(GtkMenuItem*, gpointer data);
+    static void onAccounts(GtkMenuItem*, gpointer data);
+    static void onAccountList(const char* accounts, void* data);
     static void onFileBrowser(GtkMenuItem*, gpointer data);
     static void onClasses(GtkMenuItem*, gpointer data);
     static void onWeapons(GtkMenuItem*, gpointer data);
@@ -81,6 +84,7 @@ private:
     TServerTextEditor* serverFlagsEditor = nullptr;
     TServerTextEditor* folderConfigEditor = nullptr;
     TToallsWindow* toallsWindow = nullptr;
+    TAccountsWindow* accountsWindow = nullptr;
     const RC3::RCOptions& options;
     std::filesystem::path applicationDirectory;
     std::unordered_map<std::string, GtkWidget*> channelFields;

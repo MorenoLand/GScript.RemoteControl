@@ -5,6 +5,7 @@
 #include "TScriptList.h"
 #include "TServerTextEditor.h"
 #include "TToallsWindow.h"
+#include "TAccountsWindow.h"
 
 #include <grclib.h>
 
@@ -28,7 +29,7 @@ TRemoteFrame::TRemoteFrame(const RC3::RCOptions& nextOptions, const std::filesys
         GtkWidget* menu = gtk_menu_new();
         if (std::string(menuName) == "Players") {
             addMenuItem(menu, "Playerlist", G_CALLBACK(onPlayerList));
-            addMenuItem(menu, "Accounts");
+            addMenuItem(menu, "Accounts", G_CALLBACK(onAccounts));
             addMenuItem(menu, "Toalls", G_CALLBACK(onToalls));
         } else if (std::string(menuName) == "Files") {
             addMenuItem(menu, "File Browser", G_CALLBACK(onFileBrowser));
@@ -149,6 +150,7 @@ TRemoteFrame::~TRemoteFrame() {
     delete serverFlagsEditor;
     delete folderConfigEditor;
     delete toallsWindow;
+    delete accountsWindow;
 }
 
 void TRemoteFrame::open(void* nextConnection, const std::string& serverName) {
@@ -159,6 +161,7 @@ void TRemoteFrame::open(void* nextConnection, const std::string& serverName) {
     rc_on_message(connection, onMessage, this);
     rc_on_irc_message(connection, onIrcMessage, this);
     rc_on_server_data(connection, onServerData, this);
+    rc_on_account_list(connection, onAccountList, this);
     if (serverLabel != nullptr) gtk_label_set_text(GTK_LABEL(serverLabel), (options.labelservers + " " + serverName).c_str());
     if (eventSource == 0) eventSource = g_timeout_add(50, processEvents, this);
     gtk_widget_show_all(window);
@@ -186,6 +189,15 @@ void TRemoteFrame::onToalls(GtkMenuItem*, gpointer data) {
     if (frame->toallsWindow == nullptr) frame->toallsWindow = new TToallsWindow();
     frame->toallsWindow->open(frame->connection);
 }
+
+void TRemoteFrame::onAccounts(GtkMenuItem*, gpointer data) {
+    TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
+    if (frame->connection == nullptr) return;
+    if (frame->accountsWindow == nullptr) frame->accountsWindow = new TAccountsWindow();
+    frame->accountsWindow->open(frame->connection);
+}
+
+void TRemoteFrame::onAccountList(const char* accounts, void* data) { TRemoteFrame* frame = static_cast<TRemoteFrame*>(data); if (frame->accountsWindow != nullptr) frame->accountsWindow->setAccounts(accounts); }
 
 void TRemoteFrame::onFileBrowser(GtkMenuItem*, gpointer data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
@@ -343,6 +355,7 @@ void TRemoteFrame::addMenuItem(GtkWidget* menu, const char* label, GCallback cal
 void TRemoteFrame::graphicalAction(int index) {
     if (index == 0) onPlayerList(nullptr, this);
     else if (index == 1) onFileBrowser(nullptr, this);
+    else if (index == 2) onAccounts(nullptr, this);
     else if (index == 3) onToalls(nullptr, this);
     else if (index == 9) onClasses(nullptr, this);
     else if (index == 10) onWeapons(nullptr, this);
