@@ -20,6 +20,7 @@ TScriptList::TScriptList(std::string nextType) : type(std::move(nextType)) {
     gtk_tree_view_set_headers_visible(GTK_TREE_VIEW(tree), false);
     GtkCellRenderer* renderer = gtk_cell_renderer_text_new();
     gtk_tree_view_append_column(GTK_TREE_VIEW(tree), gtk_tree_view_column_new_with_attributes("Name", renderer, "text", 0, nullptr));
+    gtk_tree_sortable_set_sort_column_id(GTK_TREE_SORTABLE(store), 0, GTK_SORT_ASCENDING);
     gtk_container_add(GTK_CONTAINER(scrolled), tree);
     GtkWidget* buttons = gtk_button_box_new(GTK_ORIENTATION_HORIZONTAL);
     gtk_button_box_set_layout(GTK_BUTTON_BOX(buttons), GTK_BUTTONBOX_END);

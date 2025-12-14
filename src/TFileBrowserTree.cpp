@@ -91,6 +91,7 @@ TFileBrowserTree::TFileBrowserTree() {
     gtk_tree_view_column_add_attribute(nameColumn, text, "text", FilePathColumn);
     gtk_tree_view_column_set_resizable(nameColumn, true);
     gtk_tree_view_column_set_fixed_width(nameColumn, 290);
+    gtk_tree_view_column_set_sort_column_id(nameColumn, FilePathColumn);
     gtk_tree_view_append_column(GTK_TREE_VIEW(fileView), nameColumn);
     const struct { const char* name; int column; int width; } columns[] = {{"Rights", FileRightsColumn, 60}, {"Size", FileSizeColumn, 60}, {"Modified", FileModifiedColumn, 145}};
     for (const auto& column : columns) {
@@ -101,6 +102,7 @@ TFileBrowserTree::TFileBrowserTree() {
         gtk_tree_view_column_set_sort_column_id(viewColumn, column.column);
         gtk_tree_view_append_column(GTK_TREE_VIEW(fileView), viewColumn);
     }
+    gtk_tree_sortable_set_sort_column_id(GTK_TREE_SORTABLE(files), FilePathColumn, GTK_SORT_ASCENDING);
     gtk_container_add(GTK_CONTAINER(folderScrolled), folderView);
     gtk_container_add(GTK_CONTAINER(fileScrolled), fileView);
     gtk_paned_pack1(GTK_PANED(filePanes), folderScrolled, false, true);

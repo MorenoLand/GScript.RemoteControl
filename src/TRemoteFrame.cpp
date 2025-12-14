@@ -213,7 +213,6 @@ gboolean TRemoteFrame::onEditKey(GtkWidget*, GdkEventKey* event, gpointer data) 
 gboolean TRemoteFrame::onDelete(GtkWidget*, GdkEvent*, gpointer data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
     gtk_widget_hide(frame->window);
-    frame->onCloseCallback();
     return true;
 }
 
@@ -295,8 +294,19 @@ void TRemoteFrame::appendChat(const std::string& message) {
         GtkTextTag* tag = gtk_text_buffer_create_tag(buffer, nullptr, "foreground", options.coloralert.c_str(), "weight", PANGO_WEIGHT_BOLD, nullptr);
         gtk_text_buffer_insert_with_tags(buffer, &end, (display + "\n").c_str(), -1, tag, nullptr);
     } else {
-        gtk_text_buffer_insert(buffer, &end, (display + "\n").c_str(), -1);
-        applyEmotes(buffer, startOffset, display);
+        const std::size_t separator = display.find(':');
+        if (separator != std::string::npos && separator > 0) {
+            const std::string prefix = display.substr(0, separator + 1);
+            GtkTextTag* tag = gtk_text_buffer_create_tag(buffer, nullptr, "foreground", options.colorchatbold.c_str(), "weight", PANGO_WEIGHT_BOLD, nullptr);
+            gtk_text_buffer_insert_with_tags(buffer, &end, prefix.c_str(), -1, tag, nullptr);
+            GtkTextIter textStart;
+            gtk_text_buffer_get_end_iter(buffer, &textStart);
+            gtk_text_buffer_insert(buffer, &end, (display.substr(separator + 1) + "\n").c_str(), -1);
+            applyEmotes(buffer, gtk_text_iter_get_offset(&textStart), display.substr(separator + 1));
+        } else {
+            gtk_text_buffer_insert(buffer, &end, (display + "\n").c_str(), -1);
+            applyEmotes(buffer, startOffset, display);
+        }
     }
     if (alert) {
         gtk_window_set_urgency_hint(GTK_WINDOW(window), true);
@@ -369,8 +379,19 @@ void TRemoteFrame::appendChannelMessage(const std::string& channel, const std::s
         GtkTextTag* tag = gtk_text_buffer_create_tag(buffer, nullptr, "foreground", options.coloralert.c_str(), "weight", PANGO_WEIGHT_BOLD, nullptr);
         gtk_text_buffer_insert_with_tags(buffer, &end, (display + "\n").c_str(), -1, tag, nullptr);
     } else {
-        gtk_text_buffer_insert(buffer, &end, (display + "\n").c_str(), -1);
-        applyEmotes(buffer, startOffset, display);
+        const std::size_t separator = display.find(':');
+        if (separator != std::string::npos && separator > 0) {
+            const std::string prefix = display.substr(0, separator + 1);
+            GtkTextTag* tag = gtk_text_buffer_create_tag(buffer, nullptr, "foreground", options.colorchatbold.c_str(), "weight", PANGO_WEIGHT_BOLD, nullptr);
+            gtk_text_buffer_insert_with_tags(buffer, &end, prefix.c_str(), -1, tag, nullptr);
+            GtkTextIter textStart;
+            gtk_text_buffer_get_end_iter(buffer, &textStart);
+            gtk_text_buffer_insert(buffer, &end, (display.substr(separator + 1) + "\n").c_str(), -1);
+            applyEmotes(buffer, gtk_text_iter_get_offset(&textStart), display.substr(separator + 1));
+        } else {
+            gtk_text_buffer_insert(buffer, &end, (display + "\n").c_str(), -1);
+            applyEmotes(buffer, startOffset, display);
+        }
     }
     if (alert) {
         gtk_window_set_urgency_hint(GTK_WINDOW(window), true);

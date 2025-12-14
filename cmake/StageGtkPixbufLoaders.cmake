@@ -2,6 +2,10 @@ get_filename_component(runtimePrefix "${RC3_MINGW_RUNTIME_DIRECTORY}" DIRECTORY)
 set(sourceLoaderDirectory "${runtimePrefix}/lib/gdk-pixbuf-2.0/2.10.0/loaders")
 set(loaderDirectory "${RC3_OUTPUT_DIRECTORY}/lib/gdk-pixbuf-2.0/2.10.0/loaders")
 file(GLOB loaderModules "${sourceLoaderDirectory}/*.dll")
+file(MAKE_DIRECTORY "${loaderDirectory}")
+foreach(loaderModule IN LISTS loaderModules)
+    file(COPY "${loaderModule}" DESTINATION "${loaderDirectory}")
+endforeach()
 file(GLOB deployedLoaderModules "${loaderDirectory}/*.dll")
 
 file(GET_RUNTIME_DEPENDENCIES
