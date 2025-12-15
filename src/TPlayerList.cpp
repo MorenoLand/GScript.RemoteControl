@@ -152,7 +152,7 @@ TPlayerList::TPlayerList(const std::filesystem::path& nextApplicationDirectory) 
     g_object_unref(expanderProvider);
     gtk_notebook_append_page(GTK_NOTEBOOK(notebook), scrolled, gtk_label_new("This server "));
     GtkCssProvider* tabProvider = gtk_css_provider_new();
-    gtk_css_provider_load_from_data(tabProvider, "#PlayerList notebook > header > tabs > tab { border: 1px solid #777777; border-radius: 4px 4px 0 0; margin-right: 1px; } #PlayerList notebook > header > tabs > tab:checked { border-color: #aaaaaa; }", -1, nullptr);
+    gtk_css_provider_load_from_data(tabProvider, "#PlayerList notebook > header > tabs > tab { border: 1px solid #777777; border-bottom: 0; border-radius: 4px 4px 0 0; margin-right: 4px; padding: 4px 10px; } #PlayerList notebook > header > tabs > tab:checked { border-color: #aaaaaa; margin-bottom: -1px; }", -1, nullptr);
     gtk_style_context_add_provider_for_screen(gdk_screen_get_default(), GTK_STYLE_PROVIDER(tabProvider), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION + 1);
     g_object_unref(tabProvider);
     for (const char* title : {"Guilds", "Servers", "Channels"}) {
