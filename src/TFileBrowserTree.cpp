@@ -3,7 +3,6 @@
 #include <grclib.h>
 
 #include <string>
-#include <algorithm>
 #include <ctime>
 #include <iomanip>
 #include <sstream>
@@ -252,11 +251,7 @@ void TFileBrowserTree::refreshFolders() {
     RCFileBrowserFolder* entries = nullptr;
     const int count = rc_copy_filebrowser_folders(connection, &entries);
     gtk_tree_store_clear(folders);
-    std::vector<std::pair<std::string, std::string>> sorted;
-    sorted.reserve(count);
-    for (int index = 0; index < count; ++index) sorted.emplace_back(entries[index].pattern == nullptr ? "" : entries[index].pattern, entries[index].rights == nullptr ? "" : entries[index].rights);
-    std::sort(sorted.begin(), sorted.end(), [](const auto& left, const auto& right) { return left.first < right.first; });
-    for (const auto& entry : sorted) addFolder(entry.first.c_str(), entry.second.c_str());
+    for (int index = 0; index < count; ++index) addFolder(entries[index].pattern == nullptr ? "" : entries[index].pattern, entries[index].rights == nullptr ? "" : entries[index].rights);
     rc_free_filebrowser_folders(entries, count);
 }
 
@@ -322,4 +317,6 @@ void TFileBrowserTree::appendLog(const char* message) {
     GtkTextIter end;
     gtk_text_buffer_get_end_iter(buffer, &end);
     gtk_text_buffer_insert(buffer, &end, (std::string(message) + "\n").c_str(), -1);
+    gtk_text_buffer_get_end_iter(buffer, &end);
+    gtk_text_view_scroll_to_iter(GTK_TEXT_VIEW(log), &end, 0.0, false, 0.0, 1.0);
 }
