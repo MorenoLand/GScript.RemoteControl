@@ -205,9 +205,13 @@ void TFileBrowserTree::showItemMenu(GtkWidget* view, GdkEventButton* event, bool
     GtkWidget* menu = gtk_menu_new();
     if (!folder) {
         GtkWidget* download = gtk_menu_item_new_with_label("Download");
+        GtkWidget* move = gtk_menu_item_new_with_label("Move");
         gtk_menu_shell_append(GTK_MENU_SHELL(menu), download);
+        gtk_menu_shell_append(GTK_MENU_SHELL(menu), move);
         FileMenuItem* item = new FileMenuItem{this, itemPath};
+        FileMenuItem* moveItem = new FileMenuItem{this, itemPath};
         g_signal_connect_data(download, "activate", G_CALLBACK(onDownload), item, destroyFileMenuItem, G_CONNECT_AFTER);
+        g_signal_connect_data(move, "activate", G_CALLBACK(onMove), moveItem, destroyFileMenuItem, G_CONNECT_AFTER);
     }
     GtkWidget* rename = gtk_menu_item_new_with_label("Rename");
     GtkWidget* remove = gtk_menu_item_new_with_label("Delete");
@@ -243,6 +247,17 @@ void TFileBrowserTree::onRename(GtkMenuItem*, gpointer data) {
     gtk_widget_destroy(dialog);
 }
 
+void TFileBrowserTree::onMove(GtkMenuItem*, gpointer data) {
+    FileMenuItem* item = static_cast<FileMenuItem*>(data);
+    GtkWidget* dialog = gtk_dialog_new_with_buttons(("Move " + item->path).c_str(), GTK_WINDOW(item->browser->window), GTK_DIALOG_MODAL, "Cancel", GTK_RESPONSE_CANCEL, "OK", GTK_RESPONSE_ACCEPT, nullptr);
+    GtkWidget* entry = gtk_entry_new();
+    gtk_entry_set_text(GTK_ENTRY(entry), item->browser->currentFolder.c_str());
+    gtk_box_pack_start(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), entry, false, false, 8);
+    gtk_widget_show_all(dialog);
+    if (gtk_dialog_run(GTK_DIALOG(dialog)) == GTK_RESPONSE_ACCEPT && !rc_filebrowser_move(item->browser->connection, gtk_entry_get_text(GTK_ENTRY(entry)), item->path.c_str())) item->browser->appendLog(rc_last_error(item->browser->connection));
+    gtk_widget_destroy(dialog);
+}
+
 void TFileBrowserTree::refresh() {
     if (connection != nullptr && !rc_filebrowser_start(connection)) appendLog(rc_last_error(connection));
 }
@@ -259,6 +274,7 @@ void TFileBrowserTree::refreshFiles(const char* folder) {
     RCFileBrowserEntry* entries = nullptr;
     const int count = rc_copy_filebrowser_files(connection, &entries);
     gtk_list_store_clear(files);
+    currentFolder = folder == nullptr ? "" : folder;
     gtk_label_set_text(GTK_LABEL(folderPath), (std::string("Current Folder: ") + (folder == nullptr ? "" : folder)).c_str());
     for (int index = 0; index < count; ++index) {
         GtkTreeIter row;

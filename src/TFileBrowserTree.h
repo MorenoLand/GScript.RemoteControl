@@ -2,6 +2,8 @@
 
 #include <gtk/gtk.h>
 
+#include <string>
+
 class TFileBrowserTree {
 public:
     TFileBrowserTree();
@@ -15,6 +17,7 @@ private:
     static void onDownload(GtkMenuItem*, gpointer data);
     static void onDeleteItem(GtkMenuItem*, gpointer data);
     static void onRename(GtkMenuItem*, gpointer data);
+    static void onMove(GtkMenuItem*, gpointer data);
     static gboolean onDelete(GtkWidget*, GdkEvent*, gpointer data);
     static void onFolders(int count, void* data);
     static void onFiles(const char* folder, int count, void* data);
@@ -39,4 +42,5 @@ private:
     GdkPixbuf* graalFileIcon = nullptr;
     GdkPixbuf* gmapFileIcon = nullptr;
     void* connection = nullptr;
+    std::string currentFolder;
 };
