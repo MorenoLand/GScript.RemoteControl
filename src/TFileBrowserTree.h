@@ -18,6 +18,7 @@ private:
     static void onDeleteItem(GtkMenuItem*, gpointer data);
     static void onRename(GtkMenuItem*, gpointer data);
     static void onMove(GtkMenuItem*, gpointer data);
+    static void onUpload(GtkMenuItem*, gpointer data);
     static gboolean onDelete(GtkWidget*, GdkEvent*, gpointer data);
     static void onFolders(int count, void* data);
     static void onFiles(const char* folder, int count, void* data);

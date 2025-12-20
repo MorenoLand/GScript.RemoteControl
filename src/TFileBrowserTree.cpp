@@ -213,6 +213,10 @@ void TFileBrowserTree::showItemMenu(GtkWidget* view, GdkEventButton* event, bool
         g_signal_connect_data(download, "activate", G_CALLBACK(onDownload), item, destroyFileMenuItem, G_CONNECT_AFTER);
         g_signal_connect_data(move, "activate", G_CALLBACK(onMove), moveItem, destroyFileMenuItem, G_CONNECT_AFTER);
     }
+    GtkWidget* upload = gtk_menu_item_new_with_label("Upload file(s)");
+    gtk_menu_shell_append(GTK_MENU_SHELL(menu), upload);
+    g_signal_connect(upload, "activate", G_CALLBACK(onUpload), this);
+    gtk_menu_shell_append(GTK_MENU_SHELL(menu), gtk_separator_menu_item_new());
     GtkWidget* rename = gtk_menu_item_new_with_label("Rename");
     GtkWidget* remove = gtk_menu_item_new_with_label("Delete");
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), rename);
@@ -255,6 +259,31 @@ void TFileBrowserTree::onMove(GtkMenuItem*, gpointer data) {
     gtk_box_pack_start(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), entry, false, false, 8);
     gtk_widget_show_all(dialog);
     if (gtk_dialog_run(GTK_DIALOG(dialog)) == GTK_RESPONSE_ACCEPT && !rc_filebrowser_move(item->browser->connection, gtk_entry_get_text(GTK_ENTRY(entry)), item->path.c_str())) item->browser->appendLog(rc_last_error(item->browser->connection));
+    gtk_widget_destroy(dialog);
+}
+
+void TFileBrowserTree::onUpload(GtkMenuItem*, gpointer data) {
+    TFileBrowserTree* browser = static_cast<TFileBrowserTree*>(data);
+    GtkWidget* dialog = gtk_file_chooser_dialog_new("Upload file(s)", GTK_WINDOW(browser->window), GTK_FILE_CHOOSER_ACTION_OPEN, "Cancel", GTK_RESPONSE_CANCEL, "Upload", GTK_RESPONSE_ACCEPT, nullptr);
+    gtk_file_chooser_set_select_multiple(GTK_FILE_CHOOSER(dialog), true);
+    if (gtk_dialog_run(GTK_DIALOG(dialog)) == GTK_RESPONSE_ACCEPT) {
+        GSList* filenames = gtk_file_chooser_get_filenames(GTK_FILE_CHOOSER(dialog));
+        for (GSList* node = filenames; node != nullptr; node = node->next) {
+            gchar* contents = nullptr;
+            gsize length = 0;
+            GError* error = nullptr;
+            const gchar* filename = static_cast<const gchar*>(node->data);
+            if (!g_file_get_contents(filename, &contents, &length, &error)) {
+                browser->appendLog(error == nullptr ? "Unable to read selected file" : error->message);
+                if (error != nullptr) g_error_free(error);
+            } else {
+                if (!rc_upload_file(browser->connection, filename, contents, static_cast<int>(length))) browser->appendLog(rc_last_error(browser->connection));
+                g_free(contents);
+            }
+            g_free(node->data);
+        }
+        g_slist_free(filenames);
+    }
     gtk_widget_destroy(dialog);
 }
 
