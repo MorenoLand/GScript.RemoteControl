@@ -105,6 +105,8 @@ void TScriptList::showEditor(const char* name, const char* script) {
     gtk_container_add(GTK_CONTAINER(scrolled), editor);
     GtkWidget* content = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
     gtk_container_set_border_width(GTK_CONTAINER(content), 0);
+    gtk_box_set_spacing(GTK_BOX(content), 0);
+    gtk_widget_set_margin_top(scrolled, 0);
     gtk_box_pack_start(GTK_BOX(content), scrolled, true, true, 0);
     g_signal_connect(editor, "key-press-event", G_CALLBACK(+[](GtkWidget*, GdkEventKey* event, gpointer dialog) {
         if ((event->state & GDK_CONTROL_MASK) != 0 && (event->keyval == GDK_KEY_s || event->keyval == GDK_KEY_S)) {
