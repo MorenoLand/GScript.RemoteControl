@@ -118,7 +118,7 @@ TRemoteFrame::TRemoteFrame(const RC3::RCOptions& nextOptions, const std::filesys
     gtk_notebook_set_tab_detachable(GTK_NOTEBOOK(notebook), chatScrolled, true);
     gtk_notebook_set_tab_reorderable(GTK_NOTEBOOK(notebook), chatScrolled, true);
     GtkCssProvider* tabProvider = gtk_css_provider_new();
-    gtk_css_provider_load_from_data(tabProvider, "#RemoteFrame notebook > header.top, #RemoteFrame notebook > header.top > tabs, #RemoteFrame notebook > header.top > tabs > tab { min-height: 14px; margin: 0; padding: 0 8px; } #RemoteFrame notebook > header.top > tabs > tab label { margin: 0; padding: 0; font-size: 10px; }", -1, nullptr);
+    gtk_css_provider_load_from_data(tabProvider, "#RemoteFrame notebook, #RemoteFrame notebook > stack, #RemoteFrame notebook > stack > scrolledwindow { margin: 0; padding: 0; border: 0; } #RemoteFrame notebook > header.top, #RemoteFrame notebook > header.top > tabs, #RemoteFrame notebook > header.top > tabs > tab { min-height: 14px; margin: 0; padding: 0 8px; } #RemoteFrame notebook > header.top > tabs > tab label { margin: 0; padding: 0; font-size: 10px; }", -1, nullptr);
     gtk_style_context_add_provider(gtk_widget_get_style_context(window), GTK_STYLE_PROVIDER(tabProvider), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
     g_object_unref(tabProvider);
     if (graphicalFixed != nullptr) {
