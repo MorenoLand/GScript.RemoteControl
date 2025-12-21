@@ -19,7 +19,7 @@ TServerTextEditor::TServerTextEditor(Kind nextKind, const char* title) : kind(ne
     buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(text));
     gtk_text_view_set_monospace(GTK_TEXT_VIEW(text), true);
     gtk_container_add(GTK_CONTAINER(scrolled), text);
-    gtk_box_pack_start(GTK_BOX(root), scrolled, true, true, 5);
+    gtk_box_pack_start(GTK_BOX(root), scrolled, true, true, 0);
     GtkWidget* buttons = gtk_button_box_new(GTK_ORIENTATION_HORIZONTAL);
     gtk_button_box_set_layout(GTK_BUTTON_BOX(buttons), GTK_BUTTONBOX_END);
     GtkWidget* saveButton = gtk_button_new_with_label("Save");

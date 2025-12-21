@@ -13,6 +13,7 @@ TToallsWindow::TToallsWindow() {
     gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scrolled), GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
     gtk_scrolled_window_set_shadow_type(GTK_SCROLLED_WINDOW(scrolled), GTK_SHADOW_IN);
     chat = gtk_text_view_new();
+    gtk_widget_set_name(chat, "ChatField");
     gtk_text_view_set_left_margin(GTK_TEXT_VIEW(chat), 5);
     gtk_text_view_set_right_margin(GTK_TEXT_VIEW(chat), 5);
     gtk_text_view_set_editable(GTK_TEXT_VIEW(chat), false);
@@ -21,6 +22,7 @@ TToallsWindow::TToallsWindow() {
     gtk_container_add(GTK_CONTAINER(scrolled), chat);
     gtk_box_pack_start(GTK_BOX(root), scrolled, true, true, 0);
     entry = gtk_entry_new();
+    gtk_widget_set_name(entry, "EditField");
     gtk_box_pack_start(GTK_BOX(root), entry, false, false, 0);
     GtkWidget* buttons = gtk_button_box_new(GTK_ORIENTATION_HORIZONTAL);
     gtk_container_set_border_width(GTK_CONTAINER(buttons), 5);
@@ -29,6 +31,10 @@ TToallsWindow::TToallsWindow() {
     gtk_widget_set_size_request(close, 80, 24);
     gtk_container_add(GTK_CONTAINER(buttons), close);
     gtk_box_pack_start(GTK_BOX(root), buttons, false, false, 0);
+    GtkCssProvider* provider = gtk_css_provider_new();
+    gtk_css_provider_load_from_data(provider, "#ToallsWindow textview, #ToallsWindow textview text { background-color: #1e1e1e; color: #d4d4d4; } #ToallsWindow entry { background-color: #1e1e1e; color: #00ff00; }", -1, nullptr);
+    gtk_style_context_add_provider(gtk_widget_get_style_context(window), GTK_STYLE_PROVIDER(provider), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+    g_object_unref(provider);
     g_signal_connect(entry, "activate", G_CALLBACK(onSend), this);
     g_signal_connect(close, "clicked", G_CALLBACK(onClose), this);
     g_signal_connect(window, "delete-event", G_CALLBACK(onDelete), this);
