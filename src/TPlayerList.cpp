@@ -146,8 +146,8 @@ TPlayerList::TPlayerList(const std::filesystem::path& nextApplicationDirectory) 
         if (column.column == PlayerNickColumn) gtk_tree_view_column_set_fixed_width(viewColumn, 180);
         else if (column.column == PlayerAccountColumn || column.column == PlayerLevelColumn) gtk_tree_view_column_set_fixed_width(viewColumn, 120);
         else {
-            gtk_tree_view_column_set_fixed_width(viewColumn, 60);
             gtk_tree_view_column_set_alignment(viewColumn, 1.0F);
+            g_object_set(renderer, "xalign", 1.0F, nullptr);
         }
         gtk_tree_view_append_column(GTK_TREE_VIEW(tree), viewColumn);
     }
