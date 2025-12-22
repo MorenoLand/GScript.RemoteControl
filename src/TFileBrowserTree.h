@@ -15,6 +15,7 @@ private:
     static gboolean onFolderButtonPress(GtkWidget*, GdkEventButton*, gpointer data);
     static gboolean onFileButtonPress(GtkWidget*, GdkEventButton*, gpointer data);
     static void onDownload(GtkMenuItem*, gpointer data);
+    static void onEditAsText(GtkMenuItem*, gpointer data);
     static void onDeleteItem(GtkMenuItem*, gpointer data);
     static void onRename(GtkMenuItem*, gpointer data);
     static void onMove(GtkMenuItem*, gpointer data);
@@ -23,11 +24,13 @@ private:
     static void onFolders(int count, void* data);
     static void onFiles(const char* folder, int count, void* data);
     static void onMessage(const char* message, void* data);
+    static void onFileReceived(const char* path, const void* content, int length, void* data);
     void refresh();
     void refreshFolders();
     void refreshFiles(const char* folder);
     void addFolder(const char* pattern, const char* rights);
     void appendLog(const char* message);
+    void showTextEditor(const char* path, const void* content, int length);
     void showItemMenu(GtkWidget* view, GdkEventButton* event, bool folder);
     GtkWidget* window = nullptr;
     GtkWidget* folderPath = nullptr;
@@ -44,4 +47,5 @@ private:
     GdkPixbuf* gmapFileIcon = nullptr;
     void* connection = nullptr;
     std::string currentFolder;
+    std::string pendingEditPath;
 };
