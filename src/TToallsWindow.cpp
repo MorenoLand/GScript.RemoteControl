@@ -32,7 +32,7 @@ TToallsWindow::TToallsWindow() {
     gtk_container_add(GTK_CONTAINER(buttons), close);
     gtk_box_pack_start(GTK_BOX(root), buttons, false, false, 0);
     GtkCssProvider* provider = gtk_css_provider_new();
-    gtk_css_provider_load_from_data(provider, "#ToallsWindow, #ToallsWindow scrolledwindow, #ToallsWindow viewport, #ToallsWindow textview, #ToallsWindow textview text { background-color: #1e1e1e; color: #d4d4d4; } #ToallsWindow entry { background-color: #1e1e1e; color: #00ff00; }", -1, nullptr);
+    gtk_css_provider_load_from_data(provider, "window#ToallsWindow, window#ToallsWindow box, window#ToallsWindow scrolledwindow, window#ToallsWindow viewport, window#ToallsWindow textview.view, window#ToallsWindow textview.view text { background-color: #1e1e1e; color: #d4d4d4; } window#ToallsWindow entry { background-color: #1e1e1e; color: #00ff00; }", -1, nullptr);
     gtk_style_context_add_provider_for_screen(gdk_screen_get_default(), GTK_STYLE_PROVIDER(provider), GTK_STYLE_PROVIDER_PRIORITY_USER);
     g_object_unref(provider);
     GdkColor chatBackground;
