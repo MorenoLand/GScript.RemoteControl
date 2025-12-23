@@ -274,6 +274,7 @@ gboolean TPlayerList::onButtonPress(GtkWidget* widget, GdkEventButton* event, gp
     GtkWidget* privateMessage = gtk_menu_item_new_with_label("Private Message");
     GtkWidget* history = gtk_menu_item_new_with_label("History");
     GtkWidget* disconnect = gtk_menu_item_new_with_label("Disconnect");
+    GtkWidget* reset = gtk_menu_item_new_with_label("Reset");
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), privateMessage);
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), history);
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), gtk_separator_menu_item_new());
@@ -284,12 +285,14 @@ gboolean TPlayerList::onButtonPress(GtkWidget* widget, GdkEventButton* event, gp
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), attributes);
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), comments);
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), disconnect);
+    gtk_menu_shell_append(GTK_MENU_SHELL(menu), reset);
     g_signal_connect(privateMessage, "activate", G_CALLBACK(onPrivateMessageMenu), data);
     g_signal_connect(history, "activate", G_CALLBACK(onHistoryMenu), data);
     g_signal_connect(access, "activate", G_CALLBACK(onEditAccess), data);
     g_signal_connect(attributes, "activate", G_CALLBACK(+[](GtkMenuItem*, gpointer userData) { static_cast<TPlayerList*>(userData)->editAttributes(); }), data);
     g_signal_connect(comments, "activate", G_CALLBACK(+[](GtkMenuItem*, gpointer userData) { static_cast<TPlayerList*>(userData)->editComments(); }), data);
     g_signal_connect(disconnect, "activate", G_CALLBACK(onDisconnectPlayer), data);
+    g_signal_connect(reset, "activate", G_CALLBACK(onResetPlayer), data);
     gtk_widget_show_all(menu);
     gtk_menu_popup_at_pointer(GTK_MENU(menu), reinterpret_cast<GdkEvent*>(event));
     return true;
@@ -298,6 +301,7 @@ void TPlayerList::onEditAccess(GtkMenuItem*, gpointer data) { static_cast<TPlaye
 void TPlayerList::onPrivateMessageMenu(GtkMenuItem*, gpointer data) { static_cast<TPlayerList*>(data)->openSelectedPrivateMessage(); }
 void TPlayerList::onHistoryMenu(GtkMenuItem*, gpointer data) { static_cast<TPlayerList*>(data)->openSelectedHistory(); }
 void TPlayerList::onDisconnectPlayer(GtkMenuItem*, gpointer data) { static_cast<TPlayerList*>(data)->disconnectSelectedPlayer(); }
+void TPlayerList::onResetPlayer(GtkMenuItem*, gpointer data) { static_cast<TPlayerList*>(data)->resetSelectedPlayer(); }
 void TPlayerList::onBanData(const char* account, const char* computerId, const char* details, void* data) {
     TPlayerList* list = static_cast<TPlayerList*>(data);
     if (account == nullptr || *account == '\0') return;
@@ -651,4 +655,14 @@ void TPlayerList::disconnectSelectedPlayer() {
     int playerId = 0;
     gtk_tree_model_get(model, &row, PlayerIdColumn, &playerId, -1);
     if (playerId != 0) rc_disconnect_player(connection, playerId, "");
+}
+
+void TPlayerList::resetSelectedPlayer() {
+    GtkTreeModel* model = nullptr;
+    GtkTreeIter row;
+    if (!gtk_tree_selection_get_selected(gtk_tree_view_get_selection(GTK_TREE_VIEW(tree)), &model, &row)) return;
+    gchar* account = nullptr;
+    gtk_tree_model_get(model, &row, PlayerAccountColumn, &account, -1);
+    if (account != nullptr && *account != '\0') rc_reset_player(connection, account);
+    g_free(account);
 }

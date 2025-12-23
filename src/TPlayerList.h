@@ -23,6 +23,7 @@ private:
     static void onPrivateMessageMenu(GtkMenuItem*, gpointer data);
     static void onHistoryMenu(GtkMenuItem*, gpointer data);
     static void onDisconnectPlayer(GtkMenuItem*, gpointer data);
+    static void onResetPlayer(GtkMenuItem*, gpointer data);
     static void onBanData(const char* account, const char* computerId, const char* details, void* data);
     static void onBanListData(const char* type, const char* account, const char* content, void* data);
     static void onPlayerAttributes(const char* account, const char* properties, const char* editorText, void* data);
@@ -46,6 +47,7 @@ private:
     void openSelectedPrivateMessage();
     void openSelectedHistory();
     void disconnectSelectedPlayer();
+    void resetSelectedPlayer();
     void updatePMIcons();
     void openPrivateMessage(int playerId, const char* account, const char* nick);
     void appendHistory(const char* account, const char* direction, const char* message) const;
