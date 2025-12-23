@@ -273,10 +273,12 @@ gboolean TPlayerList::onButtonPress(GtkWidget* widget, GdkEventButton* event, gp
     GtkWidget* menu = gtk_menu_new();
     GtkWidget* privateMessage = gtk_menu_item_new_with_label("Private Message");
     GtkWidget* history = gtk_menu_item_new_with_label("History");
+    GtkWidget* profile = gtk_menu_item_new_with_label("Profile");
     GtkWidget* disconnect = gtk_menu_item_new_with_label("Disconnect");
     GtkWidget* reset = gtk_menu_item_new_with_label("Reset");
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), privateMessage);
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), history);
+    gtk_menu_shell_append(GTK_MENU_SHELL(menu), profile);
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), gtk_separator_menu_item_new());
     GtkWidget* access = gtk_menu_item_new_with_label("Edit Access");
     GtkWidget* attributes = gtk_menu_item_new_with_label("Edit Attributes");
@@ -288,6 +290,7 @@ gboolean TPlayerList::onButtonPress(GtkWidget* widget, GdkEventButton* event, gp
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), reset);
     g_signal_connect(privateMessage, "activate", G_CALLBACK(onPrivateMessageMenu), data);
     g_signal_connect(history, "activate", G_CALLBACK(onHistoryMenu), data);
+    g_signal_connect(profile, "activate", G_CALLBACK(+[](GtkMenuItem*, gpointer userData) { static_cast<TPlayerList*>(userData)->editProfile(); }), data);
     g_signal_connect(access, "activate", G_CALLBACK(onEditAccess), data);
     g_signal_connect(attributes, "activate", G_CALLBACK(+[](GtkMenuItem*, gpointer userData) { static_cast<TPlayerList*>(userData)->editAttributes(); }), data);
     g_signal_connect(comments, "activate", G_CALLBACK(+[](GtkMenuItem*, gpointer userData) { static_cast<TPlayerList*>(userData)->editComments(); }), data);
@@ -347,15 +350,18 @@ void TPlayerList::onPlayerAttributes(const char* account, const char*, const cha
     gtk_widget_show_all(dialog);
 }
 void TPlayerList::onPlayerText(const char* type, const char* account, const char* content, void* data) {
-    if (type == nullptr || std::string(type) != "comments" || account == nullptr) return;
+    if (type == nullptr || account == nullptr) return;
+    const std::string dataType(type);
+    if (dataType != "comments" && dataType != "profile") return;
     TPlayerList* list = static_cast<TPlayerList*>(data);
-    struct TextState { TPlayerList* list; std::string account; GtkWidget* text; };
-    GtkWidget* dialog = gtk_dialog_new_with_buttons(("Edit Comments of " + std::string(account)).c_str(), GTK_WINDOW(list->window), GTK_DIALOG_DESTROY_WITH_PARENT, "Cancel", GTK_RESPONSE_CANCEL, "Save", GTK_RESPONSE_ACCEPT, nullptr);
+    struct TextState { TPlayerList* list; std::string account; std::string type; GtkWidget* text; };
+    const std::string title = (dataType == "profile" ? "Profile of " : "Edit Comments of ") + std::string(account);
+    GtkWidget* dialog = gtk_dialog_new_with_buttons(title.c_str(), GTK_WINDOW(list->window), GTK_DIALOG_DESTROY_WITH_PARENT, "Cancel", GTK_RESPONSE_CANCEL, "Save", GTK_RESPONSE_ACCEPT, nullptr);
     GtkWidget* text = gtk_text_view_new();
     gtk_text_buffer_set_text(gtk_text_view_get_buffer(GTK_TEXT_VIEW(text)), content == nullptr ? "" : content, -1);
     gtk_box_pack_start(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), text, true, true, 0);
-    auto* state = new TextState{list, account, text};
-    g_signal_connect(dialog, "response", G_CALLBACK(+[](GtkDialog* responseDialog, gint response, gpointer userData) { auto* state = static_cast<TextState*>(userData); if (response == GTK_RESPONSE_ACCEPT) { GtkTextIter start; GtkTextIter end; GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(state->text)); gtk_text_buffer_get_bounds(buffer, &start, &end); gchar* value = gtk_text_buffer_get_text(buffer, &start, &end, false); rc_set_player_comments(state->list->connection, state->account.c_str(), value == nullptr ? "" : value); g_free(value); } else gtk_widget_destroy(GTK_WIDGET(responseDialog)); }), state);
+    auto* state = new TextState{list, account, dataType, text};
+    g_signal_connect(dialog, "response", G_CALLBACK(+[](GtkDialog* responseDialog, gint response, gpointer userData) { auto* state = static_cast<TextState*>(userData); if (response == GTK_RESPONSE_ACCEPT) { GtkTextIter start; GtkTextIter end; GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(state->text)); gtk_text_buffer_get_bounds(buffer, &start, &end); gchar* value = gtk_text_buffer_get_text(buffer, &start, &end, false); if (state->type == "profile") rc_set_player_profile(state->list->connection, state->account.c_str(), value == nullptr ? "" : value); else rc_set_player_comments(state->list->connection, state->account.c_str(), value == nullptr ? "" : value); g_free(value); } else gtk_widget_destroy(GTK_WIDGET(responseDialog)); }), state);
     g_signal_connect(dialog, "destroy", G_CALLBACK(+[](GtkWidget*, gpointer userData) { delete static_cast<TextState*>(userData); }), state);
     gtk_widget_show_all(dialog);
 }
@@ -617,6 +623,15 @@ void TPlayerList::editComments() {
     gchar* account = nullptr;
     gtk_tree_model_get(model, &row, PlayerAccountColumn, &account, -1);
     if (account != nullptr && *account != '\0') rc_request_player_comments(connection, account);
+    g_free(account);
+}
+void TPlayerList::editProfile() {
+    GtkTreeModel* model = nullptr;
+    GtkTreeIter row;
+    if (!gtk_tree_selection_get_selected(gtk_tree_view_get_selection(GTK_TREE_VIEW(tree)), &model, &row)) return;
+    gchar* account = nullptr;
+    gtk_tree_model_get(model, &row, PlayerAccountColumn, &account, -1);
+    if (account != nullptr && *account != '\0') rc_request_player_profile(connection, account);
     g_free(account);
 }
 

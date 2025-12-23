@@ -44,6 +44,7 @@ private:
     void editAccess();
     void editAttributes();
     void editComments();
+    void editProfile();
     void openSelectedPrivateMessage();
     void openSelectedHistory();
     void disconnectSelectedPlayer();
