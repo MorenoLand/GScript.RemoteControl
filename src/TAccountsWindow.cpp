@@ -98,7 +98,7 @@ TAccountsWindow::TAccountsWindow() {
 
     editorWindow = gtk_window_new(GTK_WINDOW_TOPLEVEL);
     gtk_widget_set_name(editorWindow, "AccountEditorWindow");
-    gtk_window_set_default_size(GTK_WINDOW(editorWindow), 315, 360);
+    gtk_window_set_default_size(GTK_WINDOW(editorWindow), 300, 330);
     gtk_window_set_resizable(GTK_WINDOW(editorWindow), false);
     GtkWidget* editorRoot = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
     gtk_container_add(GTK_CONTAINER(editorWindow), editorRoot);
@@ -118,6 +118,7 @@ TAccountsWindow::TAccountsWindow() {
     gtk_grid_attach(GTK_GRID(editorGrid), bannedCheck, 0, 5, 1, 1);
     gtk_grid_attach(GTK_GRID(editorGrid), guestCheck, 1, 5, 1, 1);
     banTimeField = labeledEntry(GTK_GRID(editorGrid), "Ban-Time:", 6);
+    gtk_editable_set_editable(GTK_EDITABLE(banTimeField), false);
     gtk_grid_attach(GTK_GRID(editorGrid), gtk_label_new("Ban-Reason / Comments:"), 0, 7, 2, 1);
     reasonField = gtk_text_view_new();
     gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(reasonField), GTK_WRAP_WORD_CHAR);
@@ -128,7 +129,7 @@ TAccountsWindow::TAccountsWindow() {
     gtk_widget_modify_base(reasonField, GTK_STATE_NORMAL, &reasonBackground);
     gtk_widget_modify_text(reasonField, GTK_STATE_NORMAL, &reasonText);
     GtkWidget* reasonScrolled = gtk_scrolled_window_new(nullptr, nullptr);
-    gtk_widget_set_size_request(reasonScrolled, 190, 80);
+    gtk_widget_set_size_request(reasonScrolled, 190, 60);
     gtk_container_add(GTK_CONTAINER(reasonScrolled), reasonField);
     gtk_grid_attach(GTK_GRID(editorGrid), reasonScrolled, 0, 8, 2, 1);
     gtk_box_pack_start(GTK_BOX(editorRoot), editorFrame, true, true, 0);
