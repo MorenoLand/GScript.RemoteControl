@@ -14,10 +14,13 @@ TStartFrame::TStartFrame(RC3::RCOptions& options, const std::filesystem::path& a
     GtkWidget* root = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
     gtk_container_add(GTK_CONTAINER(window), root);
 
+    GtkWidget* frame = gtk_frame_new(" Options ");
+    gtk_container_set_border_width(GTK_CONTAINER(frame), 5);
+    gtk_box_pack_start(GTK_BOX(root), frame, true, true, 0);
+
     GtkWidget* optionsBox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 3);
     gtk_container_set_border_width(GTK_CONTAINER(optionsBox), 5);
-    gtk_box_pack_start(GTK_BOX(root), gtk_label_new("Options"), false, false, 5);
-    gtk_box_pack_start(GTK_BOX(root), optionsBox, true, true, 0);
+    gtk_container_add(GTK_CONTAINER(frame), optionsBox);
 
     auto addField = [optionsBox](const char* label, GtkWidget*& field, bool password) {
         GtkWidget* row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 3);

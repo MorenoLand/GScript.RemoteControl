@@ -50,6 +50,7 @@ TPlayerList::TPlayerList() {
     tree = gtk_tree_view_new_with_model(GTK_TREE_MODEL(store));
     gtk_tree_selection_set_mode(gtk_tree_view_get_selection(GTK_TREE_VIEW(tree)), GTK_SELECTION_MULTIPLE);
     onlineIcon = gdk_pixbuf_new_from_file("images/plisticononline.png", nullptr);
+    channelIcon = gdk_pixbuf_new_from_file("images/rcicon_channelopen.png", nullptr);
     GtkCellRenderer* imageRenderer = gtk_cell_renderer_pixbuf_new();
     gtk_tree_view_append_column(GTK_TREE_VIEW(tree), gtk_tree_view_column_new_with_attributes("", imageRenderer, "pixbuf", PlayerIconColumn, nullptr));
     const struct { const char* title; int column; } columns[] = {{"Nick", PlayerNickColumn}, {"Account", PlayerAccountColumn}, {"Level", PlayerLevelColumn}, {"ID", PlayerIdColumn}};
@@ -58,18 +59,52 @@ TPlayerList::TPlayerList() {
         GtkTreeViewColumn* viewColumn = gtk_tree_view_column_new_with_attributes(column.title, renderer, "text", column.column, nullptr);
         gtk_tree_view_column_set_sort_column_id(viewColumn, column.column);
         gtk_tree_view_column_set_resizable(viewColumn, true);
+        gtk_tree_view_column_set_sizing(viewColumn, GTK_TREE_VIEW_COLUMN_FIXED);
+        if (column.column == PlayerNickColumn) gtk_tree_view_column_set_fixed_width(viewColumn, 180);
+        else if (column.column == PlayerAccountColumn || column.column == PlayerLevelColumn) gtk_tree_view_column_set_fixed_width(viewColumn, 120);
+        else {
+            gtk_tree_view_column_set_fixed_width(viewColumn, 60);
+            gtk_tree_view_column_set_alignment(viewColumn, 1.0F);
+        }
         gtk_tree_view_append_column(GTK_TREE_VIEW(tree), viewColumn);
     }
     gtk_container_add(GTK_CONTAINER(scrolled), tree);
     gtk_notebook_append_page(GTK_NOTEBOOK(notebook), scrolled, gtk_label_new("This server"));
     for (const char* title : {"Guilds", "Servers", "Channels"}) {
         GtkWidget* page = gtk_scrolled_window_new(nullptr, nullptr);
-        if (std::string(title) == "Servers") {
-            serverStore = gtk_list_store_new(1, G_TYPE_STRING);
-            GtkWidget* serverTree = gtk_tree_view_new_with_model(GTK_TREE_MODEL(serverStore));
+        if (std::string(title) == "Guilds" || std::string(title) == "Servers") {
+            GtkListStore*& tabStore = std::string(title) == "Guilds" ? guildStore : serverStore;
+            tabStore = gtk_list_store_new(3, GDK_TYPE_PIXBUF, G_TYPE_STRING, G_TYPE_STRING);
+            GtkWidget* tabTree = gtk_tree_view_new_with_model(GTK_TREE_MODEL(tabStore));
+            GtkCellRenderer* iconRenderer = gtk_cell_renderer_pixbuf_new();
+            GtkTreeViewColumn* iconColumn = gtk_tree_view_column_new_with_attributes("", iconRenderer, "pixbuf", 0, nullptr);
+            gtk_tree_view_column_set_fixed_width(iconColumn, 20);
+            gtk_tree_view_append_column(GTK_TREE_VIEW(tabTree), iconColumn);
             GtkCellRenderer* renderer = gtk_cell_renderer_text_new();
-            gtk_tree_view_append_column(GTK_TREE_VIEW(serverTree), gtk_tree_view_column_new_with_attributes("Server", renderer, "text", 0, nullptr));
-            gtk_container_add(GTK_CONTAINER(page), serverTree);
+            const char* firstColumn = std::string(title) == "Guilds" ? "Nick" : "Nick";
+            GtkTreeViewColumn* nickColumn = gtk_tree_view_column_new_with_attributes(firstColumn, renderer, "text", 1, nullptr);
+            gtk_tree_view_column_set_sort_column_id(nickColumn, 1);
+            gtk_tree_view_append_column(GTK_TREE_VIEW(tabTree), nickColumn);
+            renderer = gtk_cell_renderer_text_new();
+            GtkTreeViewColumn* accountColumn = gtk_tree_view_column_new_with_attributes("Account", renderer, "text", 2, nullptr);
+            gtk_tree_view_column_set_sort_column_id(accountColumn, 2);
+            gtk_tree_view_append_column(GTK_TREE_VIEW(tabTree), accountColumn);
+            gtk_tree_sortable_set_sort_column_id(GTK_TREE_SORTABLE(tabStore), 0, GTK_SORT_ASCENDING);
+            gtk_container_add(GTK_CONTAINER(page), tabTree);
+        } else {
+            channelStore = gtk_list_store_new(4, GDK_TYPE_PIXBUF, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING);
+            GtkWidget* channelTree = gtk_tree_view_new_with_model(GTK_TREE_MODEL(channelStore));
+            GtkCellRenderer* iconRenderer = gtk_cell_renderer_pixbuf_new();
+            gtk_tree_view_append_column(GTK_TREE_VIEW(channelTree), gtk_tree_view_column_new_with_attributes("", iconRenderer, "pixbuf", 0, nullptr));
+            const struct { const char* title; int column; } channelColumns[] = {{"Nick", 1}, {"Players", 2}, {"ID", 3}};
+            for (const auto& column : channelColumns) {
+                GtkCellRenderer* renderer = gtk_cell_renderer_text_new();
+                GtkTreeViewColumn* viewColumn = gtk_tree_view_column_new_with_attributes(column.title, renderer, "text", column.column, nullptr);
+                gtk_tree_view_column_set_sort_column_id(viewColumn, column.column);
+                gtk_tree_view_append_column(GTK_TREE_VIEW(channelTree), viewColumn);
+            }
+            gtk_tree_sortable_set_sort_column_id(GTK_TREE_SORTABLE(channelStore), 0, GTK_SORT_ASCENDING);
+            gtk_container_add(GTK_CONTAINER(page), channelTree);
         }
         gtk_notebook_append_page(GTK_NOTEBOOK(notebook), page, gtk_label_new(title));
     }
@@ -101,12 +136,13 @@ TPlayerList::TPlayerList() {
     g_signal_connect(window, "delete-event", G_CALLBACK(onDelete), this);
 }
 
-TPlayerList::~TPlayerList() { if (onlineIcon != nullptr) g_object_unref(onlineIcon); if (window != nullptr) gtk_widget_destroy(window); }
-void TPlayerList::open(void* nextConnection) { connection = nextConnection; rc_on_pm_servers_updated(connection, onPMServers, this); refresh(); gtk_widget_show_all(window); gtk_window_present(GTK_WINDOW(window)); }
+TPlayerList::~TPlayerList() { if (onlineIcon != nullptr) g_object_unref(onlineIcon); if (channelIcon != nullptr) g_object_unref(channelIcon); if (window != nullptr) gtk_widget_destroy(window); }
+void TPlayerList::open(void* nextConnection) { connection = nextConnection; rc_on_pm_servers_updated(connection, onPMServers, this); rc_on_pm_guilds_updated(connection, onPMGuilds, this); refresh(); gtk_widget_show_all(window); gtk_window_present(GTK_WINDOW(window)); }
 void TPlayerList::onRefresh(GtkButton*, gpointer data) { static_cast<TPlayerList*>(data)->refresh(); }
 void TPlayerList::onMassPM(GtkButton*, gpointer data) { static_cast<TPlayerList*>(data)->sendMassPM(); }
 void TPlayerList::onAdminMessage(GtkButton*, gpointer data) { static_cast<TPlayerList*>(data)->sendAdminMessage(); }
-void TPlayerList::onPMServers(int, void* data) { static_cast<TPlayerList*>(data)->refresh(); }
+void TPlayerList::onPMServers(int, void* data) { static_cast<TPlayerList*>(data)->refreshRemoteLists(); }
+void TPlayerList::onPMGuilds(int, void* data) { static_cast<TPlayerList*>(data)->refreshRemoteLists(); }
 gboolean TPlayerList::onDelete(GtkWidget*, GdkEvent*, gpointer data) { gtk_widget_hide(static_cast<TPlayerList*>(data)->window); return true; }
 void TPlayerList::refresh() {
     gtk_list_store_clear(store);
@@ -118,11 +154,22 @@ void TPlayerList::refresh() {
         gtk_list_store_set(store, &row, PlayerIconColumn, onlineIcon, PlayerNickColumn, players[index].nick == nullptr ? "" : players[index].nick, PlayerAccountColumn, players[index].account == nullptr ? "" : players[index].account, PlayerLevelColumn, players[index].level == nullptr ? "" : players[index].level, PlayerIdColumn, players[index].id, -1);
     }
     rc_request_pm_server_list(connection);
+    rc_request_pm_guild_list(connection);
+    refreshRemoteLists();
+}
+
+void TPlayerList::refreshRemoteLists() {
+    if (guildStore != nullptr) {
+        gtk_list_store_clear(guildStore);
+        const char** guilds = nullptr;
+        const int count = rc_get_pm_guilds(connection, &guilds);
+        for (int index = 0; index < count; ++index) { GtkTreeIter row; gtk_list_store_append(guildStore, &row); gtk_list_store_set(guildStore, &row, 0, channelIcon, 1, guilds[index], 2, "", -1); }
+    }
     if (serverStore != nullptr) {
         gtk_list_store_clear(serverStore);
         const char** servers = nullptr;
         const int count = rc_get_pm_servers(connection, &servers);
-        for (int index = 0; index < count; ++index) { GtkTreeIter row; gtk_list_store_append(serverStore, &row); gtk_list_store_set(serverStore, &row, 0, servers[index], -1); }
+        for (int index = 0; index < count; ++index) { GtkTreeIter row; gtk_list_store_append(serverStore, &row); gtk_list_store_set(serverStore, &row, 0, channelIcon, 1, servers[index], 2, "", -1); }
     }
 }
 

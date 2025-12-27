@@ -140,6 +140,7 @@ TRemoteFrame::~TRemoteFrame() {
 
 void TRemoteFrame::open(void* nextConnection, const std::string& serverName) {
     connection = nextConnection;
+    ncConnectionAttempted = false;
     rc_on_connected(connection, onConnected, this);
     rc_on_disconnected(connection, onDisconnected, this);
     rc_on_message(connection, onMessage, this);
@@ -234,11 +235,7 @@ gboolean TRemoteFrame::processEvents(gpointer data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
     if (frame->connection != nullptr) {
         rc_process_events(frame->connection);
-        const gint64 now = g_get_monotonic_time();
-        if (rc_is_nc_connected(frame->connection) == 0 && now >= frame->nextNcConnectAttempt) {
-            rc_connect_to_nc_server(frame->connection);
-            frame->nextNcConnectAttempt = now + G_TIME_SPAN_SECOND;
-        }
+        if (!frame->ncConnectionAttempted && rc_is_nc_connected(frame->connection) == 0 && rc_connect_to_nc_server(frame->connection) != 0) frame->ncConnectionAttempted = true;
         const bool npcServerConnected = rc_is_nc_authenticated(frame->connection) != 0;
         for (int index = 8; index < 12; ++index) {
             if (frame->graphicalButtons[index] == nullptr) continue;
@@ -258,9 +255,19 @@ void TRemoteFrame::onConnected(void*) {}
 
 void TRemoteFrame::onDisconnected(const char* reason, void* data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
-    GtkWidget* dialog = gtk_message_dialog_new(GTK_WINDOW(frame->window), GTK_DIALOG_MODAL, GTK_MESSAGE_ERROR, GTK_BUTTONS_CLOSE, "%s", reason == nullptr ? "Disconnected." : reason);
+    GtkWidget* dialog = gtk_dialog_new_with_buttons("Connection Error", GTK_WINDOW(frame->window), GTK_DIALOG_MODAL, "OK", GTK_RESPONSE_OK, nullptr);
+    gtk_window_set_default_size(GTK_WINDOW(dialog), 400, 150);
+    GtkWidget* message = gtk_label_new(reason == nullptr ? "Disconnected." : reason);
+    gtk_label_set_line_wrap(GTK_LABEL(message), true);
+    gtk_label_set_xalign(GTK_LABEL(message), 0.5F);
+    gtk_label_set_yalign(GTK_LABEL(message), 0.5F);
+    gtk_widget_set_size_request(message, 360, -1);
+    gtk_box_pack_start(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), message, true, true, 12);
+    gtk_widget_show_all(dialog);
     gtk_dialog_run(GTK_DIALOG(dialog));
     gtk_widget_destroy(dialog);
+    gtk_widget_hide(frame->window);
+    frame->onCloseCallback();
 }
 
 void TRemoteFrame::onMessage(const char* message, void* data) { static_cast<TRemoteFrame*>(data)->appendChat(message == nullptr ? "" : message); }
@@ -312,6 +319,8 @@ void TRemoteFrame::appendChat(const std::string& message) {
         gtk_window_set_urgency_hint(GTK_WINDOW(window), true);
         gdk_beep();
     }
+    gtk_text_buffer_get_end_iter(buffer, &end);
+    gtk_text_view_scroll_to_iter(GTK_TEXT_VIEW(chatField), &end, 0.0, false, 0.0, 1.0);
 }
 
 void TRemoteFrame::configureChatField(GtkWidget* field) {

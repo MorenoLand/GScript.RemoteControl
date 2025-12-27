@@ -63,6 +63,7 @@ private:
     void* connection = nullptr;
     guint eventSource = 0;
     gint64 nextNcConnectAttempt = 0;
+    bool ncConnectionAttempted = false;
     TPlayerList* playerList = nullptr;
     TFileBrowserTree* fileBrowser = nullptr;
     TScriptList* classList = nullptr;

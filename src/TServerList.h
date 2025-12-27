@@ -16,6 +16,7 @@ public:
     ~TServerList();
 
     void open(const std::string& account, const std::string& password);
+    void reopen();
 
 private:
     struct ServerEntry {

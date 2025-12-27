@@ -93,9 +93,18 @@ void TScriptList::showEditor(const char* name, const char* script) {
     gtk_text_buffer_set_text(GTK_TEXT_BUFFER(sourceBuffer), script, -1);
     GtkWidget* scrolled = gtk_scrolled_window_new(nullptr, nullptr);
     gtk_container_add(GTK_CONTAINER(scrolled), editor);
-    gtk_box_pack_start(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), scrolled, true, true, 5);
+    GtkWidget* content = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
+    gtk_container_set_border_width(GTK_CONTAINER(content), 0);
+    gtk_box_pack_start(GTK_BOX(content), scrolled, true, true, 0);
+    g_signal_connect(editor, "key-press-event", G_CALLBACK(+[](GtkWidget*, GdkEventKey* event, gpointer dialog) {
+        if ((event->state & GDK_CONTROL_MASK) != 0 && (event->keyval == GDK_KEY_s || event->keyval == GDK_KEY_S)) {
+            gtk_dialog_response(GTK_DIALOG(dialog), GTK_RESPONSE_ACCEPT);
+            return static_cast<gboolean>(TRUE);
+        }
+        return static_cast<gboolean>(FALSE);
+    }), dialog);
     gtk_widget_show_all(dialog);
-    if (gtk_dialog_run(GTK_DIALOG(dialog)) == GTK_RESPONSE_ACCEPT) {
+    while (gtk_dialog_run(GTK_DIALOG(dialog)) == GTK_RESPONSE_ACCEPT) {
         GtkTextIter start, end;
         GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(editor));
         gtk_text_buffer_get_bounds(buffer, &start, &end);

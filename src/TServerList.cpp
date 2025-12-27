@@ -170,6 +170,11 @@ void TServerList::open(const std::string& account, const std::string& password) 
     refresh();
 }
 
+void TServerList::reopen() {
+    if (account.empty()) return;
+    open(account, password);
+}
+
 void TServerList::onRefresh(GtkButton*, gpointer data) { static_cast<TServerList*>(data)->refresh(); }
 
 void TServerList::onConnect(GtkButton*, gpointer data) { static_cast<TServerList*>(data)->connect(); }
