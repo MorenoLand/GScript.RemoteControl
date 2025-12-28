@@ -10,7 +10,7 @@ TServerTextEditor::TServerTextEditor(Kind nextKind, const char* title) : kind(ne
     GtkWidget* root = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
     gtk_container_add(GTK_CONTAINER(window), root);
     GtkWidget* scrolled = gtk_scrolled_window_new(nullptr, nullptr);
-    GtkSourceLanguage* language = gtk_source_language_manager_get_language(gtk_source_language_manager_get_default(), "graal");
+    GtkSourceLanguage* language = gtk_source_language_manager_get_language(gtk_source_language_manager_get_default(), "ini");
     GtkSourceBuffer* sourceBuffer = gtk_source_buffer_new_with_language(language);
     GtkSourceStyleScheme* scheme = gtk_source_style_scheme_manager_get_scheme(gtk_source_style_scheme_manager_get_default(), "graalcolors");
     gtk_source_buffer_set_style_scheme(sourceBuffer, scheme);

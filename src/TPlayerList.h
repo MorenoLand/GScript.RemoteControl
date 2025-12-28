@@ -15,6 +15,9 @@ private:
     static void onMassPM(GtkButton*, gpointer data);
     static void onAdminMessage(GtkButton*, gpointer data);
     static void onClose(GtkButton*, gpointer data);
+    static gboolean onButtonPress(GtkWidget*, GdkEventButton*, gpointer data);
+    static void onEditAccess(GtkMenuItem*, gpointer data);
+    static void onBanData(const char* account, const char* computerId, const char* details, void* data);
     static void onPMServers(int count, void* data);
     static void onPMGuilds(int count, void* data);
     static void onPMServerPlayers(const char* serverName, const char* playerData, void* data);
@@ -26,6 +29,7 @@ private:
     void refreshRemoteLists();
     void sendMassPM();
     void sendAdminMessage();
+    void editAccess();
     std::vector<int> playerIds() const;
     GtkWidget* window = nullptr;
     GtkWidget* tree = nullptr;
@@ -36,6 +40,7 @@ private:
     GdkPixbuf* onlineIcon = nullptr;
     GdkPixbuf* channelIcon = nullptr;
     GdkPixbuf* channelClosedIcon = nullptr;
+    class TLocalBanWindow* localBanWindow = nullptr;
     std::map<std::string, std::vector<std::string>> serverPlayers;
     void* connection = nullptr;
 };

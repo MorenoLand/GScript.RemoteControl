@@ -1,4 +1,5 @@
 #include "TPlayerList.h"
+#include "TLocalBanWindow.h"
 
 #include <grclib.h>
 
@@ -68,9 +69,11 @@ TPlayerList::TPlayerList() {
     tree = gtk_tree_view_new_with_model(GTK_TREE_MODEL(store));
     gtk_widget_set_name(tree, "PlayerListField");
     gtk_tree_view_set_fixed_height_mode(GTK_TREE_VIEW(tree), true);
+    gtk_tree_view_set_show_expanders(GTK_TREE_VIEW(tree), false);
     g_signal_connect(tree, "row-expanded", G_CALLBACK(onGroupExpanded), this);
     g_signal_connect(tree, "row-collapsed", G_CALLBACK(onGroupCollapsed), this);
     gtk_tree_selection_set_mode(gtk_tree_view_get_selection(GTK_TREE_VIEW(tree)), GTK_SELECTION_MULTIPLE);
+    g_signal_connect(tree, "button-press-event", G_CALLBACK(onButtonPress), this);
     onlineIcon = gdk_pixbuf_new_from_file("images/plisticononline.png", nullptr);
     channelIcon = gdk_pixbuf_new_from_file("images/rcicon_channelopen.png", nullptr);
     channelClosedIcon = gdk_pixbuf_new_from_file("images/rcicon_channelclosed.png", nullptr);
@@ -97,6 +100,10 @@ TPlayerList::TPlayerList() {
     gtk_style_context_add_provider(gtk_widget_get_style_context(tree), GTK_STYLE_PROVIDER(expanderProvider), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
     g_object_unref(expanderProvider);
     gtk_notebook_append_page(GTK_NOTEBOOK(notebook), scrolled, gtk_label_new("This server "));
+    GtkCssProvider* tabProvider = gtk_css_provider_new();
+    gtk_css_provider_load_from_data(tabProvider, "#PlayerList notebook > header > tabs > tab { border: 1px solid #777777; border-radius: 4px 4px 0 0; margin-right: 1px; } #PlayerList notebook > header > tabs > tab:checked { border-color: #aaaaaa; }", -1, nullptr);
+    gtk_style_context_add_provider_for_screen(gdk_screen_get_default(), GTK_STYLE_PROVIDER(tabProvider), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION + 1);
+    g_object_unref(tabProvider);
     for (const char* title : {"Guilds", "Servers", "Channels"}) {
         GtkWidget* page = gtk_scrolled_window_new(nullptr, nullptr);
         gtk_container_set_border_width(GTK_CONTAINER(page), 5);
@@ -167,12 +174,36 @@ TPlayerList::TPlayerList() {
     g_signal_connect(window, "delete-event", G_CALLBACK(onDelete), this);
 }
 
-TPlayerList::~TPlayerList() { if (onlineIcon != nullptr) g_object_unref(onlineIcon); if (channelIcon != nullptr) g_object_unref(channelIcon); if (channelClosedIcon != nullptr) g_object_unref(channelClosedIcon); if (window != nullptr) gtk_widget_destroy(window); }
-void TPlayerList::open(void* nextConnection) { connection = nextConnection; rc_on_pm_servers_updated(connection, onPMServers, this); rc_on_pm_guilds_updated(connection, onPMGuilds, this); rc_on_pm_server_players(connection, onPMServerPlayers, this); refresh(); gtk_widget_show_all(window); gtk_window_present(GTK_WINDOW(window)); }
+TPlayerList::~TPlayerList() { delete localBanWindow; if (onlineIcon != nullptr) g_object_unref(onlineIcon); if (channelIcon != nullptr) g_object_unref(channelIcon); if (channelClosedIcon != nullptr) g_object_unref(channelClosedIcon); if (window != nullptr) gtk_widget_destroy(window); }
+void TPlayerList::open(void* nextConnection) { connection = nextConnection; rc_on_pm_servers_updated(connection, onPMServers, this); rc_on_pm_guilds_updated(connection, onPMGuilds, this); rc_on_pm_server_players(connection, onPMServerPlayers, this); rc_on_ban_data(connection, onBanData, this); refresh(); gtk_widget_show_all(window); gtk_window_present(GTK_WINDOW(window)); }
 void TPlayerList::onRefresh(GtkButton*, gpointer data) { static_cast<TPlayerList*>(data)->refresh(); }
 void TPlayerList::onMassPM(GtkButton*, gpointer data) { static_cast<TPlayerList*>(data)->sendMassPM(); }
 void TPlayerList::onAdminMessage(GtkButton*, gpointer data) { static_cast<TPlayerList*>(data)->sendAdminMessage(); }
 void TPlayerList::onClose(GtkButton*, gpointer data) { gtk_widget_hide(static_cast<TPlayerList*>(data)->window); }
+gboolean TPlayerList::onButtonPress(GtkWidget* widget, GdkEventButton* event, gpointer data) {
+    if (event->type != GDK_BUTTON_PRESS || event->button != GDK_BUTTON_SECONDARY) return false;
+    GtkTreePath* path = nullptr;
+    if (!gtk_tree_view_get_path_at_pos(GTK_TREE_VIEW(widget), static_cast<gint>(event->x), static_cast<gint>(event->y), &path, nullptr, nullptr, nullptr)) return false;
+    if (gtk_tree_path_get_depth(path) != 2) { gtk_tree_path_free(path); return false; }
+    GtkTreeSelection* selection = gtk_tree_view_get_selection(GTK_TREE_VIEW(widget));
+    gtk_tree_selection_unselect_all(selection);
+    gtk_tree_selection_select_path(selection, path);
+    gtk_tree_path_free(path);
+    GtkWidget* menu = gtk_menu_new();
+    GtkWidget* access = gtk_menu_item_new_with_label("Edit Access");
+    gtk_menu_shell_append(GTK_MENU_SHELL(menu), access);
+    g_signal_connect(access, "activate", G_CALLBACK(onEditAccess), data);
+    gtk_widget_show_all(menu);
+    gtk_menu_popup_at_pointer(GTK_MENU(menu), reinterpret_cast<GdkEvent*>(event));
+    return true;
+}
+void TPlayerList::onEditAccess(GtkMenuItem*, gpointer data) { static_cast<TPlayerList*>(data)->editAccess(); }
+void TPlayerList::onBanData(const char* account, const char*, const char* details, void* data) {
+    TPlayerList* list = static_cast<TPlayerList*>(data);
+    if (account == nullptr || *account == '\0') return;
+    if (list->localBanWindow == nullptr) list->localBanWindow = new TLocalBanWindow();
+    list->localBanWindow->open(list->connection, account, details == nullptr ? "" : details);
+}
 void TPlayerList::onPMServers(int, void* data) { static_cast<TPlayerList*>(data)->refreshRemoteLists(); }
 void TPlayerList::onPMGuilds(int, void* data) { static_cast<TPlayerList*>(data)->refreshRemoteLists(); }
 void TPlayerList::onPMServerPlayers(const char* serverName, const char* playerData, void* data) {
@@ -291,4 +322,16 @@ void TPlayerList::sendAdminMessage() {
     std::string message;
     if (!getAdminMessage(GTK_WINDOW(window), message)) return;
     rc_send_admin_message_all(connection, message.c_str());
+}
+
+void TPlayerList::editAccess() {
+    GtkTreeSelection* selection = gtk_tree_view_get_selection(GTK_TREE_VIEW(tree));
+    GtkTreeModel* model = nullptr;
+    GtkTreeIter row;
+    if (!gtk_tree_selection_get_selected(selection, &model, &row)) return;
+    gchar* account = nullptr;
+    int playerId = 0;
+    gtk_tree_model_get(model, &row, PlayerAccountColumn, &account, PlayerIdColumn, &playerId, -1);
+    if (account != nullptr && *account != '\0' && playerId != 0) rc_request_player_ban(connection, account, playerId);
+    g_free(account);
 }

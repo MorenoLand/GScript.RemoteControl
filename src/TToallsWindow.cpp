@@ -35,6 +35,18 @@ TToallsWindow::TToallsWindow() {
     gtk_css_provider_load_from_data(provider, "#ToallsWindow textview, #ToallsWindow textview text { background-color: #1e1e1e; color: #d4d4d4; } #ToallsWindow entry { background-color: #1e1e1e; color: #00ff00; }", -1, nullptr);
     gtk_style_context_add_provider(gtk_widget_get_style_context(window), GTK_STYLE_PROVIDER(provider), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
     g_object_unref(provider);
+    GdkColor chatBackground;
+    GdkColor chatText;
+    GdkColor editBackground;
+    GdkColor editText;
+    gdk_color_parse("#1e1e1e", &chatBackground);
+    gdk_color_parse("#d4d4d4", &chatText);
+    gdk_color_parse("#1e1e1e", &editBackground);
+    gdk_color_parse("#00ff00", &editText);
+    gtk_widget_modify_base(chat, GTK_STATE_NORMAL, &chatBackground);
+    gtk_widget_modify_text(chat, GTK_STATE_NORMAL, &chatText);
+    gtk_widget_modify_base(entry, GTK_STATE_NORMAL, &editBackground);
+    gtk_widget_modify_text(entry, GTK_STATE_NORMAL, &editText);
     g_signal_connect(entry, "activate", G_CALLBACK(onSend), this);
     g_signal_connect(close, "clicked", G_CALLBACK(onClose), this);
     g_signal_connect(window, "delete-event", G_CALLBACK(onDelete), this);

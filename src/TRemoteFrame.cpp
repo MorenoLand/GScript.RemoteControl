@@ -115,8 +115,8 @@ TRemoteFrame::TRemoteFrame(const RC3::RCOptions& nextOptions, const std::filesys
     gtk_style_context_add_provider(gtk_widget_get_style_context(window), GTK_STYLE_PROVIDER(tabProvider), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
     g_object_unref(tabProvider);
     if (graphicalFixed != nullptr) {
-        gtk_widget_set_size_request(notebook, 500, 194);
-        gtk_fixed_put(GTK_FIXED(graphicalFixed), notebook, 0, 136);
+        gtk_widget_set_size_request(notebook, 500, 185);
+        gtk_fixed_put(GTK_FIXED(graphicalFixed), notebook, 0, 145);
     } else gtk_box_pack_start(GTK_BOX(root), notebook, true, true, 0);
 
     editField = gtk_entry_new();
@@ -282,7 +282,7 @@ void TRemoteFrame::onGraphicalAllocate(GtkWidget*, GdkRectangle* allocation, gpo
     gtk_widget_set_size_request(frame->backgroundImage, allocation->width, 165);
     const int positions[12][2] = {{5, 15}, {5, 48}, {38, 15}, {71, 15}, {394, 15}, {427, 15}, {460, 15}, {460, 48}, {460, 81}, {460, 114}, {427, 114}, {394, 114}};
     for (int index = 4; index < 12; ++index) gtk_fixed_move(GTK_FIXED(frame->graphicalFixed), frame->graphicalButtons[index], allocation->width - (500 - positions[index][0]), positions[index][1]);
-    gtk_widget_set_size_request(frame->notebook, allocation->width, MAX(194, allocation->height - 136));
+    gtk_widget_set_size_request(frame->notebook, allocation->width, MAX(185, allocation->height - 145));
 }
 
 gboolean TRemoteFrame::processEvents(gpointer data) {
