@@ -9,6 +9,8 @@
 
 #include <grclib.h>
 
+extern void rc3_begin_pm_tray_alert();
+
 TRemoteFrame::TRemoteFrame(const RC3::RCOptions& nextOptions, const std::filesystem::path& nextApplicationDirectory, std::function<void()> onClose) : onCloseCallback(std::move(onClose)), options(nextOptions), applicationDirectory(nextApplicationDirectory) {
     kappaEmote = gdk_pixbuf_new_from_file((applicationDirectory / "images" / "emote_kappa.png").string().c_str(), nullptr);
     pmNormalEmote = gdk_pixbuf_new_from_file((applicationDirectory / "images" / "pmicon_normal.png").string().c_str(), nullptr);
@@ -115,8 +117,8 @@ TRemoteFrame::TRemoteFrame(const RC3::RCOptions& nextOptions, const std::filesys
     gtk_style_context_add_provider(gtk_widget_get_style_context(window), GTK_STYLE_PROVIDER(tabProvider), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
     g_object_unref(tabProvider);
     if (graphicalFixed != nullptr) {
-        gtk_widget_set_size_request(notebook, 500, 185);
-        gtk_fixed_put(GTK_FIXED(graphicalFixed), notebook, 0, 145);
+        gtk_widget_set_size_request(notebook, 500, 194);
+        gtk_fixed_put(GTK_FIXED(graphicalFixed), notebook, 0, 136);
     } else gtk_box_pack_start(GTK_BOX(root), notebook, true, true, 0);
 
     editField = gtk_entry_new();
@@ -160,6 +162,7 @@ void TRemoteFrame::open(void* nextConnection, const std::string& serverName) {
     rc_on_disconnected(connection, onDisconnected, this);
     rc_on_message(connection, onMessage, this);
     rc_on_irc_message(connection, onIrcMessage, this);
+    rc_on_private_message_ex(connection, onPrivateMessage, this);
     rc_on_server_data(connection, onServerData, this);
     rc_on_account_list(connection, onAccountList, this);
     if (serverLabel != nullptr) gtk_label_set_text(GTK_LABEL(serverLabel), (options.labelservers + " " + serverName).c_str());
@@ -282,7 +285,7 @@ void TRemoteFrame::onGraphicalAllocate(GtkWidget*, GdkRectangle* allocation, gpo
     gtk_widget_set_size_request(frame->backgroundImage, allocation->width, 165);
     const int positions[12][2] = {{5, 15}, {5, 48}, {38, 15}, {71, 15}, {394, 15}, {427, 15}, {460, 15}, {460, 48}, {460, 81}, {460, 114}, {427, 114}, {394, 114}};
     for (int index = 4; index < 12; ++index) gtk_fixed_move(GTK_FIXED(frame->graphicalFixed), frame->graphicalButtons[index], allocation->width - (500 - positions[index][0]), positions[index][1]);
-    gtk_widget_set_size_request(frame->notebook, allocation->width, MAX(185, allocation->height - 145));
+    gtk_widget_set_size_request(frame->notebook, allocation->width, MAX(194, allocation->height - 136));
 }
 
 gboolean TRemoteFrame::processEvents(gpointer data) {
@@ -328,6 +331,13 @@ void TRemoteFrame::onMessage(const char* message, void* data) { static_cast<TRem
 
 void TRemoteFrame::onIrcMessage(const char* channel, const char* line, void* data) {
     static_cast<TRemoteFrame*>(data)->appendChannelMessage(channel == nullptr ? "" : channel, line == nullptr ? "" : line);
+}
+
+void TRemoteFrame::onPrivateMessage(int playerId, const char*, const char*, const char*, const char* type, void* data) {
+    TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
+    if (frame->playerList == nullptr) frame->playerList = new TPlayerList();
+    frame->playerList->notePrivateMessage(playerId, type);
+    rc3_begin_pm_tray_alert();
 }
 
 void TRemoteFrame::onServerData(const char* type, const char* content, void* data) {

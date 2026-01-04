@@ -45,6 +45,7 @@ private:
     static void onDisconnected(const char* reason, void* data);
     static void onMessage(const char* message, void* data);
     static void onIrcMessage(const char* channel, const char* line, void* data);
+    static void onPrivateMessage(int playerId, const char* account, const char* nick, const char* message, const char* type, void* data);
     static void onServerData(const char* type, const char* content, void* data);
     static gboolean scrollChatToBottom(gpointer data);
 

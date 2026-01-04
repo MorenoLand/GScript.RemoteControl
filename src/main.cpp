@@ -13,12 +13,32 @@
 #include <windows.h>
 #endif
 
+GtkStatusIcon* pmTrayIcon = nullptr;
+std::string pmTrayNormalIcon;
+std::string pmTrayAlertIcon;
+guint pmTrayBlinkSource = 0;
+bool pmTrayAlertVisible = false;
+
 namespace {
 
     TStartFrame* trayStartFrame = nullptr;
     TRemoteFrame* trayRemoteFrame = nullptr;
 
+    gboolean onTrayPMBlink(gpointer) {
+        pmTrayAlertVisible = !pmTrayAlertVisible;
+        gtk_status_icon_set_from_file(pmTrayIcon, (pmTrayAlertVisible ? pmTrayAlertIcon : pmTrayNormalIcon).c_str());
+        return G_SOURCE_CONTINUE;
+    }
+
+    void clearTrayPMAlert() {
+        if (pmTrayBlinkSource != 0) g_source_remove(pmTrayBlinkSource);
+        pmTrayBlinkSource = 0;
+        pmTrayAlertVisible = false;
+        gtk_status_icon_set_from_file(pmTrayIcon, pmTrayNormalIcon.c_str());
+    }
+
     void onTrayOpen(GtkMenuItem*, gpointer) {
+        clearTrayPMAlert();
         if (trayRemoteFrame != nullptr) trayRemoteFrame->show();
         else if (trayStartFrame != nullptr) trayStartFrame->show();
     }
@@ -76,6 +96,13 @@ namespace {
 
 }
 
+void rc3_begin_pm_tray_alert() {
+    if (pmTrayIcon == nullptr || pmTrayBlinkSource != 0) return;
+    pmTrayAlertVisible = true;
+    gtk_status_icon_set_from_file(pmTrayIcon, pmTrayAlertIcon.c_str());
+    pmTrayBlinkSource = g_timeout_add(500, onTrayPMBlink, nullptr);
+}
+
 int main(int argc, char** argv) {
     const std::filesystem::path applicationDirectory = getApplicationDirectory();
     std::filesystem::current_path(applicationDirectory);
@@ -87,6 +114,9 @@ int main(int argc, char** argv) {
     RC3::loadRCOptions(options, applicationDirectory);
     applyDarkTheme();
     GtkStatusIcon* trayIcon = gtk_status_icon_new_from_file((applicationDirectory / "images" / "rcicon.png").string().c_str());
+    pmTrayIcon = trayIcon;
+    pmTrayNormalIcon = (applicationDirectory / "images" / "rcicon.png").string();
+    pmTrayAlertIcon = (applicationDirectory / "images" / "pmicon_tray.png").string();
     gtk_status_icon_set_tooltip_text(trayIcon, "Graal RemoteControl");
     g_signal_connect(trayIcon, "activate", G_CALLBACK(onTrayActivate), nullptr);
     g_signal_connect(trayIcon, "popup-menu", G_CALLBACK(onTrayPopup), nullptr);
