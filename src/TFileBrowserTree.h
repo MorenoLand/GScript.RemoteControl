@@ -10,6 +10,11 @@ public:
 private:
     static void onRefresh(GtkButton*, gpointer data);
     static void onFolderSelected(GtkTreeSelection*, gpointer data);
+    static gboolean onFolderButtonPress(GtkWidget*, GdkEventButton*, gpointer data);
+    static gboolean onFileButtonPress(GtkWidget*, GdkEventButton*, gpointer data);
+    static void onDownload(GtkMenuItem*, gpointer data);
+    static void onDeleteItem(GtkMenuItem*, gpointer data);
+    static void onRename(GtkMenuItem*, gpointer data);
     static gboolean onDelete(GtkWidget*, GdkEvent*, gpointer data);
     static void onFolders(int count, void* data);
     static void onFiles(const char* folder, int count, void* data);
@@ -19,10 +24,13 @@ private:
     void refreshFiles(const char* folder);
     void addFolder(const char* pattern, const char* rights);
     void appendLog(const char* message);
+    void showItemMenu(GtkWidget* view, GdkEventButton* event, bool folder);
     GtkWidget* window = nullptr;
     GtkWidget* folderPath = nullptr;
     GtkTreeStore* folders = nullptr;
     GtkListStore* files = nullptr;
+    GtkWidget* folderView = nullptr;
+    GtkWidget* fileView = nullptr;
     GtkWidget* log = nullptr;
     GdkPixbuf* closedFolderIcon = nullptr;
     GdkPixbuf* openFolderIcon = nullptr;

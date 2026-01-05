@@ -19,6 +19,8 @@ namespace {
     constexpr int FileRightsColumn = 2;
     constexpr int FileSizeColumn = 3;
     constexpr int FileModifiedColumn = 4;
+    struct FileMenuItem { TFileBrowserTree* browser; std::string path; };
+    void destroyFileMenuItem(gpointer data, GClosure*) { delete static_cast<FileMenuItem*>(data); }
 
     std::string formatModified(int timestamp) {
         if (timestamp <= 0) return "";
@@ -74,8 +76,8 @@ TFileBrowserTree::TFileBrowserTree() {
     gtk_scrolled_window_set_shadow_type(GTK_SCROLLED_WINDOW(fileScrolled), GTK_SHADOW_IN);
     folders = gtk_tree_store_new(4, GDK_TYPE_PIXBUF, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING);
     files = gtk_list_store_new(5, GDK_TYPE_PIXBUF, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING);
-    GtkWidget* folderView = gtk_tree_view_new_with_model(GTK_TREE_MODEL(folders));
-    GtkWidget* fileView = gtk_tree_view_new_with_model(GTK_TREE_MODEL(files));
+    folderView = gtk_tree_view_new_with_model(GTK_TREE_MODEL(folders));
+    fileView = gtk_tree_view_new_with_model(GTK_TREE_MODEL(files));
     gtk_tree_view_set_headers_visible(GTK_TREE_VIEW(folderView), false);
     GtkTreeViewColumn* folderColumn = gtk_tree_view_column_new();
     GtkCellRenderer* image = gtk_cell_renderer_pixbuf_new();
@@ -132,6 +134,8 @@ TFileBrowserTree::TFileBrowserTree() {
     graalFileIcon = loadImage("rcfiles_graal.png");
     gmapFileIcon = loadImage("rcfiles_gmap.png");
     g_signal_connect(gtk_tree_view_get_selection(GTK_TREE_VIEW(folderView)), "changed", G_CALLBACK(onFolderSelected), this);
+    g_signal_connect(folderView, "button-press-event", G_CALLBACK(onFolderButtonPress), this);
+    g_signal_connect(fileView, "button-press-event", G_CALLBACK(onFileButtonPress), this);
     g_signal_connect(closeButton, "clicked", G_CALLBACK(onRefresh), this);
     g_signal_connect(window, "delete-event", G_CALLBACK(onDelete), this);
 }
@@ -172,6 +176,72 @@ void TFileBrowserTree::onFolderSelected(GtkTreeSelection* selection, gpointer da
         if (!rc_filebrowser_cd(browser->connection, folder)) browser->appendLog(rc_last_error(browser->connection));
         g_free(folder);
     }
+}
+
+gboolean TFileBrowserTree::onFolderButtonPress(GtkWidget* widget, GdkEventButton* event, gpointer data) {
+    if (event->type != GDK_BUTTON_PRESS || event->button != GDK_BUTTON_SECONDARY) return false;
+    static_cast<TFileBrowserTree*>(data)->showItemMenu(widget, event, true);
+    return true;
+}
+
+gboolean TFileBrowserTree::onFileButtonPress(GtkWidget* widget, GdkEventButton* event, gpointer data) {
+    if (event->type != GDK_BUTTON_PRESS || event->button != GDK_BUTTON_SECONDARY) return false;
+    static_cast<TFileBrowserTree*>(data)->showItemMenu(widget, event, false);
+    return true;
+}
+
+void TFileBrowserTree::showItemMenu(GtkWidget* view, GdkEventButton* event, bool folder) {
+    GtkTreePath* path = nullptr;
+    if (!gtk_tree_view_get_path_at_pos(GTK_TREE_VIEW(view), static_cast<gint>(event->x), static_cast<gint>(event->y), &path, nullptr, nullptr, nullptr)) return;
+    GtkTreeSelection* selection = gtk_tree_view_get_selection(GTK_TREE_VIEW(view));
+    gtk_tree_selection_unselect_all(selection);
+    gtk_tree_selection_select_path(selection, path);
+    GtkTreeIter row;
+    GtkTreeModel* model = gtk_tree_view_get_model(GTK_TREE_VIEW(view));
+    gtk_tree_model_get_iter(model, &row, path);
+    gchar* itemPath = nullptr;
+    gtk_tree_model_get(model, &row, folder ? FolderPathColumn : FilePathColumn, &itemPath, -1);
+    gtk_tree_path_free(path);
+    if (itemPath == nullptr || *itemPath == '\0') { g_free(itemPath); return; }
+    GtkWidget* menu = gtk_menu_new();
+    if (!folder) {
+        GtkWidget* download = gtk_menu_item_new_with_label("Download");
+        gtk_menu_shell_append(GTK_MENU_SHELL(menu), download);
+        FileMenuItem* item = new FileMenuItem{this, itemPath};
+        g_signal_connect_data(download, "activate", G_CALLBACK(onDownload), item, destroyFileMenuItem, G_CONNECT_AFTER);
+    }
+    GtkWidget* rename = gtk_menu_item_new_with_label("Rename");
+    GtkWidget* remove = gtk_menu_item_new_with_label("Delete");
+    gtk_menu_shell_append(GTK_MENU_SHELL(menu), rename);
+    gtk_menu_shell_append(GTK_MENU_SHELL(menu), remove);
+    FileMenuItem* renameItem = new FileMenuItem{this, itemPath};
+    FileMenuItem* deleteItem = new FileMenuItem{this, itemPath};
+    g_signal_connect_data(rename, "activate", G_CALLBACK(onRename), renameItem, destroyFileMenuItem, G_CONNECT_AFTER);
+    g_signal_connect_data(remove, "activate", G_CALLBACK(onDeleteItem), deleteItem, destroyFileMenuItem, G_CONNECT_AFTER);
+    g_free(itemPath);
+    gtk_widget_show_all(menu);
+    gtk_menu_popup_at_pointer(GTK_MENU(menu), reinterpret_cast<GdkEvent*>(event));
+}
+
+void TFileBrowserTree::onDownload(GtkMenuItem*, gpointer data) {
+    FileMenuItem* item = static_cast<FileMenuItem*>(data);
+    if (!rc_filebrowser_download(item->browser->connection, item->path.c_str())) item->browser->appendLog(rc_last_error(item->browser->connection));
+}
+
+void TFileBrowserTree::onDeleteItem(GtkMenuItem*, gpointer data) {
+    FileMenuItem* item = static_cast<FileMenuItem*>(data);
+    if (!rc_filebrowser_delete(item->browser->connection, item->path.c_str())) item->browser->appendLog(rc_last_error(item->browser->connection));
+}
+
+void TFileBrowserTree::onRename(GtkMenuItem*, gpointer data) {
+    FileMenuItem* item = static_cast<FileMenuItem*>(data);
+    GtkWidget* dialog = gtk_dialog_new_with_buttons("Rename", GTK_WINDOW(item->browser->window), GTK_DIALOG_MODAL, "Cancel", GTK_RESPONSE_CANCEL, "Rename", GTK_RESPONSE_ACCEPT, nullptr);
+    GtkWidget* entry = gtk_entry_new();
+    gtk_entry_set_text(GTK_ENTRY(entry), item->path.c_str());
+    gtk_box_pack_start(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), entry, false, false, 8);
+    gtk_widget_show_all(dialog);
+    if (gtk_dialog_run(GTK_DIALOG(dialog)) == GTK_RESPONSE_ACCEPT && !rc_filebrowser_rename(item->browser->connection, item->path.c_str(), gtk_entry_get_text(GTK_ENTRY(entry)))) item->browser->appendLog(rc_last_error(item->browser->connection));
+    gtk_widget_destroy(dialog);
 }
 
 void TFileBrowserTree::refresh() {

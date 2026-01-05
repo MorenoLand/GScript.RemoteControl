@@ -19,6 +19,9 @@ private:
     static void onClose(GtkButton*, gpointer data);
     static gboolean onButtonPress(GtkWidget*, GdkEventButton*, gpointer data);
     static void onEditAccess(GtkMenuItem*, gpointer data);
+    static void onPrivateMessageMenu(GtkMenuItem*, gpointer data);
+    static void onHistoryMenu(GtkMenuItem*, gpointer data);
+    static void onDisconnectPlayer(GtkMenuItem*, gpointer data);
     static void onBanData(const char* account, const char* computerId, const char* details, void* data);
     static gboolean onPMBlink(gpointer data);
     static void onPMServers(int count, void* data);
@@ -34,6 +37,9 @@ private:
     void sendMassPM();
     void sendAdminMessage();
     void editAccess();
+    void openSelectedPrivateMessage();
+    void openSelectedHistory();
+    void disconnectSelectedPlayer();
     void updatePMIcons();
     void openPrivateMessage(int playerId, const char* account, const char* nick);
     void appendHistory(const char* account, const char* direction, const char* message) const;
