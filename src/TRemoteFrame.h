@@ -23,6 +23,7 @@ public:
 
     void open(void* connection, const std::string& serverName);
     void show();
+    bool openLatestPrivateMessage();
 
 private:
     static void onSend(GtkButton*, gpointer data);

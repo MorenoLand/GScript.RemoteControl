@@ -390,13 +390,27 @@ GdkPixbuf* TPlayerList::pmIconFor(const std::string& type) const {
     return pmNormalIcon;
 }
 
-void TPlayerList::notePrivateMessage(int playerId, const char* account, const char*, const char* message, const char* type) {
+void TPlayerList::notePrivateMessage(int playerId, const char* account, const char* nick, const char* message, const char* type) {
     if (playerId < 0) return;
     appendHistory(account, "Opposite", message);
+    pmPlayers[playerId] = {account == nullptr ? "" : account, nick == nullptr ? "" : nick};
+    latestPMPlayerId = playerId;
     pmTypes[playerId] = type == nullptr ? "normal" : type;
     pmIconsVisible = true;
     if (pmBlinkSource == 0) pmBlinkSource = g_timeout_add(500, onPMBlink, this);
     updatePMIcons();
+}
+
+bool TPlayerList::openLatestPrivateMessage() {
+    const auto player = pmPlayers.find(latestPMPlayerId);
+    if (player == pmPlayers.end() || player->second.first.empty()) return false;
+    openPrivateMessage(latestPMPlayerId, player->second.first.c_str(), player->second.second.c_str());
+    pmTypes.erase(latestPMPlayerId);
+    pmPlayers.erase(player);
+    latestPMPlayerId = pmPlayers.empty() ? 0 : pmPlayers.rbegin()->first;
+    pmIconsVisible = true;
+    updatePMIcons();
+    return true;
 }
 
 void TPlayerList::appendHistory(const char* account, const char* direction, const char* message) const {

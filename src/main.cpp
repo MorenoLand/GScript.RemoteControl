@@ -45,7 +45,13 @@ namespace {
 
     void onTrayQuit(GtkMenuItem*, gpointer) { gtk_main_quit(); }
 
-    void onTrayActivate(GtkStatusIcon*, gpointer) { onTrayOpen(nullptr, nullptr); }
+    void onTrayActivate(GtkStatusIcon*, gpointer) {
+        if (trayRemoteFrame != nullptr && trayRemoteFrame->openLatestPrivateMessage()) {
+            clearTrayPMAlert();
+            return;
+        }
+        onTrayOpen(nullptr, nullptr);
+    }
 
     void onTrayPopup(GtkStatusIcon*, guint, guint32, gpointer) {
         GtkWidget* menu = gtk_menu_new();

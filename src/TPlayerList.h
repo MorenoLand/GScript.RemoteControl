@@ -12,6 +12,7 @@ public:
     ~TPlayerList();
     void open(void* connection);
     void notePrivateMessage(int playerId, const char* account, const char* nick, const char* message, const char* type);
+    bool openLatestPrivateMessage();
 private:
     static void onRefresh(GtkButton*, gpointer data);
     static void onMassPM(GtkButton*, gpointer data);
@@ -62,6 +63,8 @@ private:
     class TLocalBanWindow* localBanWindow = nullptr;
     std::map<std::string, std::vector<std::string>> serverPlayers;
     std::map<int, std::string> pmTypes;
+    std::map<int, std::pair<std::string, std::string>> pmPlayers;
+    int latestPMPlayerId = 0;
     guint pmBlinkSource = 0;
     bool pmIconsVisible = true;
     void* connection = nullptr;

@@ -178,6 +178,10 @@ void TRemoteFrame::show() {
     gtk_window_present(GTK_WINDOW(window));
 }
 
+bool TRemoteFrame::openLatestPrivateMessage() {
+    return playerList != nullptr && playerList->openLatestPrivateMessage();
+}
+
 void TRemoteFrame::onSend(GtkButton*, gpointer data) { static_cast<TRemoteFrame*>(data)->send(); }
 
 void TRemoteFrame::onPlayerList(GtkMenuItem*, gpointer data) {
