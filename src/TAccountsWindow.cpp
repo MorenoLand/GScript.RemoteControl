@@ -68,6 +68,7 @@ TAccountsWindow::TAccountsWindow() {
     gtk_scrolled_window_set_shadow_type(GTK_SCROLLED_WINDOW(scrolled), GTK_SHADOW_IN);
     store = gtk_list_store_new(1, G_TYPE_STRING);
     GtkWidget* tree = gtk_tree_view_new_with_model(GTK_TREE_MODEL(store));
+    gtk_tree_view_set_headers_visible(GTK_TREE_VIEW(tree), false);
     GtkCellRenderer* renderer = gtk_cell_renderer_text_new();
     gtk_tree_view_append_column(GTK_TREE_VIEW(tree), gtk_tree_view_column_new_with_attributes("", renderer, "text", 0, nullptr));
     gtk_container_add(GTK_CONTAINER(scrolled), tree);
@@ -79,6 +80,9 @@ TAccountsWindow::TAccountsWindow() {
     GtkWidget* getAccounts = gtk_button_new_with_label("Get Accounts");
     GtkWidget* add = gtk_button_new_with_label("Add");
     GtkWidget* listClose = gtk_button_new_with_label("Close");
+    gtk_widget_set_size_request(getAccounts, 100, -1);
+    gtk_widget_set_size_request(add, 100, -1);
+    gtk_widget_set_size_request(listClose, 100, -1);
     gtk_container_add(GTK_CONTAINER(listButtons), getAccounts);
     gtk_container_add(GTK_CONTAINER(listButtons), add);
     gtk_container_add(GTK_CONTAINER(listButtons), listClose);
