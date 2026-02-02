@@ -6,6 +6,7 @@
 #include "TServerTextEditor.h"
 #include "TToallsWindow.h"
 #include "TAccountsWindow.h"
+#include "TOptionsWindow.h"
 
 #include <grclib.h>
 
@@ -36,7 +37,7 @@ TRemoteFrame::TRemoteFrame(const RC3::RCOptions& nextOptions, const std::filesys
         } else if (std::string(menuName) == "Files") {
             addMenuItem(menu, "File Browser", G_CALLBACK(onFileBrowser));
         } else if (std::string(menuName) == "Configuration") {
-            addMenuItem(menu, "RC Options");
+            addMenuItem(menu, "RC Options", G_CALLBACK(onRCOptions));
             addMenuItem(menu, "Server Options", G_CALLBACK(onServerOptions));
             addMenuItem(menu, "Folder Config", G_CALLBACK(onFolderConfig));
         } else if (std::string(menuName) == "Scripts") {
@@ -154,6 +155,7 @@ TRemoteFrame::~TRemoteFrame() {
     delete folderConfigEditor;
     delete toallsWindow;
     delete accountsWindow;
+    delete optionsWindow;
 }
 
 void TRemoteFrame::open(void* nextConnection, const std::string& serverName) {
@@ -203,6 +205,12 @@ void TRemoteFrame::onAccounts(GtkMenuItem*, gpointer data) {
     if (frame->connection == nullptr) return;
     if (frame->accountsWindow == nullptr) frame->accountsWindow = new TAccountsWindow();
     frame->accountsWindow->open(frame->connection);
+}
+
+void TRemoteFrame::onRCOptions(GtkMenuItem*, gpointer data) {
+    TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
+    if (frame->optionsWindow == nullptr) frame->optionsWindow = new TOptionsWindow(const_cast<RC3::RCOptions&>(frame->options), frame->applicationDirectory);
+    frame->optionsWindow->open();
 }
 
 void TRemoteFrame::onAccountList(const char* accounts, void* data) { TRemoteFrame* frame = static_cast<TRemoteFrame*>(data); if (frame->accountsWindow != nullptr) frame->accountsWindow->setAccounts(accounts); }
