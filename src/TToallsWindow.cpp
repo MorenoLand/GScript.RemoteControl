@@ -32,8 +32,8 @@ TToallsWindow::TToallsWindow() {
     gtk_container_add(GTK_CONTAINER(buttons), close);
     gtk_box_pack_start(GTK_BOX(root), buttons, false, false, 0);
     GtkCssProvider* provider = gtk_css_provider_new();
-    gtk_css_provider_load_from_data(provider, "#ToallsWindow textview, #ToallsWindow textview text { background-color: #1e1e1e; color: #d4d4d4; } #ToallsWindow entry { background-color: #1e1e1e; color: #00ff00; }", -1, nullptr);
-    gtk_style_context_add_provider(gtk_widget_get_style_context(window), GTK_STYLE_PROVIDER(provider), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+    gtk_css_provider_load_from_data(provider, "#ToallsWindow, #ToallsWindow scrolledwindow, #ToallsWindow viewport, #ToallsWindow textview, #ToallsWindow textview text { background-color: #1e1e1e; color: #d4d4d4; } #ToallsWindow entry { background-color: #1e1e1e; color: #00ff00; }", -1, nullptr);
+    gtk_style_context_add_provider_for_screen(gdk_screen_get_default(), GTK_STYLE_PROVIDER(provider), GTK_STYLE_PROVIDER_PRIORITY_USER);
     g_object_unref(provider);
     GdkColor chatBackground;
     GdkColor chatText;
@@ -45,6 +45,9 @@ TToallsWindow::TToallsWindow() {
     gdk_color_parse("#00ff00", &editText);
     gtk_widget_modify_base(chat, GTK_STATE_NORMAL, &chatBackground);
     gtk_widget_modify_text(chat, GTK_STATE_NORMAL, &chatText);
+    GdkRGBA chatBackgroundRgba;
+    gdk_rgba_parse(&chatBackgroundRgba, "#1e1e1e");
+    gtk_widget_override_background_color(chat, GTK_STATE_FLAG_NORMAL, &chatBackgroundRgba);
     gtk_widget_modify_base(entry, GTK_STATE_NORMAL, &editBackground);
     gtk_widget_modify_text(entry, GTK_STATE_NORMAL, &editText);
     g_signal_connect(entry, "activate", G_CALLBACK(onSend), this);
