@@ -30,13 +30,18 @@ namespace {
 
     void onPMSend(GtkButton*, gpointer data) {
         PMWindowData* windowData = static_cast<PMWindowData*>(data);
-        const char* text = gtk_entry_get_text(GTK_ENTRY(windowData->reply));
-        if (text == nullptr || *text == '\0') return;
-        if (rc_send_private_message(windowData->connection, windowData->playerId, text) == 0) return;
+        GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(windowData->reply));
+        GtkTextIter start;
+        GtkTextIter end;
+        gtk_text_buffer_get_bounds(buffer, &start, &end);
+        gchar* text = gtk_text_buffer_get_text(buffer, &start, &end, false);
+        if (text == nullptr || *text == '\0') { g_free(text); return; }
+        if (rc_send_private_message(windowData->connection, windowData->playerId, text) == 0) { g_free(text); return; }
         std::filesystem::create_directories(windowData->historyDirectory);
         std::ofstream output(windowData->historyDirectory / (windowData->account + ".txt"), std::ios::app | std::ios::binary);
         output << "You:\n" << text << "\n";
-        gtk_entry_set_text(GTK_ENTRY(windowData->reply), "");
+        g_free(text);
+        gtk_text_buffer_set_text(buffer, "", -1);
     }
 
     void onPMHistory(GtkButton*, gpointer data) {
@@ -426,13 +431,18 @@ void TPlayerList::openPrivateMessage(int playerId, const char* account, const ch
     PMWindowData* data = new PMWindowData{connection, applicationDirectory / "PMs", nullptr, nullptr, playerId, account, nick == nullptr ? "" : nick};
     data->window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
     gtk_window_set_title(GTK_WINDOW(data->window), "PM");
-    gtk_window_set_default_size(GTK_WINDOW(data->window), 380, 170);
-    GtkWidget* root = gtk_box_new(GTK_ORIENTATION_VERTICAL, 5);
-    gtk_container_set_border_width(GTK_CONTAINER(root), 8);
+    gtk_window_set_default_size(GTK_WINDOW(data->window), 380, 300);
+    GtkWidget* root = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
     gtk_container_add(GTK_CONTAINER(data->window), root);
-    gtk_box_pack_start(GTK_BOX(root), gtk_label_new((data->account + ": " + data->nick).c_str()), false, false, 0);
-    data->reply = gtk_entry_new();
-    gtk_box_pack_start(GTK_BOX(root), data->reply, false, false, 0);
+    GtkWidget* label = gtk_label_new((data->account + ": " + data->nick).c_str());
+    gtk_label_set_xalign(GTK_LABEL(label), 0.0F);
+    gtk_box_pack_start(GTK_BOX(root), label, false, false, 5);
+    GtkWidget* scrolled = gtk_scrolled_window_new(nullptr, nullptr);
+    gtk_scrolled_window_set_shadow_type(GTK_SCROLLED_WINDOW(scrolled), GTK_SHADOW_IN);
+    data->reply = gtk_text_view_new();
+    gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(data->reply), GTK_WRAP_WORD_CHAR);
+    gtk_container_add(GTK_CONTAINER(scrolled), data->reply);
+    gtk_box_pack_start(GTK_BOX(root), scrolled, true, true, 0);
     GtkWidget* buttons = gtk_button_box_new(GTK_ORIENTATION_HORIZONTAL);
     gtk_button_box_set_layout(GTK_BUTTON_BOX(buttons), GTK_BUTTONBOX_END);
     GtkWidget* history = gtk_button_new_with_label("History");
@@ -445,6 +455,7 @@ void TPlayerList::openPrivateMessage(int playerId, const char* account, const ch
     g_signal_connect(data->window, "delete-event", G_CALLBACK(onPMWindowDelete), data);
     gtk_widget_show_all(data->window);
     gtk_window_present(GTK_WINDOW(data->window));
+    gtk_widget_grab_focus(data->reply);
 }
 
 void TPlayerList::updatePMIcons() {
