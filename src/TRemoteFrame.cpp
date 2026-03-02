@@ -406,9 +406,10 @@ void TRemoteFrame::appendChat(const std::string& message) {
             gtk_text_buffer_insert_with_tags(buffer, &end, prefix.c_str(), -1, tag, nullptr);
             GtkTextIter textStart;
             gtk_text_buffer_get_end_iter(buffer, &textStart);
+            const gint textStartOffset = gtk_text_iter_get_offset(&textStart);
             gtk_text_buffer_get_end_iter(buffer, &end);
             gtk_text_buffer_insert(buffer, &end, (display.substr(separator + 1) + "\n").c_str(), -1);
-            applyEmotes(buffer, gtk_text_iter_get_offset(&textStart), display.substr(separator + 1));
+            applyEmotes(buffer, textStartOffset, display.substr(separator + 1));
         } else {
             gtk_text_buffer_insert(buffer, &end, (display + "\n").c_str(), -1);
             applyEmotes(buffer, startOffset, display);
@@ -495,9 +496,10 @@ void TRemoteFrame::appendChannelMessage(const std::string& channel, const std::s
             gtk_text_buffer_insert_with_tags(buffer, &end, prefix.c_str(), -1, tag, nullptr);
             GtkTextIter textStart;
             gtk_text_buffer_get_end_iter(buffer, &textStart);
+            const gint textStartOffset = gtk_text_iter_get_offset(&textStart);
             gtk_text_buffer_get_end_iter(buffer, &end);
             gtk_text_buffer_insert(buffer, &end, (display.substr(separator + 1) + "\n").c_str(), -1);
-            applyEmotes(buffer, gtk_text_iter_get_offset(&textStart), display.substr(separator + 1));
+            applyEmotes(buffer, textStartOffset, display.substr(separator + 1));
         } else {
             gtk_text_buffer_insert(buffer, &end, (display + "\n").c_str(), -1);
             applyEmotes(buffer, startOffset, display);
