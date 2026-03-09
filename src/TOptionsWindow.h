@@ -22,6 +22,7 @@ private:
     GtkWidget* ignoreMass = nullptr;
     GtkWidget* ignoreMassClient = nullptr;
     GtkWidget* globalPMs = nullptr;
+    GtkWidget* attachAway = nullptr;
     GtkWidget* buddies = nullptr;
     GtkWidget* separateNC = nullptr;
     GtkWidget* timestamps = nullptr;

@@ -30,6 +30,7 @@ TOptionsWindow::TOptionsWindow(RC3::RCOptions& nextOptions, const std::filesyste
     gtk_container_set_border_width(GTK_CONTAINER(general), 8);
     ignoreMass = addCheck(GTK_BOX(general), "Ignore Mass PMs", options.nomassmessages);
     ignoreMassClient = addCheck(GTK_BOX(general), "Ignore Mass PMs if client is on", options.nomassifclienton);
+    attachAway = addCheck(GTK_BOX(general), "Go in away mode when closing playerlist", options.attachaway);
     globalPMs = addCheck(GTK_BOX(general), "Allow Global PMs", options.globalpms);
     buddies = addCheck(GTK_BOX(general), "Show yourself on other buddy lists", options.showbuddies);
     separateNC = addCheck(GTK_BOX(general), "Separate NC from RC Chat", options.separatenc);
@@ -40,8 +41,12 @@ TOptionsWindow::TOptionsWindow(RC3::RCOptions& nextOptions, const std::filesyste
     gtk_grid_set_column_spacing(GTK_GRID(generalGrid), 5);
     nickname = addEntry(GTK_GRID(generalGrid), "Nickname:", options.nickname, 0);
     downloadFolder = addEntry(GTK_GRID(generalGrid), "Downloadfolder:", options.downloadfolder, 1);
-    logChat = addCheck(GTK_BOX(general), "Log RC Chat", options.logrcchat);
-    logFile = addEntry(GTK_GRID(generalGrid), "Log file:", options.chatlogfile, 2);
+    logChat = gtk_check_button_new_with_label("Log RC Chat");
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(logChat), options.logrcchat);
+    gtk_grid_attach(GTK_GRID(generalGrid), logChat, 0, 2, 1, 1);
+    logFile = gtk_entry_new();
+    gtk_entry_set_text(GTK_ENTRY(logFile), options.chatlogfile.c_str());
+    gtk_grid_attach(GTK_GRID(generalGrid), logFile, 1, 2, 1, 1);
     chatFontSize = addEntry(GTK_GRID(generalGrid), "Chat font size:", std::to_string(options.chatfontsize), 3);
     gtk_box_pack_start(GTK_BOX(general), generalGrid, false, false, 4);
     GtkWidget* script = gtk_box_new(GTK_ORIENTATION_VERTICAL, 5);
@@ -74,6 +79,6 @@ void TOptionsWindow::onClose(GtkButton*, gpointer data) { TOptionsWindow* window
 gboolean TOptionsWindow::onDelete(GtkWidget*, GdkEvent*, gpointer data) { TOptionsWindow* window = static_cast<TOptionsWindow*>(data); window->save(); gtk_widget_hide(window->window); return true; }
 void TOptionsWindow::save() {
     options.nickname = gtk_entry_get_text(GTK_ENTRY(nickname)); options.downloadfolder = gtk_entry_get_text(GTK_ENTRY(downloadFolder)); options.chatlogfile = gtk_entry_get_text(GTK_ENTRY(logFile)); options.chatfontsize = std::max(1, std::atoi(gtk_entry_get_text(GTK_ENTRY(chatFontSize))));
-    options.nomassmessages = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(ignoreMass)); options.nomassifclienton = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(ignoreMassClient)); options.globalpms = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(globalPMs)); options.showbuddies = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(buddies)); options.separatenc = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(separateNC)); options.rctimestamps = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(timestamps)); options.newpmalerts = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(pmAlerts)); options.logrcchat = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(logChat)); options.syntaxhighlighting = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(syntax)); options.autoindenting = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(autoIndent)); options.smarthomeend = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(smartHomeEnd)); options.showbrackets = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(brackets)); options.showlinenumbers = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(lineNumbers)); options.scripttabwidth = std::max(1, std::atoi(gtk_entry_get_text(GTK_ENTRY(scriptTabWidth)))); options.scriptfontsize = std::max(1, std::atoi(gtk_entry_get_text(GTK_ENTRY(scriptFontSize))));
+    options.nomassmessages = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(ignoreMass)); options.nomassifclienton = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(ignoreMassClient)); options.attachaway = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(attachAway)); options.globalpms = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(globalPMs)); options.showbuddies = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(buddies)); options.separatenc = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(separateNC)); options.rctimestamps = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(timestamps)); options.newpmalerts = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(pmAlerts)); options.logrcchat = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(logChat)); options.syntaxhighlighting = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(syntax)); options.autoindenting = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(autoIndent)); options.smarthomeend = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(smartHomeEnd)); options.showbrackets = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(brackets)); options.showlinenumbers = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(lineNumbers)); options.scripttabwidth = std::max(1, std::atoi(gtk_entry_get_text(GTK_ENTRY(scriptTabWidth)))); options.scriptfontsize = std::max(1, std::atoi(gtk_entry_get_text(GTK_ENTRY(scriptFontSize))));
     RC3::saveRCOptions(options, applicationDirectory);
 }
