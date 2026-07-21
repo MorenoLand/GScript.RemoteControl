@@ -118,6 +118,7 @@ namespace {
         const std::string loaders = (applicationDirectory / "lib" / "gdk-pixbuf-2.0" / "2.10.0" / "loaders").string();
         g_setenv("GTK_DATA_PREFIX", applicationPath.c_str(), true);
         g_setenv("GTK_THEME", "Default", true);
+        g_setenv("GTK_CSD", "0", true);
         g_setenv("GDK_PIXBUF_MODULEDIR", loaders.c_str(), true);
         g_setenv("GDK_PIXBUF_MODULE_FILE", (applicationDirectory / "lib" / "gdk-pixbuf-2.0" / "2.10.0" / "loaders.cache").string().c_str(), true);
         g_setenv("GSETTINGS_SCHEMA_DIR", (applicationDirectory / "share" / "glib-2.0" / "schemas").string().c_str(), true);
