@@ -68,8 +68,8 @@ jobs:
           cp "$grclib" "$bundle/lib/"
           cp -a rc3/bin/images rc3/bin/language-specs rc3/bin/sounds "$bundle/"
           cp rc3/bin/control2config.txt "$bundle/"
-          dylibbundler -od -b -x -d "$bundle/lib" -p @executable_path/lib -b -of -s "$bundle/RemoteControl3"
-          dylibbundler -od -b -x -d "$bundle/lib" -p @loader_path -b -of -s "$bundle/lib/$(basename "$grclib")"
+          dylibbundler -od -b -x "$bundle/RemoteControl3" -d "$bundle/lib" -p @executable_path/lib -of -s "$bundle/lib"
+          dylibbundler -od -b -x "$bundle/lib/$(basename "$grclib")" -d "$bundle/lib" -p @loader_path -of
           (cd "$bundle" && zip -r "../$bundle.zip" .)
       - uses: actions/upload-artifact@v4
         with:
