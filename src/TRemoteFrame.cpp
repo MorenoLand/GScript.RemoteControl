@@ -136,15 +136,15 @@ TRemoteFrame::TRemoteFrame(const RC::RCOptions& nextOptions, const std::filesyst
     gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(chatField), GTK_WRAP_WORD_CHAR);
     configureChatField(chatField);
     gtk_container_add(GTK_CONTAINER(chatScrolled), chatField);
-    GtkWidget* chatTab = gtk_label_new("RC Chat ");
-    gtk_widget_set_size_request(chatTab, -1, 18);
+    GtkWidget* chatTab = gtk_label_new("RC Chat");
+    gtk_widget_set_size_request(chatTab, -1, 16);
     gtk_notebook_append_page(GTK_NOTEBOOK(notebook), chatScrolled, chatTab);
-    gtk_notebook_set_tab_detachable(GTK_NOTEBOOK(notebook), chatScrolled, true);
-    gtk_notebook_set_tab_reorderable(GTK_NOTEBOOK(notebook), chatScrolled, true);
+    gtk_notebook_set_tab_detachable(GTK_NOTEBOOK(notebook), chatScrolled, false);
+    gtk_notebook_set_tab_reorderable(GTK_NOTEBOOK(notebook), chatScrolled, false);
     GtkCssProvider* tabProvider = gtk_css_provider_new();
-    const std::string notebookCss = "#RemoteFrame notebook, #RemoteFrame notebook > header, #RemoteFrame notebook > header.top, #RemoteFrame notebook > header.top > tabs, #RemoteFrame notebook > header.top > tabs > tab { margin: 0; padding: 0; border: 0; background-color: transparent; background-image: none; box-shadow: none; } #RemoteFrame notebook > header, #RemoteFrame notebook > header.top, #RemoteFrame notebook > header.top > tabs { min-height: 0; } #RemoteFrame notebook > stack, #RemoteFrame notebook > stack > scrolledwindow, #RemoteFrame notebook > stack > scrolledwindow > viewport { margin: 0; padding: 0; border: 0; background-color: " + options.colorchatback + "; } #RemoteFrame notebook > header.top > tabs > tab { min-height: 0; padding: 0 6px; } #RemoteFrame notebook > header.top > tabs > tab label { margin: 0; padding: 0; font-size: 10px; }";
+    const std::string notebookCss = "#RemoteFrame notebook, #RemoteFrame notebook > header, #RemoteFrame notebook > header.top, #RemoteFrame notebook > header.top > tabs, #RemoteFrame notebook > header.top > tabs > tab { margin: 0; padding: 0; border: 0; background-color: transparent; background-image: none; box-shadow: none; } #RemoteFrame notebook > header, #RemoteFrame notebook > header.top, #RemoteFrame notebook > header.top > tabs { min-height: 0; } #RemoteFrame notebook > stack, #RemoteFrame notebook > stack > scrolledwindow, #RemoteFrame notebook > stack > scrolledwindow > viewport { margin: 0; padding: 0; border: 0; background-color: " + options.colorchatback + "; } #RemoteFrame notebook > header.top > tabs > tab { min-height: 0; min-width: 0; margin: 0 1px 0 0; padding: 0 3px; } #RemoteFrame notebook > header.top > tabs > tab label { min-width: 0; margin: 0; padding: 0; font-size: 10px; }";
     gtk_css_provider_load_from_data(tabProvider, notebookCss.c_str(), -1, nullptr);
-    gtk_style_context_add_provider(gtk_widget_get_style_context(window), GTK_STYLE_PROVIDER(tabProvider), GTK_STYLE_PROVIDER_PRIORITY_USER);
+    gtk_style_context_add_provider(gtk_widget_get_style_context(window), GTK_STYLE_PROVIDER(tabProvider), GTK_STYLE_PROVIDER_PRIORITY_USER + 1);
     g_object_unref(tabProvider);
     if (graphicalFixed != nullptr) {
         gtk_widget_set_size_request(notebook, 500, 194);
@@ -630,8 +630,8 @@ void TRemoteFrame::appendChannelMessage(const std::string& channel, const std::s
         configureChatField(field);
         gtk_container_add(GTK_CONTAINER(scrolled), field);
         gtk_notebook_append_page(GTK_NOTEBOOK(notebook), scrolled, gtk_label_new(channel.c_str()));
-        gtk_notebook_set_tab_detachable(GTK_NOTEBOOK(notebook), scrolled, true);
-        gtk_notebook_set_tab_reorderable(GTK_NOTEBOOK(notebook), scrolled, true);
+        gtk_notebook_set_tab_detachable(GTK_NOTEBOOK(notebook), scrolled, false);
+        gtk_notebook_set_tab_reorderable(GTK_NOTEBOOK(notebook), scrolled, false);
         gtk_widget_show_all(scrolled);
     }
     GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(field));

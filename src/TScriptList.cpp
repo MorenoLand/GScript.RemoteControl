@@ -4,6 +4,7 @@
 
 #include <grclib.h>
 #include <gtksourceview/gtksource.h>
+#include <utility>
 
 namespace {
     TScriptList* classList = nullptr;
@@ -12,7 +13,7 @@ namespace {
 
 TScriptList::TScriptList(std::string nextType) : type(std::move(nextType)) {
     window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
-    gtk_window_set_title(GTK_WINDOW(window), (type == "classes" ? "Classes" : "Script List"));
+    gtk_window_set_title(GTK_WINDOW(window), (type == "classes" ? "Classes" : "Weapon/GUI-Script List"));
     gtk_window_set_default_size(GTK_WINDOW(window), 540, 460);
     GtkWidget* root = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
     gtk_container_add(GTK_CONTAINER(window), root);
@@ -32,11 +33,14 @@ TScriptList::TScriptList(std::string nextType) : type(std::move(nextType)) {
     GtkWidget* buttons = gtk_button_box_new(GTK_ORIENTATION_HORIZONTAL);
     gtk_button_box_set_layout(GTK_BUTTON_BOX(buttons), GTK_BUTTONBOX_END);
     GtkWidget* editButton = gtk_button_new_with_label("Edit");
+    GtkWidget* addButton = type == "weapons" ? gtk_button_new_with_label("Add") : nullptr;
     GtkWidget* closeButton = gtk_button_new_with_label("Close");
     gtk_container_add(GTK_CONTAINER(buttons), editButton);
+    if (addButton != nullptr) gtk_container_add(GTK_CONTAINER(buttons), addButton);
     gtk_container_add(GTK_CONTAINER(buttons), closeButton);
     gtk_box_pack_start(GTK_BOX(root), buttons, false, false, 5);
     g_signal_connect(editButton, "clicked", G_CALLBACK(onEdit), this);
+    if (addButton != nullptr) g_signal_connect(addButton, "clicked", G_CALLBACK(onAdd), this);
     g_signal_connect(closeButton, "clicked", G_CALLBACK(onClose), this);
     g_signal_connect(tree, "row-activated", G_CALLBACK(onTreeActivated), this);
     g_signal_connect(window, "delete-event", G_CALLBACK(onDelete), this);
@@ -56,6 +60,32 @@ void TScriptList::open(void* nextConnection) {
 void TScriptList::restoreScriptReceiver(void* connection) { rc_on_script_received(connection, onScript, nullptr); }
 
 void TScriptList::onEdit(GtkButton*, gpointer data) { static_cast<TScriptList*>(data)->edit(); }
+void TScriptList::onAdd(GtkButton*, gpointer data) {
+    struct AddState { TScriptList* list; GtkWidget* name; GtkWidget* image; };
+    TScriptList* list = static_cast<TScriptList*>(data);
+    GtkWidget* dialog = gtk_dialog_new_with_buttons("Add Weapon/GUI Script", GTK_WINDOW(list->window), GTK_DIALOG_MODAL, "Cancel", GTK_RESPONSE_CANCEL, "Add", GTK_RESPONSE_ACCEPT, nullptr);
+    GtkWidget* grid = gtk_grid_new();
+    gtk_container_set_border_width(GTK_CONTAINER(grid), 8);
+    gtk_grid_set_row_spacing(GTK_GRID(grid), 5);
+    GtkWidget* name = gtk_entry_new();
+    GtkWidget* image = gtk_entry_new();
+    gtk_grid_attach(GTK_GRID(grid), gtk_label_new("Name:"), 0, 0, 1, 1);
+    gtk_grid_attach(GTK_GRID(grid), name, 1, 0, 1, 1);
+    gtk_grid_attach(GTK_GRID(grid), gtk_label_new("Image:"), 0, 1, 1, 1);
+    gtk_grid_attach(GTK_GRID(grid), image, 1, 1, 1, 1);
+    gtk_box_pack_start(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), grid, true, true, 0);
+    auto* state = new AddState{list, name, image};
+    g_signal_connect(dialog, "response", G_CALLBACK(+[](GtkDialog* addDialog, gint response, gpointer userData) {
+        auto* values = static_cast<AddState*>(userData);
+        if (response == GTK_RESPONSE_ACCEPT) {
+            const char* name = gtk_entry_get_text(GTK_ENTRY(values->name));
+            if (name != nullptr && *name != '\0') rc_add_weapon(values->list->connection, name, gtk_entry_get_text(GTK_ENTRY(values->image)), "");
+        }
+        gtk_widget_destroy(GTK_WIDGET(addDialog));
+    }), state);
+    g_signal_connect(dialog, "destroy", G_CALLBACK(+[](GtkWidget*, gpointer userData) { delete static_cast<AddState*>(userData); }), state);
+    gtk_widget_show_all(dialog);
+}
 void TScriptList::onClose(GtkButton*, gpointer data) { gtk_widget_hide(static_cast<TScriptList*>(data)->window); }
 void TScriptList::onTreeActivated(GtkTreeView*, GtkTreePath*, GtkTreeViewColumn*, gpointer data) { static_cast<TScriptList*>(data)->edit(); }
 gboolean TScriptList::onDelete(GtkWidget*, GdkEvent*, gpointer data) { gtk_widget_hide(static_cast<TScriptList*>(data)->window); return true; }
@@ -65,11 +95,11 @@ void TScriptList::refresh() {
     if (type == "weapons") {
         RCWeapon* entries = nullptr;
         const int count = rc_get_weapons(connection, &entries);
-        for (int index = 0; index < count; ++index) { GtkTreeIter row; gtk_list_store_append(store, &row); gtk_list_store_set(store, &row, 0, entries[index].name == nullptr ? "" : entries[index].name, -1); }
+        for (int index = 0; index < count; ++index) if (entries[index].name != nullptr && entries[index].name[0] != '\0') { GtkTreeIter row; gtk_list_store_append(store, &row); gtk_list_store_set(store, &row, 0, entries[index].name, -1); }
     } else {
         RCClass* entries = nullptr;
         const int count = rc_get_classes(connection, &entries);
-        for (int index = 0; index < count; ++index) { GtkTreeIter row; gtk_list_store_append(store, &row); gtk_list_store_set(store, &row, 0, entries[index].name == nullptr ? "" : entries[index].name, -1); }
+        for (int index = 0; index < count; ++index) if (entries[index].name != nullptr && entries[index].name[0] != '\0') { GtkTreeIter row; gtk_list_store_append(store, &row); gtk_list_store_set(store, &row, 0, entries[index].name, -1); }
     }
 }
 
@@ -92,8 +122,8 @@ void TScriptList::onScript(const char* scriptType, const char* name, int, const 
 }
 
 void TScriptList::showEditor(const char* name, const char* script) {
-    struct EditorState { TScriptList* list; std::string name; GtkWidget* editor; };
-    GtkWidget* dialog = gtk_dialog_new_with_buttons(name, GTK_WINDOW(window), GTK_DIALOG_DESTROY_WITH_PARENT, "Cancel", GTK_RESPONSE_CANCEL, "Save", GTK_RESPONSE_ACCEPT, nullptr);
+    struct EditorState { void* connection; bool weapon; std::string name; GtkWidget* editor; };
+    GtkWidget* dialog = gtk_dialog_new_with_buttons(name, GTK_WINDOW(window), static_cast<GtkDialogFlags>(0), "Cancel", GTK_RESPONSE_CANCEL, "Save", GTK_RESPONSE_ACCEPT, nullptr);
     gtk_window_set_default_size(GTK_WINDOW(dialog), 700, 520);
     GtkSourceLanguage* language = gtk_source_language_manager_get_language(gtk_source_language_manager_get_default(), "graal");
     GtkSourceBuffer* sourceBuffer = language != nullptr ? gtk_source_buffer_new_with_language(language) : gtk_source_buffer_new(nullptr);
@@ -119,7 +149,7 @@ void TScriptList::showEditor(const char* name, const char* script) {
         }
         return static_cast<gboolean>(FALSE);
     }), dialog);
-    auto* state = new EditorState{this, name, editor};
+    auto* state = new EditorState{connection, type == "weapons", name, editor};
     g_signal_connect(dialog, "response", G_CALLBACK(+[](GtkDialog* responseDialog, gint response, gpointer data) {
         auto* editorState = static_cast<EditorState*>(data);
         if (response == GTK_RESPONSE_ACCEPT) {
@@ -128,8 +158,8 @@ void TScriptList::showEditor(const char* name, const char* script) {
             GtkTextIter end;
             gtk_text_buffer_get_bounds(editorBuffer, &start, &end);
             gchar* updated = gtk_text_buffer_get_text(editorBuffer, &start, &end, false);
-            if (editorState->list->type == "weapons") rc_update_weapon(editorState->list->connection, editorState->name.c_str(), "", updated);
-            else rc_update_class(editorState->list->connection, editorState->name.c_str(), updated);
+            if (editorState->weapon) rc_update_weapon(editorState->connection, editorState->name.c_str(), "", updated);
+            else rc_update_class(editorState->connection, editorState->name.c_str(), updated);
             g_free(updated);
         } else gtk_widget_destroy(GTK_WIDGET(responseDialog));
     }), state);

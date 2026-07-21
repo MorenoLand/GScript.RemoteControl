@@ -423,8 +423,8 @@ void TFileBrowserTree::onFileReceived(const char* path, const void* content, int
 }
 
 void TFileBrowserTree::showTextEditor(const char* path, const void* content, int length) {
-    struct EditorState { TFileBrowserTree* browser; std::string path; GtkWidget* editor; };
-    GtkWidget* dialog = gtk_dialog_new_with_buttons(path, GTK_WINDOW(window), GTK_DIALOG_DESTROY_WITH_PARENT, "Cancel", GTK_RESPONSE_CANCEL, "Save", GTK_RESPONSE_ACCEPT, nullptr);
+    struct EditorState { void* connection; std::string path; GtkWidget* editor; };
+    GtkWidget* dialog = gtk_dialog_new_with_buttons(path, GTK_WINDOW(window), static_cast<GtkDialogFlags>(0), "Cancel", GTK_RESPONSE_CANCEL, "Save", GTK_RESPONSE_ACCEPT, nullptr);
     gtk_window_set_default_size(GTK_WINDOW(dialog), 700, 520);
     GtkSourceLanguage* language = gtk_source_language_manager_get_language(gtk_source_language_manager_get_default(), "graal");
     GtkSourceBuffer* sourceBuffer = language != nullptr ? gtk_source_buffer_new_with_language(language) : gtk_source_buffer_new(nullptr);
@@ -443,7 +443,7 @@ void TFileBrowserTree::showTextEditor(const char* path, const void* content, int
     gtk_box_set_spacing(GTK_BOX(contentArea), 0);
     gtk_widget_set_margin_top(scrolled, 0);
     gtk_box_pack_start(GTK_BOX(contentArea), scrolled, true, true, 0);
-    auto* state = new EditorState{this, path, editor};
+    auto* state = new EditorState{connection, path, editor};
     g_signal_connect(editor, "key-press-event", G_CALLBACK(+[](GtkWidget*, GdkEventKey* event, gpointer responseDialog) {
         if ((event->state & GDK_CONTROL_MASK) == 0 || (event->keyval != GDK_KEY_s && event->keyval != GDK_KEY_S)) return static_cast<gboolean>(FALSE);
         gtk_dialog_response(GTK_DIALOG(responseDialog), GTK_RESPONSE_ACCEPT);
@@ -457,7 +457,7 @@ void TFileBrowserTree::showTextEditor(const char* path, const void* content, int
         GtkTextIter end;
         gtk_text_buffer_get_bounds(buffer, &start, &end);
         gchar* value = gtk_text_buffer_get_text(buffer, &start, &end, false);
-        if (!rc_upload_file(editorState->browser->connection, editorState->path.c_str(), value, static_cast<int>(strlen(value)))) editorState->browser->appendLog(rc_last_error(editorState->browser->connection));
+        rc_upload_file(editorState->connection, editorState->path.c_str(), value, static_cast<int>(strlen(value)));
         g_free(value);
     }), state);
     g_signal_connect(dialog, "destroy", G_CALLBACK(+[](GtkWidget*, gpointer userData) { delete static_cast<EditorState*>(userData); }), state);

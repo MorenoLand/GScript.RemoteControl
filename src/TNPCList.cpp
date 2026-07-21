@@ -189,8 +189,8 @@ void TNPCList::onDeleteNPC(GtkMenuItem*, gpointer data) {
     if (response == GTK_RESPONSE_OK) rc_delete_npc(list->connection, list->selectedNPCId);
 }
 void TNPCList::showScriptEditor(const char* name, int id, const char* script) {
-    struct EditorState { TNPCList* list; int id; GtkWidget* editor; };
-    GtkWidget* dialog = gtk_dialog_new_with_buttons(name, GTK_WINDOW(window), GTK_DIALOG_DESTROY_WITH_PARENT, "Cancel", GTK_RESPONSE_CANCEL, "Save", GTK_RESPONSE_ACCEPT, nullptr);
+    struct EditorState { void* connection; int id; GtkWidget* editor; };
+    GtkWidget* dialog = gtk_dialog_new_with_buttons(name, GTK_WINDOW(window), static_cast<GtkDialogFlags>(0), "Cancel", GTK_RESPONSE_CANCEL, "Save", GTK_RESPONSE_ACCEPT, nullptr);
     gtk_window_set_default_size(GTK_WINDOW(dialog), 700, 520);
     GtkSourceLanguage* language = gtk_source_language_manager_get_language(gtk_source_language_manager_get_default(), "graal");
     GtkSourceBuffer* sourceBuffer = language != nullptr ? gtk_source_buffer_new_with_language(language) : gtk_source_buffer_new(nullptr);
@@ -216,7 +216,7 @@ void TNPCList::showScriptEditor(const char* name, int id, const char* script) {
         }
         return static_cast<gboolean>(FALSE);
     }), dialog);
-    auto* state = new EditorState{this, id, editor};
+    auto* state = new EditorState{connection, id, editor};
     g_signal_connect(dialog, "response", G_CALLBACK(+[](GtkDialog* responseDialog, gint response, gpointer data) {
         auto* editorState = static_cast<EditorState*>(data);
         if (response == GTK_RESPONSE_ACCEPT) {
@@ -225,7 +225,7 @@ void TNPCList::showScriptEditor(const char* name, int id, const char* script) {
             GtkTextIter end;
             gtk_text_buffer_get_bounds(buffer, &start, &end);
             gchar* updated = gtk_text_buffer_get_text(buffer, &start, &end, false);
-            rc_update_npc(editorState->list->connection, editorState->id, updated);
+            rc_update_npc(editorState->connection, editorState->id, updated);
             g_free(updated);
         } else gtk_widget_destroy(GTK_WIDGET(responseDialog));
     }), state);
@@ -233,8 +233,8 @@ void TNPCList::showScriptEditor(const char* name, int id, const char* script) {
     gtk_widget_show_all(dialog);
 }
 void TNPCList::showFlagsEditor(int id, const char* flags) {
-    struct FlagState { TNPCList* list; int id; GtkWidget* text; };
-    GtkWidget* dialog = gtk_dialog_new_with_buttons("Edit Flags", GTK_WINDOW(window), GTK_DIALOG_DESTROY_WITH_PARENT, "Cancel", GTK_RESPONSE_CANCEL, "Save", GTK_RESPONSE_ACCEPT, nullptr);
+    struct FlagState { void* connection; int id; GtkWidget* text; };
+    GtkWidget* dialog = gtk_dialog_new_with_buttons("Edit Flags", GTK_WINDOW(window), static_cast<GtkDialogFlags>(0), "Cancel", GTK_RESPONSE_CANCEL, "Save", GTK_RESPONSE_ACCEPT, nullptr);
     gtk_window_set_default_size(GTK_WINDOW(dialog), 500, 360);
     GtkWidget* scrolled = gtk_scrolled_window_new(nullptr, nullptr);
     GtkSourceLanguage* language = gtk_source_language_manager_get_language(gtk_source_language_manager_get_default(), "ini");
@@ -248,7 +248,7 @@ void TNPCList::showFlagsEditor(int id, const char* flags) {
     g_object_unref(sourceBuffer);
     gtk_container_add(GTK_CONTAINER(scrolled), text);
     gtk_box_pack_start(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), scrolled, true, true, 0);
-    auto* state = new FlagState{this, id, text};
+    auto* state = new FlagState{connection, id, text};
     g_signal_connect(dialog, "response", G_CALLBACK(+[](GtkDialog* responseDialog, gint response, gpointer data) {
         auto* state = static_cast<FlagState*>(data);
         if (response == GTK_RESPONSE_ACCEPT) {
@@ -257,7 +257,7 @@ void TNPCList::showFlagsEditor(int id, const char* flags) {
             GtkTextIter end;
             gtk_text_buffer_get_bounds(buffer, &start, &end);
             gchar* content = gtk_text_buffer_get_text(buffer, &start, &end, false);
-            rc_set_npc_flags(state->list->connection, state->id, content == nullptr ? "" : content);
+            rc_set_npc_flags(state->connection, state->id, content == nullptr ? "" : content);
             g_free(content);
         } else gtk_widget_destroy(GTK_WIDGET(responseDialog));
     }), state);
@@ -265,7 +265,7 @@ void TNPCList::showFlagsEditor(int id, const char* flags) {
     gtk_widget_show_all(dialog);
 }
 void TNPCList::showAttributes(int id, const char* attributes) {
-    GtkWidget* dialog = gtk_dialog_new_with_buttons(("Attributes of NPC " + std::to_string(id)).c_str(), GTK_WINDOW(window), GTK_DIALOG_DESTROY_WITH_PARENT, "Close", GTK_RESPONSE_CLOSE, nullptr);
+    GtkWidget* dialog = gtk_dialog_new_with_buttons(("Attributes of NPC " + std::to_string(id)).c_str(), GTK_WINDOW(window), static_cast<GtkDialogFlags>(0), "Close", GTK_RESPONSE_CLOSE, nullptr);
     gtk_window_set_default_size(GTK_WINDOW(dialog), 500, 360);
     GtkWidget* scrolled = gtk_scrolled_window_new(nullptr, nullptr);
     GtkSourceLanguage* language = gtk_source_language_manager_get_language(gtk_source_language_manager_get_default(), "ini");
