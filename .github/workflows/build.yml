@@ -41,7 +41,7 @@ jobs:
         run: |
           bundle="${{ matrix.bundle }}"
           mkdir -p "$bundle/lib"
-          grclib="$(find rc3/build -type f -name 'libgrclib.so*' -print -quit)"
+          grclib="$(find grclib/bin -type f -name 'grclib.so*' -print -quit)"
           test -n "$grclib"
           cp rc3/bin/RemoteControl3 "$bundle/"
           cp "$grclib" "$bundle/lib/"
@@ -62,7 +62,7 @@ jobs:
         run: |
           bundle="${{ matrix.bundle }}"
           mkdir -p "$bundle/lib"
-          grclib="$(find rc3/build -type f -name 'libgrclib*.dylib' -print -quit)"
+          grclib="$(find grclib/bin -type f -name 'grclib*.dylib' -print -quit)"
           test -n "$grclib"
           cp rc3/bin/RemoteControl3 "$bundle/"
           cp "$grclib" "$bundle/lib/"
