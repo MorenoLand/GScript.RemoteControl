@@ -23,6 +23,7 @@
 #endif
 
 GtkStatusIcon* pmTrayIcon = nullptr;
+GtkWidget* trayMenu = nullptr;
 std::string pmTrayNormalIcon;
 std::string pmTrayAlertIcon;
 guint pmTrayBlinkSource = 0;
@@ -36,13 +37,13 @@ namespace {
 
 #ifdef _WIN32
     constexpr int ServerListHotkeyId = 0x5243;
-    GdkFilterReturn onWindowsMessage(GdkXEvent* event, GdkEvent*, gpointer) {
-        MSG* message = static_cast<MSG*>(event);
-        if (message->message == WM_HOTKEY && message->wParam == ServerListHotkeyId) {
+    gboolean onWindowsHotkey(gpointer) {
+        MSG message;
+        while (PeekMessageW(&message, nullptr, WM_HOTKEY, WM_HOTKEY, PM_REMOVE)) {
+            if (message.wParam != ServerListHotkeyId) continue;
             if (trayServerListOpen) trayServerListOpen();
-            return GDK_FILTER_REMOVE;
         }
-        return GDK_FILTER_CONTINUE;
+        return G_SOURCE_CONTINUE;
     }
 #endif
 
@@ -65,6 +66,10 @@ namespace {
         else if (trayStartFrame != nullptr) trayStartFrame->show();
     }
 
+    void onTrayServerList(GtkMenuItem*, gpointer) {
+        if (trayServerListOpen) trayServerListOpen();
+    }
+
     void onTrayQuit(GtkMenuItem*, gpointer) { gtk_main_quit(); }
 
     void onTrayActivate(GtkStatusIcon*, gpointer) {
@@ -76,15 +81,7 @@ namespace {
     }
 
     void onTrayPopup(GtkStatusIcon* icon, guint button, guint32 activateTime, gpointer) {
-        GtkWidget* menu = gtk_menu_new();
-        GtkWidget* open = gtk_menu_item_new_with_label("Open");
-        GtkWidget* quit = gtk_menu_item_new_with_label("Quit");
-        gtk_menu_shell_append(GTK_MENU_SHELL(menu), open);
-        gtk_menu_shell_append(GTK_MENU_SHELL(menu), quit);
-        g_signal_connect(open, "activate", G_CALLBACK(onTrayOpen), nullptr);
-        g_signal_connect(quit, "activate", G_CALLBACK(onTrayQuit), nullptr);
-        gtk_widget_show_all(menu);
-        gtk_menu_popup(GTK_MENU(menu), nullptr, nullptr, gtk_status_icon_position_menu, icon, button, activateTime);
+        gtk_menu_popup(GTK_MENU(trayMenu), nullptr, nullptr, gtk_status_icon_position_menu, icon, button, activateTime);
     }
 
     void copySyntaxFiles(const std::filesystem::path& applicationDirectory) {
@@ -166,6 +163,18 @@ int main(int argc, char** argv) {
     pmTrayNormalIcon = (applicationDirectory / "images" / "rcicon.png").string();
     pmTrayAlertIcon = (applicationDirectory / "images" / "pmicon_tray.png").string();
     gtk_status_icon_set_tooltip_text(trayIcon, "Graal RemoteControl");
+    gtk_status_icon_set_visible(trayIcon, true);
+    trayMenu = gtk_menu_new();
+    GtkWidget* openTrayItem = gtk_menu_item_new_with_label("Open");
+    GtkWidget* serverListTrayItem = gtk_menu_item_new_with_label("Server List");
+    GtkWidget* quitTrayItem = gtk_menu_item_new_with_label("Quit");
+    gtk_menu_shell_append(GTK_MENU_SHELL(trayMenu), openTrayItem);
+    gtk_menu_shell_append(GTK_MENU_SHELL(trayMenu), serverListTrayItem);
+    gtk_menu_shell_append(GTK_MENU_SHELL(trayMenu), quitTrayItem);
+    g_signal_connect(openTrayItem, "activate", G_CALLBACK(onTrayOpen), nullptr);
+    g_signal_connect(serverListTrayItem, "activate", G_CALLBACK(onTrayServerList), nullptr);
+    g_signal_connect(quitTrayItem, "activate", G_CALLBACK(onTrayQuit), nullptr);
+    gtk_widget_show_all(trayMenu);
     g_signal_connect(trayIcon, "activate", G_CALLBACK(onTrayActivate), nullptr);
     g_signal_connect(trayIcon, "popup-menu", G_CALLBACK(onTrayPopup), nullptr);
     TStartFrame* startFrame = nullptr;
@@ -180,14 +189,12 @@ int main(int argc, char** argv) {
     trayStartFrame = startFrame;
     trayServerListOpen = [&] { serverList.reopen(); };
 #ifdef _WIN32
-    gdk_window_add_filter(nullptr, onWindowsMessage, nullptr);
-    RegisterHotKey(nullptr, ServerListHotkeyId, MOD_NOREPEAT, VK_F8);
+    if (RegisterHotKey(nullptr, ServerListHotkeyId, MOD_NOREPEAT, VK_F8) != 0) g_timeout_add(20, onWindowsHotkey, nullptr);
 #endif
     frame.show();
     gtk_main();
 #ifdef _WIN32
     UnregisterHotKey(nullptr, ServerListHotkeyId);
-    gdk_window_remove_filter(nullptr, onWindowsMessage, nullptr);
 #endif
     return 0;
 }
