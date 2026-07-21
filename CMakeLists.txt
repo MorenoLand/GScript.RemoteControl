@@ -28,6 +28,7 @@ add_test(NAME RCOptionsTests COMMAND RCOptionsTests)
 
 add_executable(RemoteControl3 src/main.cpp src/RCAccounts.cpp src/TAccountsWindow.cpp src/TFileBrowser.cpp src/TFileBrowserTree.cpp src/TLocalBanWindow.cpp src/TNPCList.cpp src/TOptionsWindow.cpp src/TPlayerList.cpp src/TScriptList.cpp src/TRemoteFrame.cpp src/TServerList.cpp src/TServerTextEditor.cpp src/TToallsWindow.cpp src/TStartFrame.cpp)
 if(WIN32)
+    set_target_properties(RemoteControl3 PROPERTIES WIN32_EXECUTABLE TRUE)
     target_sources(RemoteControl3 PRIVATE assets/RemoteControl3.rc)
 endif()
 target_link_libraries(RemoteControl3 PRIVATE rc3_options grclib OpenSSL::Crypto PkgConfig::GTK3 PkgConfig::GTKSOURCEVIEW3)

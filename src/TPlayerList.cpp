@@ -176,7 +176,7 @@ TPlayerList::TPlayerList(const std::filesystem::path& nextApplicationDirectory) 
         if (std::string(title) == "Guilds" || std::string(title) == "Servers") {
             const bool isServerTab = std::string(title) == "Servers";
             GtkListStore* tabStore = nullptr;
-            if (isServerTab) serverStore = gtk_tree_store_new(5, GDK_TYPE_PIXBUF, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_BOOLEAN, G_TYPE_BOOLEAN);
+            if (isServerTab) serverStore = gtk_tree_store_new(6, GDK_TYPE_PIXBUF, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_BOOLEAN, G_TYPE_BOOLEAN, G_TYPE_INT);
             else { guildStore = gtk_list_store_new(3, GDK_TYPE_PIXBUF, G_TYPE_STRING, G_TYPE_STRING); tabStore = guildStore; }
             GtkWidget* tabTree = gtk_tree_view_new_with_model(isServerTab ? GTK_TREE_MODEL(serverStore) : GTK_TREE_MODEL(tabStore));
             if (isServerTab) {
@@ -659,8 +659,20 @@ void TPlayerList::onPMServerPlayers(const char* serverName, const char* playerDa
             GtkTreeIter child;
             while (gtk_tree_model_iter_children(GTK_TREE_MODEL(list->serverStore), &child, &row)) gtk_tree_store_remove(list->serverStore, &child);
             for (const std::string& player : players) {
+                std::istringstream fields(player);
+                std::string idText;
+                std::string account;
+                std::string nick;
+                std::string level;
+                std::getline(fields, idText, '\t');
+                std::getline(fields, account, '\t');
+                std::getline(fields, nick, '\t');
+                std::getline(fields, level, '\t');
+                int playerId = 0;
+                try { playerId = std::stoi(idText); } catch (...) { nick = player; }
+                if (nick.empty()) nick = account;
                 gtk_tree_store_append(list->serverStore, &child, &row);
-                gtk_tree_store_set(list->serverStore, &child, 0, list->onlineIcon, 1, player.c_str(), 2, "", 3, true, -1);
+                gtk_tree_store_set(list->serverStore, &child, 0, list->onlineIcon, 1, nick.c_str(), 2, account.c_str(), 3, true, 5, playerId, -1);
             }
             gtk_tree_store_set(list->serverStore, &row, 0, list->channelIcon, 3, true, 4, true, -1);
             if (list->serverTree != nullptr) {
@@ -674,10 +686,63 @@ void TPlayerList::onPMServerPlayers(const char* serverName, const char* playerDa
     }
 }
 gboolean TPlayerList::onServerButtonPress(GtkWidget* widget, GdkEventButton* event, gpointer data) {
-    if (event->type != GDK_BUTTON_PRESS || event->button != GDK_BUTTON_PRIMARY) return false;
+    if (event->type != GDK_BUTTON_PRESS && event->type != GDK_2BUTTON_PRESS) return false;
     GtkTreePath* path = nullptr;
     if (!gtk_tree_view_get_path_at_pos(GTK_TREE_VIEW(widget), static_cast<gint>(event->x), static_cast<gint>(event->y), &path, nullptr, nullptr, nullptr)) return false;
-    onServerActivated(GTK_TREE_VIEW(widget), path, nullptr, data);
+    TPlayerList* list = static_cast<TPlayerList*>(data);
+    const int depth = gtk_tree_path_get_depth(path);
+    if (depth == 1 && event->type == GDK_BUTTON_PRESS && event->button == GDK_BUTTON_PRIMARY) onServerActivated(GTK_TREE_VIEW(widget), path, nullptr, data);
+    else if (depth == 2 && event->type == GDK_2BUTTON_PRESS && event->button == GDK_BUTTON_PRIMARY) {
+        GtkTreeIter row;
+        if (gtk_tree_model_get_iter(GTK_TREE_MODEL(list->serverStore), &row, path)) {
+            int playerId = 0;
+            gchar* account = nullptr;
+            gchar* nick = nullptr;
+            gtk_tree_model_get(GTK_TREE_MODEL(list->serverStore), &row, 5, &playerId, 2, &account, 1, &nick, -1);
+            list->openPrivateMessage(playerId, account == nullptr ? "" : account, nick == nullptr ? "" : nick);
+            g_free(account);
+            g_free(nick);
+        }
+    } else if (depth == 2 && event->type == GDK_BUTTON_PRESS && event->button == GDK_BUTTON_SECONDARY) {
+        GtkTreeSelection* selection = gtk_tree_view_get_selection(GTK_TREE_VIEW(widget));
+        gtk_tree_selection_unselect_all(selection);
+        gtk_tree_selection_select_path(selection, path);
+        GtkWidget* menu = gtk_menu_new();
+        GtkWidget* privateMessage = gtk_menu_item_new_with_label("Private Message");
+        GtkWidget* history = gtk_menu_item_new_with_label("History");
+        gtk_menu_shell_append(GTK_MENU_SHELL(menu), privateMessage);
+        gtk_menu_shell_append(GTK_MENU_SHELL(menu), history);
+        g_signal_connect(privateMessage, "activate", G_CALLBACK(+[](GtkMenuItem*, gpointer userData) {
+            TPlayerList* remoteList = static_cast<TPlayerList*>(userData);
+            GtkTreeModel* model = nullptr;
+            GtkTreeIter row;
+            if (!gtk_tree_selection_get_selected(gtk_tree_view_get_selection(GTK_TREE_VIEW(remoteList->serverTree)), &model, &row)) return;
+            int playerId = 0;
+            gchar* account = nullptr;
+            gchar* nick = nullptr;
+            gtk_tree_model_get(model, &row, 5, &playerId, 2, &account, 1, &nick, -1);
+            remoteList->openPrivateMessage(playerId, account == nullptr ? "" : account, nick == nullptr ? "" : nick);
+            g_free(account);
+            g_free(nick);
+        }), list);
+        g_signal_connect(history, "activate", G_CALLBACK((+[](GtkMenuItem*, gpointer userData) {
+            TPlayerList* remoteList = static_cast<TPlayerList*>(userData);
+            GtkTreeModel* model = nullptr;
+            GtkTreeIter row;
+            if (!gtk_tree_selection_get_selected(gtk_tree_view_get_selection(GTK_TREE_VIEW(remoteList->serverTree)), &model, &row)) return;
+            gchar* account = nullptr;
+            gchar* nick = nullptr;
+            gtk_tree_model_get(model, &row, 2, &account, 1, &nick, -1);
+            if (account != nullptr && *account != '\0') {
+                PMWindowData historyData{remoteList->connection, remoteList->applicationDirectory / "PMs", nullptr, nullptr, 0, account, nick == nullptr ? "" : nick};
+                onPMHistory(nullptr, &historyData);
+            }
+            g_free(account);
+            g_free(nick);
+        })), list);
+        gtk_widget_show_all(menu);
+        gtk_menu_popup_at_pointer(GTK_MENU(menu), reinterpret_cast<GdkEvent*>(event));
+    }
     gtk_tree_path_free(path);
     return true;
 }
@@ -842,9 +907,21 @@ void TPlayerList::refreshRemoteLists() {
             const gboolean received = found != serverPlayers.end();
             gtk_tree_store_set(serverStore, &row, 0, received ? channelIcon : channelClosedIcon, 1, servers[index], 2, "", 3, received, 4, received, -1);
             if (found != serverPlayers.end()) for (const std::string& player : found->second) {
+                std::istringstream fields(player);
+                std::string idText;
+                std::string account;
+                std::string nick;
+                std::string level;
+                std::getline(fields, idText, '\t');
+                std::getline(fields, account, '\t');
+                std::getline(fields, nick, '\t');
+                std::getline(fields, level, '\t');
+                int playerId = 0;
+                try { playerId = std::stoi(idText); } catch (...) { nick = player; }
+                if (nick.empty()) nick = account;
                 GtkTreeIter child;
                 gtk_tree_store_append(serverStore, &child, &row);
-                gtk_tree_store_set(serverStore, &child, 0, onlineIcon, 1, player.c_str(), 2, "", 3, true, -1);
+                gtk_tree_store_set(serverStore, &child, 0, onlineIcon, 1, nick.c_str(), 2, account.c_str(), 3, true, 5, playerId, -1);
             }
         }
     }

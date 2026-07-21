@@ -4,6 +4,7 @@
 #include "TStartFrame.h"
 
 #include <array>
+#include <cstdio>
 #include <filesystem>
 #include <functional>
 #include <memory>
@@ -140,6 +141,15 @@ void rc3_begin_pm_tray_alert() {
 }
 
 int main(int argc, char** argv) {
+#ifdef _WIN32
+    bool debugMode = false;
+    for (int index = 1; index < argc; ++index) if (std::string(argv[index]) == "--debug") debugMode = true;
+    if (debugMode && AllocConsole()) {
+        FILE* stream = nullptr;
+        freopen_s(&stream, "CONOUT$", "w", stdout);
+        freopen_s(&stream, "CONOUT$", "w", stderr);
+    }
+#endif
     const std::filesystem::path applicationDirectory = getApplicationDirectory();
     std::filesystem::current_path(applicationDirectory);
     configureGtkRuntime(applicationDirectory);
