@@ -17,12 +17,14 @@ public:
     ~TStartFrame();
 
     void show();
-    GdkWindow* nativeWindow() const { return gtk_widget_get_window(window); }
+    GdkWindow* nativeWindow() const { return window != nullptr ? gtk_widget_get_window(window) : nullptr; }
 
 private:
     static void onConnect(GtkButton*, gpointer data);
     static void onListServerSettings(GtkButton*, gpointer data);
     static void onAccountChanged(GtkComboBox*, gpointer data);
+    static void onCancel(GtkButton*, gpointer data);
+    static void onDestroy(GtkWidget*, gpointer data);
     static gboolean onDelete(GtkWidget*, GdkEvent*, gpointer data);
 
     void connect();

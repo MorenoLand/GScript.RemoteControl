@@ -84,9 +84,9 @@ TStartFrame::TStartFrame(RC::RCOptions& options, const std::filesystem::path& ap
     g_signal_connect(connectButton, "clicked", G_CALLBACK(TStartFrame::onConnect), this);
     g_signal_connect(listServerSettings, "clicked", G_CALLBACK(TStartFrame::onListServerSettings), this);
     g_signal_connect(accountCombo, "changed", G_CALLBACK(TStartFrame::onAccountChanged), this);
-    g_signal_connect(cancelButton, "clicked", G_CALLBACK(gtk_main_quit), nullptr);
+    g_signal_connect(cancelButton, "clicked", G_CALLBACK(onCancel), this);
     g_signal_connect(window, "delete-event", G_CALLBACK(onDelete), this);
-    g_signal_connect(window, "destroy", G_CALLBACK(gtk_main_quit), nullptr);
+    g_signal_connect(window, "destroy", G_CALLBACK(onDestroy), this);
 }
 
 TStartFrame::~TStartFrame() {
@@ -106,6 +106,10 @@ void TStartFrame::onAccountChanged(GtkComboBox*, gpointer data) {
     TStartFrame* frame = static_cast<TStartFrame*>(data);
     gtk_entry_set_text(GTK_ENTRY(frame->passwordField), frame->accounts.passwordFor(frame->getText(frame->accountField)).c_str());
 }
+
+void TStartFrame::onCancel(GtkButton*, gpointer) { if (gtk_main_level() > 0) gtk_main_quit(); }
+
+void TStartFrame::onDestroy(GtkWidget*, gpointer data) { static_cast<TStartFrame*>(data)->window = nullptr; if (gtk_main_level() > 0) gtk_main_quit(); }
 
 gboolean TStartFrame::onDelete(GtkWidget*, GdkEvent*, gpointer) { return false; }
 
