@@ -4,6 +4,9 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     strategy:
@@ -11,9 +14,11 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            setup: sudo apt-get update && sudo apt-get install -y cmake ninja-build pkg-config libgtk-3-dev libgtksourceview-3.0-dev libssl-dev
+            setup: sudo apt-get update && sudo apt-get install -y cmake ninja-build pkg-config libgtk-3-dev libgtksourceview-3.0-dev libssl-dev pax-utils patchelf zip
+            bundle: RemoteControl3-linux-x86_64
           - os: macos-latest
-            setup: brew install cmake ninja pkg-config gtk+3 gtksourceview3 openssl
+            setup: brew install cmake ninja pkg-config gtk+3 gtksourceview3 openssl dylibbundler
+            bundle: RemoteControl3-macos-arm64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -31,10 +36,39 @@ jobs:
         run: cmake --build rc3/build --parallel
       - name: Test
         run: ctest --test-dir rc3/build --output-on-failure
+      - name: Stage Linux bundle
+        if: runner.os == 'Linux'
+        run: |
+          bundle="${{ matrix.bundle }}"
+          mkdir -p "$bundle/lib"
+          cp rc3/bin/RemoteControl3 rc3/bin/libgrclib.so "$bundle/"
+          cp -a rc3/bin/images rc3/bin/language-specs rc3/bin/sounds "$bundle/"
+          cp rc3/bin/control2config.txt "$bundle/"
+          { lddtree -l rc3/bin/RemoteControl3; lddtree -l rc3/bin/libgrclib.so; } | sort -u | while read -r library; do
+            case "$library" in
+              /lib/*|/usr/lib/*/ld-linux-*|/usr/lib/*/libc.so.*|/usr/lib/*/libm.so.*|/usr/lib/*/libpthread.so.*|/usr/lib/*/libdl.so.*|/usr/lib/*/librt.so.*|/usr/lib/*/libgcc_s.so.*|/usr/lib/*/libstdc++.so.*) continue ;;
+            esac
+            cp -n "$library" "$bundle/lib/" || true
+          done
+          cp -a /usr/lib/x86_64-linux-gnu/gdk-pixbuf-2.0 "$bundle/lib/" || true
+          cp -a /usr/share/glib-2.0/schemas "$bundle/share-schemas" || true
+          find "$bundle" -type f \( -name 'RemoteControl3' -o -name '*.so*' \) -exec patchelf --set-rpath '$ORIGIN/lib' {} +
+          (cd "$bundle" && zip -r "../$bundle.zip" .)
+      - name: Stage macOS bundle
+        if: runner.os == 'macOS'
+        run: |
+          bundle="${{ matrix.bundle }}"
+          mkdir -p "$bundle/lib"
+          cp rc3/bin/RemoteControl3 rc3/bin/libgrclib.dylib "$bundle/"
+          cp -a rc3/bin/images rc3/bin/language-specs rc3/bin/sounds "$bundle/"
+          cp rc3/bin/control2config.txt "$bundle/"
+          dylibbundler -od -b -x -d "$bundle/lib" -p @executable_path/lib -b -of -s "$bundle/RemoteControl3"
+          dylibbundler -od -b -x -d "$bundle/lib" -p @loader_path -b -of -s "$bundle/lib/libgrclib.dylib"
+          (cd "$bundle" && zip -r "../$bundle.zip" .)
       - uses: actions/upload-artifact@v4
         with:
-          name: RemoteControl3-${{ matrix.os }}
-          path: rc3/bin
+          name: ${{ matrix.bundle }}
+          path: ${{ matrix.bundle }}.zip
 
   windows:
     runs-on: windows-latest
@@ -53,14 +87,30 @@ jobs:
           install: >-
             mingw-w64-x86_64-gcc mingw-w64-x86_64-cmake mingw-w64-x86_64-ninja
             mingw-w64-x86_64-gtk3 mingw-w64-x86_64-gtksourceview3
-            mingw-w64-x86_64-openssl
+            mingw-w64-x86_64-openssl zip
       - name: Configure, build, and test
         shell: msys2 {0}
         run: |
           cmake -S rc3 -B rc3/build -G Ninja -DGRCLIB_SOURCE_DIR="$PWD/grclib"
           cmake --build rc3/build --parallel
           ctest --test-dir rc3/build --output-on-failure
+          cd rc3/bin
+          zip -r ../../RemoteControl3-windows-x86_64.zip .
       - uses: actions/upload-artifact@v4
         with:
-          name: RemoteControl3-windows
-          path: rc3/bin
+          name: RemoteControl3-windows-x86_64
+          path: RemoteControl3-windows-x86_64.zip
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: release
+          merge-multiple: true
+      - name: Publish release bundles
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${GITHUB_REF_NAME}" release/*.zip --verify-tag --generate-notes
