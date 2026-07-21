@@ -115,11 +115,6 @@ jobs:
           cmake --build remotecontrol/build --parallel
           ctest --test-dir remotecontrol/build --output-on-failure
           cd remotecontrol/bin
-          mkdir -p share/themes share/icons share/glib-2.0 share/gtk-3.0
-          cp -a "$MINGW_PREFIX/share/themes/." share/themes/
-          cp -a "$MINGW_PREFIX/share/icons/." share/icons/
-          cp -a "$MINGW_PREFIX/share/glib-2.0/schemas" share/glib-2.0/
-          cp -a "$MINGW_PREFIX/share/gtk-3.0/." share/gtk-3.0/
           zip -r ../../RemoteControl-windows-x86_64.zip .
       - uses: actions/upload-artifact@v4
         with:
