@@ -137,7 +137,7 @@ jobs:
           merge-multiple: true
       - uses: actions/checkout@v4
         with:
-          repository: MorenoLand/MorenoLand-GScript.RC-releases
+          repository: MorenoLand/GScript.RC-releases
           token: ${{ secrets.RC_RELEASES_TOKEN }}
           path: releases-repo
       - name: Publish release bundles
