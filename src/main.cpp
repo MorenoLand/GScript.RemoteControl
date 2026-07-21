@@ -114,6 +114,7 @@ namespace {
 
     void configureGtkRuntime(const std::filesystem::path& applicationDirectory) {
 #ifdef _WIN32
+        SetDllDirectoryW(applicationDirectory.c_str());
         const std::string loaders = (applicationDirectory / "lib" / "gdk-pixbuf-2.0" / "2.10.0" / "loaders").string();
         const std::string sharedData = (applicationDirectory / "share").string();
         g_setenv("XDG_DATA_DIRS", sharedData.c_str(), true);
