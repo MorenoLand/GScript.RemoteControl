@@ -10,7 +10,7 @@
 
 class TStartFrame {
 public:
-    using ConnectCallback = std::function<void(const std::string&, const std::string&)>;
+    using ConnectCallback = std::function<void(const std::string&, const std::string&, const std::string&)>;
 
     TStartFrame(RC3::RCOptions& options, const std::filesystem::path& applicationDirectory, ConnectCallback onConnect);
     ~TStartFrame();

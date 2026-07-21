@@ -158,12 +158,12 @@ int main(int argc, char** argv) {
     g_signal_connect(trayIcon, "popup-menu", G_CALLBACK(onTrayPopup), nullptr);
     TStartFrame* startFrame = nullptr;
     std::unique_ptr<TRemoteFrame> remoteFrame;
-    TServerList serverList([&] { startFrame->show(); }, [&](void* connection, const std::string& serverName) {
+    TServerList serverList([&] { startFrame->show(); }, [&](void* connection, const std::string& serverName, const std::string& nickname) {
         remoteFrame = std::make_unique<TRemoteFrame>(options, applicationDirectory, [&] { serverList.reopen(); });
         trayRemoteFrame = remoteFrame.get();
-        remoteFrame->open(connection, serverName);
+        remoteFrame->open(connection, serverName, nickname);
     });
-    TStartFrame frame(options, applicationDirectory, [&](const std::string& account, const std::string& password) { serverList.open(account, password); });
+    TStartFrame frame(options, applicationDirectory, [&](const std::string& account, const std::string& password, const std::string& nickname) { serverList.open(account, password, nickname); });
     startFrame = &frame;
     trayStartFrame = startFrame;
     trayServerListOpen = [&] { serverList.reopen(); };

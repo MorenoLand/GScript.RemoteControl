@@ -23,7 +23,7 @@ public:
     TRemoteFrame(const RC3::RCOptions& options, const std::filesystem::path& applicationDirectory, std::function<void()> onClose);
     ~TRemoteFrame();
 
-    void open(void* connection, const std::string& serverName);
+    void open(void* connection, const std::string& serverName, const std::string& nickname);
     void show();
     bool openLatestPrivateMessage();
 
@@ -88,6 +88,7 @@ private:
     GdkPixbuf* pacmanEmote = nullptr;
     GdkPixbuf* backgroundPixbuf = nullptr;
     void* connection = nullptr;
+    std::string nickname;
     guint eventSource = 0;
     gint64 nextNcConnectAttempt = 0;
     bool ncConnectionAttempted = false;

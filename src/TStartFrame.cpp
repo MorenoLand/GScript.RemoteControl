@@ -107,7 +107,7 @@ void TStartFrame::connect() {
     RC3::saveRCOptions(options, applicationDirectory);
     accounts.save(getText(accountField), getText(passwordField), options.dontsavepassword);
     gtk_widget_hide(window);
-    onConnectCallback(getText(accountField), getText(passwordField));
+    onConnectCallback(getText(accountField), getText(passwordField), options.nickname);
 }
 
 std::string TStartFrame::getText(GtkWidget* widget) const { return gtk_entry_get_text(GTK_ENTRY(widget)); }

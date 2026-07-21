@@ -20,7 +20,7 @@ namespace {
 
 }
 
-TServerList::TServerList(std::function<void()> onClose, std::function<void(void*, const std::string&)> onConnected) : onCloseCallback(std::move(onClose)), onConnectedCallback(std::move(onConnected)) {
+TServerList::TServerList(std::function<void()> onClose, std::function<void(void*, const std::string&, const std::string&)> onConnected) : onCloseCallback(std::move(onClose)), onConnectedCallback(std::move(onConnected)) {
     window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
     gtk_widget_set_name(window, "ServerList");
     gtk_window_set_title(GTK_WINDOW(window), "Graal Servers");
@@ -167,9 +167,10 @@ TServerList::~TServerList() {
     if (window != nullptr) gtk_widget_destroy(window);
 }
 
-void TServerList::open(const std::string& account, const std::string& password) {
+void TServerList::open(const std::string& account, const std::string& password, const std::string& nickname) {
     this->account = account;
     this->password = password;
+    this->nickname = nickname;
     gtk_widget_show_all(window);
     gtk_window_present(GTK_WINDOW(window));
     refresh();
@@ -177,7 +178,7 @@ void TServerList::open(const std::string& account, const std::string& password) 
 
 void TServerList::reopen() {
     if (account.empty()) return;
-    open(account, password);
+    open(account, password, nickname);
 }
 
 void TServerList::onRefresh(GtkButton*, gpointer data) { static_cast<TServerList*>(data)->refresh(); }
@@ -270,7 +271,7 @@ void TServerList::connect() {
     if (connection == nullptr) return;
     if (rc_connect_to_server(connection, index)) {
         gtk_widget_hide(window);
-        onConnectedCallback(connection, entries[index].name);
+        onConnectedCallback(connection, entries[index].name, nickname);
     }
     else gtk_label_set_text(GTK_LABEL(statusField), rc_last_error(connection));
 }

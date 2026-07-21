@@ -188,8 +188,9 @@ TRemoteFrame::~TRemoteFrame() {
     delete npcList;
 }
 
-void TRemoteFrame::open(void* nextConnection, const std::string& serverName) {
+void TRemoteFrame::open(void* nextConnection, const std::string& serverName, const std::string& nickname) {
     connection = nextConnection;
+    this->nickname = nickname;
     ncConnectionAttempted = false;
     rc_on_connected(connection, onConnected, this);
     rc_on_disconnected(connection, onDisconnected, this);
@@ -449,7 +450,10 @@ gboolean TRemoteFrame::processEvents(gpointer data) {
     return G_SOURCE_CONTINUE;
 }
 
-void TRemoteFrame::onConnected(void*) {}
+void TRemoteFrame::onConnected(void* data) {
+    TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
+    if (!frame->nickname.empty()) rc_set_nickname(frame->connection, frame->nickname.c_str());
+}
 
 void TRemoteFrame::onDisconnected(const char* reason, void* data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
