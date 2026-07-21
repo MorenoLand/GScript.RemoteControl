@@ -19,6 +19,7 @@ TServerTextEditor::TServerTextEditor(Kind nextKind, const char* title) : kind(ne
     g_object_unref(sourceBuffer);
     buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(text));
     gtk_text_view_set_monospace(GTK_TEXT_VIEW(text), true);
+    addEditorFindShortcut(text);
     g_signal_connect(text, "key-press-event", G_CALLBACK(+[](GtkWidget*, GdkEventKey* event, gpointer data) {
         if ((event->state & GDK_CONTROL_MASK) == 0 || (event->keyval != GDK_KEY_s && event->keyval != GDK_KEY_S)) return static_cast<gboolean>(FALSE);
         static_cast<TServerTextEditor*>(data)->save();
@@ -30,6 +31,7 @@ TServerTextEditor::TServerTextEditor(Kind nextKind, const char* title) : kind(ne
     gtk_button_box_set_layout(GTK_BUTTON_BOX(buttons), GTK_BUTTONBOX_END);
     GtkWidget* saveButton = gtk_button_new_with_label("Save");
     GtkWidget* findButton = gtk_button_new_with_label("Find");
+    gtk_widget_set_tooltip_text(findButton, "Find (Ctrl+F)");
     GtkWidget* closeButton = gtk_button_new_with_label("Close");
     gtk_container_add(GTK_CONTAINER(buttons), findButton);
     gtk_container_add(GTK_CONTAINER(buttons), saveButton);

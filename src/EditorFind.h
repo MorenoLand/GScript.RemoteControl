@@ -2,8 +2,7 @@
 
 #include <gtk/gtk.h>
 
-inline void editorFind(GtkButton*, gpointer data) {
-    GtkWidget* editor = GTK_WIDGET(data);
+inline void openEditorFind(GtkWidget* editor) {
     GtkWidget* dialog = gtk_dialog_new_with_buttons("Find", GTK_WINDOW(gtk_widget_get_toplevel(editor)), GTK_DIALOG_MODAL, "Cancel", GTK_RESPONSE_CANCEL, "Find", GTK_RESPONSE_ACCEPT, nullptr);
     GtkWidget* entry = gtk_entry_new();
     gtk_widget_set_size_request(entry, 260, -1);
@@ -31,9 +30,21 @@ inline void editorFind(GtkButton*, gpointer data) {
     gtk_widget_destroy(dialog);
 }
 
+inline void editorFind(GtkButton*, gpointer data) { openEditorFind(GTK_WIDGET(data)); }
+
+inline gboolean editorFindKey(GtkWidget*, GdkEventKey* event, gpointer data) {
+    if ((event->state & GDK_CONTROL_MASK) == 0 || (event->keyval != GDK_KEY_f && event->keyval != GDK_KEY_F)) return FALSE;
+    openEditorFind(GTK_WIDGET(data));
+    return TRUE;
+}
+
+inline void addEditorFindShortcut(GtkWidget* editor) { g_signal_connect(editor, "key-press-event", G_CALLBACK(editorFindKey), editor); }
+
 inline void addEditorFindButton(GtkWidget* dialog, GtkWidget* editor) {
     GtkWidget* button = gtk_button_new_with_label("Find");
+    gtk_widget_set_tooltip_text(button, "Find (Ctrl+F)");
     gtk_container_add(GTK_CONTAINER(gtk_dialog_get_action_area(GTK_DIALOG(dialog))), button);
     g_signal_connect(button, "clicked", G_CALLBACK(editorFind), editor);
+    addEditorFindShortcut(editor);
     gtk_widget_show(button);
 }
