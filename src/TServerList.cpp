@@ -2,10 +2,25 @@
 
 #include <grclib.h>
 
+#include <cstdlib>
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 namespace {
 
-    constexpr const char* listserverHost = "listserver.graalonline.com";
+    constexpr const char* defaultListserverHost = "listserver.graalonline.com";
     constexpr int listserverPort = 14922;
+
+#ifdef _WIN32
+    std::string readListserverValue(HKEY key, const char* name) {
+        char value[256] = {};
+        DWORD length = sizeof(value);
+        return RegQueryValueExA(key, name, nullptr, nullptr, reinterpret_cast<LPBYTE>(value), &length) == ERROR_SUCCESS ? value : "";
+    }
+
+    void writeListserverValue(HKEY key, const char* name, const std::string& value) { RegSetValueExA(key, name, 0, REG_SZ, reinterpret_cast<const BYTE*>(value.c_str()), static_cast<DWORD>(value.size() + 1)); }
+#endif
 
     int getServerListIcon(const std::string& value) {
         if (value.size() < 2 || value[1] != ' ') return -1;
@@ -21,6 +36,18 @@ namespace {
 }
 
 TServerList::TServerList(std::function<void()> onClose, std::function<void(void*, const std::string&, const std::string&)> onConnected) : onCloseCallback(std::move(onClose)), onConnectedCallback(std::move(onConnected)) {
+    listserverHost = defaultListserverHost;
+#ifdef _WIN32
+    HKEY key = nullptr;
+    if (RegOpenKeyExA(HKEY_CURRENT_USER, "SOFTWARE\\Graal\\RemoteControl", 0, KEY_READ, &key) == ERROR_SUCCESS) {
+        const std::string host = readListserverValue(key, "listserverhost");
+        const std::string port = readListserverValue(key, "listserverport");
+        if (!host.empty()) listserverHost = host;
+        const int parsedPort = std::atoi(port.c_str());
+        if (parsedPort > 0 && parsedPort <= 65535) listserverPort = parsedPort;
+        RegCloseKey(key);
+    }
+#endif
     window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
     gtk_widget_set_name(window, "ServerList");
     gtk_window_set_title(GTK_WINDOW(window), "Graal Servers");
@@ -181,6 +208,58 @@ void TServerList::reopen() {
     open(account, password, nickname);
 }
 
+void TServerList::openListServerSettings() {
+    struct SettingsState { TServerList* serverList; GtkWidget* host; GtkWidget* port; GtkWidget* error; };
+    GtkWidget* dialog = gtk_dialog_new_with_buttons("List server settings", GTK_WINDOW(window), GTK_DIALOG_MODAL, "Cancel", GTK_RESPONSE_CANCEL, "Apply", GTK_RESPONSE_OK, nullptr);
+    gtk_window_set_default_size(GTK_WINDOW(dialog), 350, -1);
+    GtkWidget* frame = gtk_frame_new(" List server ");
+    gtk_container_set_border_width(GTK_CONTAINER(frame), 8);
+    gtk_box_pack_start(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), frame, true, true, 0);
+    GtkWidget* grid = gtk_grid_new();
+    gtk_container_set_border_width(GTK_CONTAINER(grid), 8);
+    gtk_grid_set_row_spacing(GTK_GRID(grid), 5);
+    gtk_grid_set_column_spacing(GTK_GRID(grid), 6);
+    gtk_container_add(GTK_CONTAINER(frame), grid);
+    GtkWidget* host = gtk_entry_new();
+    GtkWidget* port = gtk_entry_new();
+    GtkWidget* error = gtk_label_new("");
+    gtk_entry_set_text(GTK_ENTRY(host), listserverHost.c_str());
+    gtk_entry_set_text(GTK_ENTRY(port), std::to_string(listserverPort).c_str());
+    gtk_label_set_xalign(GTK_LABEL(error), 0.0F);
+    gtk_grid_attach(GTK_GRID(grid), gtk_label_new("Host:"), 0, 0, 1, 1);
+    gtk_grid_attach(GTK_GRID(grid), host, 1, 0, 1, 1);
+    gtk_grid_attach(GTK_GRID(grid), gtk_label_new("Port:"), 0, 1, 1, 1);
+    gtk_grid_attach(GTK_GRID(grid), port, 1, 1, 1, 1);
+    gtk_grid_attach(GTK_GRID(grid), error, 0, 2, 2, 1);
+    auto* state = new SettingsState{this, host, port, error};
+    g_signal_connect(dialog, "response", G_CALLBACK(+[](GtkDialog* settings, gint response, gpointer data) {
+        auto* state = static_cast<SettingsState*>(data);
+        if (response != GTK_RESPONSE_OK) { gtk_widget_destroy(GTK_WIDGET(settings)); return; }
+        const std::string host = gtk_entry_get_text(GTK_ENTRY(state->host));
+        const int port = std::atoi(gtk_entry_get_text(GTK_ENTRY(state->port)));
+        if (host.empty() || port <= 0 || port > 65535) { gtk_label_set_text(GTK_LABEL(state->error), "Enter a host and port from 1 to 65535."); return; }
+        state->serverList->setListServer(host, port);
+        gtk_widget_destroy(GTK_WIDGET(settings));
+    }), state);
+    g_signal_connect(dialog, "destroy", G_CALLBACK(+[](GtkWidget*, gpointer data) { delete static_cast<SettingsState*>(data); }), state);
+    gtk_widget_show_all(dialog);
+}
+
+void TServerList::setListServer(const std::string& host, int port) {
+    listserverHost = host;
+    listserverPort = port;
+#ifdef _WIN32
+    HKEY key = nullptr;
+    DWORD disposition = 0;
+    if (RegCreateKeyExA(HKEY_CURRENT_USER, "SOFTWARE\\Graal\\RemoteControl", 0, nullptr, 0, KEY_WRITE, nullptr, &key, &disposition) == ERROR_SUCCESS) {
+        writeListserverValue(key, "listserverhost", listserverHost);
+        writeListserverValue(key, "listserverport", std::to_string(listserverPort));
+        RegCloseKey(key);
+    }
+#endif
+    if (!account.empty()) refresh();
+}
+
 void TServerList::onRefresh(GtkButton*, gpointer data) { static_cast<TServerList*>(data)->refresh(); }
 
 void TServerList::onConnect(GtkButton*, gpointer data) { static_cast<TServerList*>(data)->connect(); }
@@ -237,7 +316,7 @@ void TServerList::refresh() {
     gtk_label_set_text(GTK_LABEL(statusField), "Loading server list...");
     gtk_widget_set_sensitive(refreshButton, false);
     worker = std::jthread([this] {
-        void* nextConnection = rc_connect(listserverHost, listserverPort, account.c_str(), password.c_str());
+        void* nextConnection = rc_connect(listserverHost.c_str(), listserverPort, account.c_str(), password.c_str());
         std::vector<ServerEntry> nextEntries;
         std::string error;
         if (nextConnection == nullptr) error = "Unable to create listserver connection.";

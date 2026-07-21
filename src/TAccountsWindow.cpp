@@ -70,6 +70,7 @@ TAccountsWindow::TAccountsWindow() {
     gtk_container_set_border_width(GTK_CONTAINER(scrolled), 5);
     store = gtk_list_store_new(1, G_TYPE_STRING);
     GtkWidget* tree = gtk_tree_view_new_with_model(GTK_TREE_MODEL(store));
+    accountTree = tree;
     gtk_tree_view_set_headers_visible(GTK_TREE_VIEW(tree), false);
     gtk_tree_view_set_enable_search(GTK_TREE_VIEW(tree), true);
     GtkCellRenderer* renderer = gtk_cell_renderer_text_new();
@@ -94,6 +95,7 @@ TAccountsWindow::TAccountsWindow() {
     g_signal_connect(add, "clicked", G_CALLBACK(onAdd), this);
     g_signal_connect(listClose, "clicked", G_CALLBACK(onClose), this);
     g_signal_connect(tree, "row-activated", G_CALLBACK(onAccountActivated), this);
+    g_signal_connect(tree, "button-press-event", G_CALLBACK(onAccountContext), this);
     g_signal_connect(listWindow, "delete-event", G_CALLBACK(onDelete), this);
 
     editorWindow = gtk_window_new(GTK_WINDOW_TOPLEVEL);
@@ -190,7 +192,33 @@ std::string TAccountsWindow::accountText() const {
 void TAccountsWindow::onGetList(GtkButton*, gpointer data) { TAccountsWindow* window = static_cast<TAccountsWindow*>(data); rc_request_account_list(window->connection, gtk_entry_get_text(GTK_ENTRY(window->accountField)), gtk_entry_get_text(GTK_ENTRY(window->conditionsField))); }
 void TAccountsWindow::onGetAccounts(GtkButton*, gpointer data) { static_cast<TAccountsWindow*>(data)->openQuery(); }
 void TAccountsWindow::onAdd(GtkButton*, gpointer data) { static_cast<TAccountsWindow*>(data)->openEditor("", ""); }
-void TAccountsWindow::onAccountActivated(GtkTreeView* tree, GtkTreePath*, GtkTreeViewColumn*, gpointer data) { TAccountsWindow* window = static_cast<TAccountsWindow*>(data); GtkTreeModel* model = nullptr; GtkTreeIter row; if (!gtk_tree_selection_get_selected(gtk_tree_view_get_selection(tree), &model, &row)) return; gchar* account = nullptr; gtk_tree_model_get(model, &row, 0, &account, -1); if (account != nullptr) rc_request_player_account(window->connection, account); g_free(account); }
+void TAccountsWindow::onAccountActivated(GtkTreeView*, GtkTreePath*, GtkTreeViewColumn*, gpointer data) { static_cast<TAccountsWindow*>(data)->requestSelectedAccount(); }
+gboolean TAccountsWindow::onAccountContext(GtkWidget* widget, GdkEventButton* event, gpointer data) {
+    if (event->type != GDK_BUTTON_PRESS || event->button != 3) return FALSE;
+    GtkTreeView* tree = GTK_TREE_VIEW(widget);
+    GtkTreePath* path = nullptr;
+    if (!gtk_tree_view_get_path_at_pos(tree, static_cast<gint>(event->x), static_cast<gint>(event->y), &path, nullptr, nullptr, nullptr)) return FALSE;
+    gtk_tree_selection_select_path(gtk_tree_view_get_selection(tree), path);
+    gtk_tree_path_free(path);
+    GtkWidget* menu = gtk_menu_new();
+    GtkWidget* edit = gtk_menu_item_new_with_label("Edit");
+    gtk_menu_shell_append(GTK_MENU_SHELL(menu), edit);
+    g_signal_connect(edit, "activate", G_CALLBACK(onEditAccount), data);
+    g_signal_connect(menu, "deactivate", G_CALLBACK(+[](GtkWidget* menuWidget, gpointer) { gtk_widget_destroy(menuWidget); }), nullptr);
+    gtk_widget_show_all(menu);
+    gtk_menu_popup_at_pointer(GTK_MENU(menu), reinterpret_cast<GdkEvent*>(event));
+    return TRUE;
+}
+void TAccountsWindow::onEditAccount(GtkMenuItem*, gpointer data) { static_cast<TAccountsWindow*>(data)->requestSelectedAccount(); }
+void TAccountsWindow::requestSelectedAccount() {
+    GtkTreeModel* model = nullptr;
+    GtkTreeIter row;
+    if (accountTree == nullptr || !gtk_tree_selection_get_selected(gtk_tree_view_get_selection(GTK_TREE_VIEW(accountTree)), &model, &row)) return;
+    gchar* account = nullptr;
+    gtk_tree_model_get(model, &row, 0, &account, -1);
+    if (account != nullptr && *account != '\0') rc_request_player_account(connection, account);
+    g_free(account);
+}
 void TAccountsWindow::onApply(GtkButton*, gpointer data) { TAccountsWindow* window = static_cast<TAccountsWindow*>(data); const std::string content = window->accountText(); if (window->editingAccount.empty()) rc_add_player_account(window->connection, content.c_str()); else rc_set_player_account(window->connection, window->editingAccount.c_str(), content.c_str()); }
 void TAccountsWindow::onClose(GtkButton* button, gpointer) { gtk_widget_hide(gtk_widget_get_toplevel(GTK_WIDGET(button))); }
 gboolean TAccountsWindow::onDelete(GtkWidget* widget, GdkEvent*, gpointer) { gtk_widget_hide(widget); return true; }

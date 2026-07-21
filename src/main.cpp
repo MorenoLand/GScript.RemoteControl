@@ -37,13 +37,14 @@ namespace {
 
 #ifdef _WIN32
     constexpr int ServerListHotkeyId = 0x5243;
-    gboolean onWindowsHotkey(gpointer) {
-        MSG message;
-        while (PeekMessageW(&message, nullptr, WM_HOTKEY, WM_HOTKEY, PM_REMOVE)) {
-            if (message.wParam != ServerListHotkeyId) continue;
+    HWND serverListHotkeyWindow = nullptr;
+    GdkFilterReturn onWindowsMessage(GdkXEvent* event, GdkEvent*, gpointer) {
+        MSG* message = static_cast<MSG*>(event);
+        if (message->message == WM_HOTKEY && message->wParam == ServerListHotkeyId) {
             if (trayServerListOpen) trayServerListOpen();
+            return GDK_FILTER_REMOVE;
         }
-        return G_SOURCE_CONTINUE;
+        return GDK_FILTER_CONTINUE;
     }
 #endif
 
@@ -126,7 +127,7 @@ namespace {
 
     void applyDarkTheme() {
         GtkCssProvider* provider = gtk_css_provider_new();
-        constexpr const char* css = "window, dialog, .background { background-color: #454545; color: #dddddd; } label, checkbutton label, button label { color: #dddddd; } entry { background-color: #1e1e1e; color: #dddddd; caret-color: #00ff00; border-color: #555555; } entry:disabled { background-color: #383838; color: #c1c1c1; } textview, textview text { background-color: #1e1e1e; color: #dddddd; } combobox button, button { background-image: none; background-color: #383838; color: #cbcbcb; border-color: #555555; } button:hover, combobox button:hover { background-image: none; background-color: #3b3b3b; } button:active, combobox button:active { background-image: none; background-color: #303030; } button:disabled { background-image: none; background-color: #383838; color: #828282; } checkbutton { color: #dddddd; } treeview.view { background-color: #272822; color: #dddddd; } menubar, menu { background-color: #484848; color: #cbcbcb; } menuitem { color: #cbcbcb; } notebook, notebook > header, notebook > stack, scrolledwindow, viewport { background-color: transparent; border: none; box-shadow: none; padding: 0; } notebook > header, notebook > header > tabs { min-height: 0; } notebook > header > tabs > tab { background-image: none; background-color: #3d3d3d; border: 1px solid #707070; border-bottom: none; border-radius: 4px 4px 0 0; margin-right: 4px; padding: 2px 8px; } notebook > header > tabs > tab:checked { background-color: #454545; border-color: #909090; } treeview.view:selected { background-color: #555555; color: #ffffff; }";
+        constexpr const char* css = "window, dialog, .background { background-color: #454545; color: #dddddd; } label, checkbutton label, button label { color: #dddddd; } entry { background-color: #1e1e1e; color: #dddddd; caret-color: #00ff00; border-color: #555555; } entry:disabled { background-color: #383838; color: #c1c1c1; } textview, textview text { background-color: #1e1e1e; color: #dddddd; } combobox button, button { background-image: none; background-color: #383838; color: #cbcbcb; border-color: #555555; } button:hover, combobox button:hover { background-image: none; background-color: #3b3b3b; } button:active, combobox button:active { background-image: none; background-color: #303030; } button:disabled { background-image: none; background-color: #383838; color: #828282; } checkbutton { color: #dddddd; } treeview.view { background-color: #272822; color: #dddddd; } filechooser box, filechooser .path-bar, filechooser .path-bar button, filechooser .pathbar, filechooser .pathbar button { background-image: none; background-color: #454545; color: #dddddd; } filechooser placessidebar, filechooser placessidebar viewport, filechooser placessidebar list, filechooser placessidebar row, filechooser .sidebar, filechooser .sidebar viewport, filechooser .sidebar list, filechooser .sidebar row { background-color: #272822; color: #dddddd; } filechooser placessidebar row:selected, filechooser .sidebar row:selected { background-color: #555555; color: #ffffff; } menubar, menu { background-color: #484848; color: #cbcbcb; } menuitem { color: #cbcbcb; } notebook, notebook > header, notebook > stack, scrolledwindow, viewport { background-color: transparent; border: none; box-shadow: none; padding: 0; } notebook > header, notebook > header > tabs { min-height: 0; } notebook > header > tabs > tab { background-image: none; background-color: #3d3d3d; border: 1px solid #707070; border-bottom: none; border-radius: 4px 4px 0 0; margin-right: 2px; padding: 2px 5px; } notebook > header > tabs > tab:checked { background-color: #454545; border-color: #909090; } treeview.view:selected { background-color: #555555; color: #ffffff; }";
         gtk_css_provider_load_from_data(provider, css, -1, nullptr);
         gtk_style_context_add_provider_for_screen(gdk_screen_get_default(), GTK_STYLE_PROVIDER(provider), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
         g_object_unref(provider);
@@ -153,6 +154,8 @@ int main(int argc, char** argv) {
 #endif
     const std::filesystem::path applicationDirectory = getApplicationDirectory();
     std::filesystem::current_path(applicationDirectory);
+    const std::filesystem::path certificateBundle = applicationDirectory / "certs" / "ca-bundle.crt";
+    if (std::filesystem::is_regular_file(certificateBundle)) g_setenv("SSL_CERT_FILE", certificateBundle.string().c_str(), true);
     configureGtkRuntime(applicationDirectory);
     gtk_init(&argc, &argv);
     gtk_icon_theme_append_search_path(gtk_icon_theme_get_default(), (applicationDirectory / "share" / "icons").string().c_str());
@@ -178,26 +181,37 @@ int main(int argc, char** argv) {
     g_signal_connect(serverListTrayItem, "activate", G_CALLBACK(onTrayServerList), nullptr);
     g_signal_connect(quitTrayItem, "activate", G_CALLBACK(onTrayQuit), nullptr);
     gtk_widget_show_all(trayMenu);
+    gtk_widget_realize(trayMenu);
+    gtk_widget_hide(trayMenu);
     g_signal_connect(trayIcon, "activate", G_CALLBACK(onTrayActivate), nullptr);
     g_signal_connect(trayIcon, "popup-menu", G_CALLBACK(onTrayPopup), nullptr);
     TStartFrame* startFrame = nullptr;
     std::unique_ptr<TRemoteFrame> remoteFrame;
     TServerList serverList([&] { startFrame->show(); }, [&](void* connection, const std::string& serverName, const std::string& nickname) {
-        remoteFrame = std::make_unique<TRemoteFrame>(options, applicationDirectory, [&] { serverList.reopen(); });
+        remoteFrame = std::make_unique<TRemoteFrame>(options, applicationDirectory, [&] { serverList.reopen(); }, [&] { serverList.openListServerSettings(); });
         trayRemoteFrame = remoteFrame.get();
         remoteFrame->open(connection, serverName, nickname);
     });
-    TStartFrame frame(options, applicationDirectory, [&](const std::string& account, const std::string& password, const std::string& nickname) { serverList.open(account, password, nickname); });
+    TStartFrame frame(options, applicationDirectory, [&](const std::string& account, const std::string& password, const std::string& nickname) { serverList.open(account, password, nickname); }, [&] { serverList.openListServerSettings(); });
     startFrame = &frame;
     trayStartFrame = startFrame;
     trayServerListOpen = [&] { serverList.reopen(); };
 #ifdef _WIN32
-    if (RegisterHotKey(nullptr, ServerListHotkeyId, MOD_NOREPEAT, VK_F8) != 0) g_timeout_add(20, onWindowsHotkey, nullptr);
-#endif
     frame.show();
+    if (GdkWindow* startWindow = frame.nativeWindow()) {
+        gdk_window_add_filter(startWindow, onWindowsMessage, nullptr);
+        serverListHotkeyWindow = reinterpret_cast<HWND>(GDK_WINDOW_HWND(startWindow));
+        RegisterHotKey(serverListHotkeyWindow, ServerListHotkeyId, MOD_NOREPEAT, VK_F8);
+    }
+#else
+    frame.show();
+#endif
     gtk_main();
 #ifdef _WIN32
-    UnregisterHotKey(nullptr, ServerListHotkeyId);
+    if (serverListHotkeyWindow != nullptr) {
+        UnregisterHotKey(serverListHotkeyWindow, ServerListHotkeyId);
+        if (GdkWindow* startWindow = frame.nativeWindow()) gdk_window_remove_filter(startWindow, onWindowsMessage, nullptr);
+    }
 #endif
     return 0;
 }

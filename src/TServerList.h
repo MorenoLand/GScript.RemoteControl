@@ -17,6 +17,7 @@ public:
 
     void open(const std::string& account, const std::string& password, const std::string& nickname);
     void reopen();
+    void openListServerSettings();
 
 private:
     struct ServerEntry {
@@ -46,6 +47,7 @@ private:
     void refresh();
     void connect();
     void showEntry(int index);
+    void setListServer(const std::string& host, int port);
 
     std::function<void()> onCloseCallback;
     std::function<void(void*, const std::string&, const std::string&)> onConnectedCallback;
@@ -65,5 +67,7 @@ private:
     std::string account;
     std::string password;
     std::string nickname;
+    std::string listserverHost;
+    int listserverPort = 14922;
     std::vector<ServerEntry> entries;
 };

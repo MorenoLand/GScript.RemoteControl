@@ -2,8 +2,8 @@
 
 #include <utility>
 
-TStartFrame::TStartFrame(RC::RCOptions& options, const std::filesystem::path& applicationDirectory, ConnectCallback onConnect)
-    : options(options), applicationDirectory(applicationDirectory), onConnectCallback(std::move(onConnect)) {
+TStartFrame::TStartFrame(RC::RCOptions& options, const std::filesystem::path& applicationDirectory, ConnectCallback onConnect, ListServerSettingsCallback onListServerSettings)
+    : options(options), applicationDirectory(applicationDirectory), onConnectCallback(std::move(onConnect)), onListServerSettingsCallback(std::move(onListServerSettings)) {
     window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
     gtk_widget_set_name(window, "StartFrame");
     gtk_window_set_title(GTK_WINDOW(window), "Graal RemoteControl");
@@ -66,16 +66,23 @@ TStartFrame::TStartFrame(RC::RCOptions& options, const std::filesystem::path& ap
     gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(graphicsCheck), options.graphicalmenu);
     gtk_box_pack_start(GTK_BOX(optionsBox), graphicsCheck, false, false, 0);
 
-    GtkWidget* buttons = gtk_button_box_new(GTK_ORIENTATION_HORIZONTAL);
+    GtkWidget* buttons = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 5);
     gtk_container_set_border_width(GTK_CONTAINER(buttons), 5);
-    gtk_button_box_set_layout(GTK_BUTTON_BOX(buttons), GTK_BUTTONBOX_END);
+    GtkWidget* listServerSettings = gtk_button_new_with_label("⚙");
+    gtk_widget_set_tooltip_text(listServerSettings, "List server settings");
+    gtk_box_pack_start(GTK_BOX(buttons), listServerSettings, false, false, 0);
+    gtk_box_pack_start(GTK_BOX(buttons), gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0), true, true, 0);
+    GtkWidget* actionButtons = gtk_button_box_new(GTK_ORIENTATION_HORIZONTAL);
+    gtk_button_box_set_layout(GTK_BUTTON_BOX(actionButtons), GTK_BUTTONBOX_END);
     GtkWidget* connectButton = gtk_button_new_from_stock(GTK_STOCK_OK);
     GtkWidget* cancelButton = gtk_button_new_from_stock(GTK_STOCK_CANCEL);
-    gtk_container_add(GTK_CONTAINER(buttons), connectButton);
-    gtk_container_add(GTK_CONTAINER(buttons), cancelButton);
+    gtk_container_add(GTK_CONTAINER(actionButtons), connectButton);
+    gtk_container_add(GTK_CONTAINER(actionButtons), cancelButton);
+    gtk_box_pack_end(GTK_BOX(buttons), actionButtons, false, false, 0);
     gtk_box_pack_start(GTK_BOX(root), buttons, false, true, 0);
 
     g_signal_connect(connectButton, "clicked", G_CALLBACK(TStartFrame::onConnect), this);
+    g_signal_connect(listServerSettings, "clicked", G_CALLBACK(TStartFrame::onListServerSettings), this);
     g_signal_connect(accountCombo, "changed", G_CALLBACK(TStartFrame::onAccountChanged), this);
     g_signal_connect(cancelButton, "clicked", G_CALLBACK(gtk_main_quit), nullptr);
     g_signal_connect(window, "delete-event", G_CALLBACK(onDelete), this);
@@ -92,6 +99,8 @@ void TStartFrame::show() {
 }
 
 void TStartFrame::onConnect(GtkButton*, gpointer data) { static_cast<TStartFrame*>(data)->connect(); }
+
+void TStartFrame::onListServerSettings(GtkButton*, gpointer data) { TStartFrame* frame = static_cast<TStartFrame*>(data); if (frame->onListServerSettingsCallback) frame->onListServerSettingsCallback(); }
 
 void TStartFrame::onAccountChanged(GtkComboBox*, gpointer data) {
     TStartFrame* frame = static_cast<TStartFrame*>(data);

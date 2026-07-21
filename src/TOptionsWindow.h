@@ -35,6 +35,7 @@ private:
     GtkWidget* smartHomeEnd = nullptr;
     GtkWidget* brackets = nullptr;
     GtkWidget* lineNumbers = nullptr;
+    GtkWidget* lsp = nullptr;
     GtkWidget* scriptTabWidth = nullptr;
     GtkWidget* scriptUseTabs = nullptr;
     GtkWidget* scriptFontSize = nullptr;

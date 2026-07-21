@@ -79,6 +79,7 @@ TLocalBanWindow::TLocalBanWindow() {
         gtk_box_pack_start(GTK_BOX(tab), scopes[index].tabIcon, false, false, 0);
         gtk_box_pack_start(GTK_BOX(tab), gtk_label_new(titles[index]), false, false, 0);
         gtk_notebook_append_page(GTK_NOTEBOOK(notebook), page, tab);
+        gtk_widget_show_all(tab);
     }
     gtk_box_pack_start(GTK_BOX(root), notebook, true, true, 0);
     GtkWidget* buttons = gtk_button_box_new(GTK_ORIENTATION_HORIZONTAL);
@@ -176,6 +177,11 @@ void TLocalBanWindow::open(void* nextConnection, const std::string& nextAccount,
         updateTabIcon(index);
     }
     gtk_widget_show_all(window);
+    for (int index = 0; index < 4; ++index) {
+        const bool available = !scopes[index].target.empty();
+        gtk_widget_set_visible(scopes[index].page, available);
+        gtk_widget_set_visible(scopes[index].tab, available);
+    }
     gtk_window_present(GTK_WINDOW(window));
 }
 

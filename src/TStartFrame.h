@@ -11,14 +11,17 @@
 class TStartFrame {
 public:
     using ConnectCallback = std::function<void(const std::string&, const std::string&, const std::string&)>;
+    using ListServerSettingsCallback = std::function<void()>;
 
-    TStartFrame(RC::RCOptions& options, const std::filesystem::path& applicationDirectory, ConnectCallback onConnect);
+    TStartFrame(RC::RCOptions& options, const std::filesystem::path& applicationDirectory, ConnectCallback onConnect, ListServerSettingsCallback onListServerSettings);
     ~TStartFrame();
 
     void show();
+    GdkWindow* nativeWindow() const { return gtk_widget_get_window(window); }
 
 private:
     static void onConnect(GtkButton*, gpointer data);
+    static void onListServerSettings(GtkButton*, gpointer data);
     static void onAccountChanged(GtkComboBox*, gpointer data);
     static gboolean onDelete(GtkWidget*, GdkEvent*, gpointer data);
 
@@ -29,6 +32,7 @@ private:
     RC::RCAccounts accounts;
     std::filesystem::path applicationDirectory;
     ConnectCallback onConnectCallback;
+    ListServerSettingsCallback onListServerSettingsCallback;
     GtkWidget* window = nullptr;
     GtkWidget* nicknameField = nullptr;
     GtkWidget* accountField = nullptr;

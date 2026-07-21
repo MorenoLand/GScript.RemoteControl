@@ -22,6 +22,7 @@ TServerTextEditor::TServerTextEditor(Kind nextKind, const char* title) : kind(ne
     buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(text));
     gtk_text_view_set_monospace(GTK_TEXT_VIEW(text), true);
     addEditorFindShortcut(text);
+    addEditorGoToLineShortcut(text);
     g_signal_connect(text, "key-press-event", G_CALLBACK(+[](GtkWidget*, GdkEventKey* event, gpointer data) {
         if ((event->state & GDK_CONTROL_MASK) == 0 || (event->keyval != GDK_KEY_s && event->keyval != GDK_KEY_S)) return static_cast<gboolean>(FALSE);
         static_cast<TServerTextEditor*>(data)->save();
@@ -32,13 +33,17 @@ TServerTextEditor::TServerTextEditor(Kind nextKind, const char* title) : kind(ne
     GtkWidget* buttons = gtk_button_box_new(GTK_ORIENTATION_HORIZONTAL);
     gtk_button_box_set_layout(GTK_BUTTON_BOX(buttons), GTK_BUTTONBOX_END);
     GtkWidget* saveButton = gtk_button_new_with_label("Save");
+    GtkWidget* goToLineButton = gtk_button_new_with_label("Go to line");
     GtkWidget* findButton = gtk_button_new_with_label("Find");
+    gtk_widget_set_tooltip_text(goToLineButton, "Go to line (Ctrl+G)");
     gtk_widget_set_tooltip_text(findButton, "Find (Ctrl+F)");
     GtkWidget* closeButton = gtk_button_new_with_label("Close");
+    gtk_container_add(GTK_CONTAINER(buttons), goToLineButton);
     gtk_container_add(GTK_CONTAINER(buttons), findButton);
     gtk_container_add(GTK_CONTAINER(buttons), saveButton);
     gtk_container_add(GTK_CONTAINER(buttons), closeButton);
     gtk_box_pack_start(GTK_BOX(root), buttons, false, false, 5);
+    g_signal_connect(goToLineButton, "clicked", G_CALLBACK(editorGoToLine), text);
     g_signal_connect(findButton, "clicked", G_CALLBACK(editorFind), text);
     g_signal_connect(saveButton, "clicked", G_CALLBACK(onSave), this);
     g_signal_connect(closeButton, "clicked", G_CALLBACK(onClose), this);

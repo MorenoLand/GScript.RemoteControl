@@ -70,6 +70,7 @@ namespace RC {
             else if (key == "smarthomeend") options.smarthomeend = isTrue(value);
             else if (key == "showbrackets") options.showbrackets = isTrue(value);
             else if (key == "showlinenumbers") options.showlinenumbers = isTrue(value);
+            else if (key == "lsp") options.lsp = isTrue(value);
             else if (key == "scripttabwidth") options.scripttabwidth = std::stoi(value);
             else if (key == "scriptusetabs") options.scriptusetabs = isTrue(value);
             else if (key == "scriptfontsize") options.scriptfontsize = std::stoi(value);
@@ -118,6 +119,7 @@ namespace RC {
         writeBool(stream, "smarthomeend", options.smarthomeend);
         writeBool(stream, "showbrackets", options.showbrackets);
         writeBool(stream, "showlinenumbers", options.showlinenumbers);
+        writeBool(stream, "lsp", options.lsp);
         writeBool(stream, "separatenc", options.separatenc);
         writeBool(stream, "rctimestamps", options.rctimestamps);
         writeBool(stream, "newpmalerts", options.newpmalerts);

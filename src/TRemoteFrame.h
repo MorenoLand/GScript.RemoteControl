@@ -21,7 +21,7 @@ class TNPCList;
 
 class TRemoteFrame {
 public:
-    TRemoteFrame(const RC::RCOptions& options, const std::filesystem::path& applicationDirectory, std::function<void()> onClose);
+    TRemoteFrame(const RC::RCOptions& options, const std::filesystem::path& applicationDirectory, std::function<void()> onClose, std::function<void()> onListServerSettings);
     ~TRemoteFrame();
 
     void open(void* connection, const std::string& serverName, const std::string& nickname);
@@ -34,6 +34,7 @@ private:
     static void onToalls(GtkMenuItem*, gpointer data);
     static void onAccounts(GtkMenuItem*, gpointer data);
     static void onRCOptions(GtkMenuItem*, gpointer data);
+    static void onListServerSettings(GtkButton*, gpointer data);
     static void onAccountList(const char* accounts, void* data);
     static void onPlayerText(const char* type, const char* account, const char* content, void* data);
     static void onPlayerRights(const char* account, int rights, const char* ipRange, const char* folderAccess, void* data);
@@ -74,6 +75,7 @@ private:
     void graphicalAction(int index);
 
     std::function<void()> onCloseCallback;
+    std::function<void()> onListServerSettingsCallback;
     GtkWidget* window = nullptr;
     GtkWidget* chatField = nullptr;
     GtkWidget* chatScrolled = nullptr;
@@ -95,6 +97,7 @@ private:
     guint eventSource = 0;
     gint64 nextNcConnectAttempt = 0;
     bool ncConnectionAttempted = false;
+    bool disconnectHandled = false;
     TPlayerList* playerList = nullptr;
     TFileBrowserTree* fileBrowser = nullptr;
     TScriptList* classList = nullptr;

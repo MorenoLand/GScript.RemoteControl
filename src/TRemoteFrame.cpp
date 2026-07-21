@@ -33,7 +33,7 @@ namespace {
     }
 }
 
-TRemoteFrame::TRemoteFrame(const RC::RCOptions& nextOptions, const std::filesystem::path& nextApplicationDirectory, std::function<void()> onClose) : onCloseCallback(std::move(onClose)), options(nextOptions), applicationDirectory(nextApplicationDirectory) {
+TRemoteFrame::TRemoteFrame(const RC::RCOptions& nextOptions, const std::filesystem::path& nextApplicationDirectory, std::function<void()> onClose, std::function<void()> onListServerSettings) : onCloseCallback(std::move(onClose)), onListServerSettingsCallback(std::move(onListServerSettings)), options(nextOptions), applicationDirectory(nextApplicationDirectory) {
     kappaEmote = gdk_pixbuf_new_from_file((applicationDirectory / "images" / "emote_kappa.png").string().c_str(), nullptr);
     pmNormalEmote = gdk_pixbuf_new_from_file((applicationDirectory / "images" / "pmicon_normal.png").string().c_str(), nullptr);
     pacmanEmote = gdk_pixbuf_new_from_file((applicationDirectory / "images" / "emote_pacman.png").string().c_str(), nullptr);
@@ -81,7 +81,7 @@ TRemoteFrame::TRemoteFrame(const RC::RCOptions& nextOptions, const std::filesyst
         backgroundPixbuf = gdk_pixbuf_new_from_file(background.string().c_str(), &imageError);
         backgroundImage = gtk_image_new_from_pixbuf(backgroundPixbuf);
         if (imageError != nullptr) g_error_free(imageError);
-        gtk_widget_set_size_request(backgroundImage, 500, 166);
+        gtk_widget_set_size_request(backgroundImage, 500, 180);
         gtk_fixed_put(GTK_FIXED(fixed), backgroundImage, 0, 0);
         const int positions[12][2] = {{5, 15}, {5, 48}, {38, 15}, {71, 15}, {394, 15}, {427, 15}, {460, 15}, {460, 48}, {460, 81}, {460, 114}, {427, 114}, {394, 114}};
         for (int index = 0; index < 12; ++index) {
@@ -96,6 +96,13 @@ TRemoteFrame::TRemoteFrame(const RC::RCOptions& nextOptions, const std::filesyst
             graphicalButtons[index] = button;
             if (index >= 8) gtk_widget_hide(button);
         }
+        GtkWidget* listServerSettings = gtk_button_new_with_label("⚙");
+        gtk_widget_set_size_request(listServerSettings, 28, 28);
+        gtk_widget_set_tooltip_text(listServerSettings, "List server settings");
+        gtk_fixed_put(GTK_FIXED(fixed), listServerSettings, 360, 15);
+        g_signal_connect(listServerSettings, "clicked", G_CALLBACK(TRemoteFrame::onListServerSettings), this);
+        gtk_widget_set_no_show_all(listServerSettings, true);
+        gtk_widget_hide(listServerSettings);
         GdkColor labelColor;
         GdkColor labelBackgroundColor;
         gdk_color_parse(options.colorlabel.c_str(), &labelColor);
@@ -142,13 +149,13 @@ TRemoteFrame::TRemoteFrame(const RC::RCOptions& nextOptions, const std::filesyst
     gtk_notebook_set_tab_detachable(GTK_NOTEBOOK(notebook), chatScrolled, false);
     gtk_notebook_set_tab_reorderable(GTK_NOTEBOOK(notebook), chatScrolled, false);
     GtkCssProvider* tabProvider = gtk_css_provider_new();
-    const std::string notebookCss = "#RemoteFrame notebook, #RemoteFrame notebook > header, #RemoteFrame notebook > header.top, #RemoteFrame notebook > header.top > tabs, #RemoteFrame notebook > header.top > tabs > tab { margin: 0; padding: 0; border: 0; background-color: transparent; background-image: none; box-shadow: none; } #RemoteFrame notebook > header, #RemoteFrame notebook > header.top, #RemoteFrame notebook > header.top > tabs { min-height: 0; } #RemoteFrame notebook > stack, #RemoteFrame notebook > stack > scrolledwindow, #RemoteFrame notebook > stack > scrolledwindow > viewport { margin: 0; padding: 0; border: 0; background-color: " + options.colorchatback + "; } #RemoteFrame notebook > header.top > tabs > tab { min-height: 0; min-width: 0; margin: 0 1px 0 0; padding: 0 3px; } #RemoteFrame notebook > header.top > tabs > tab label { min-width: 0; margin: 0; padding: 0; font-size: 10px; }";
+    const std::string notebookCss = "#RemoteFrame notebook, #RemoteFrame notebook > header, #RemoteFrame notebook > header.top, #RemoteFrame notebook > header.top > tabs { margin: 0; padding: 0; border: 0; background-color: transparent; background-image: none; box-shadow: none; } #RemoteFrame notebook > header, #RemoteFrame notebook > header.top, #RemoteFrame notebook > header.top > tabs { min-height: 0; } #RemoteFrame notebook > stack, #RemoteFrame notebook > stack > scrolledwindow, #RemoteFrame notebook > stack > scrolledwindow > viewport { margin: 0; padding: 0; border: 0; background-color: " + options.colorchatback + "; } #RemoteFrame notebook > header.top > tabs > tab { min-height: 0; min-width: 0; margin: 0 1px 0 0; padding: 3px 7px; background-image: none; background-color: #3d3d3d; border: 1px solid #707070; border-bottom: none; border-radius: 3px 3px 0 0; } #RemoteFrame notebook > header.top > tabs > tab:checked { background-color: #454545; border-color: #909090; } #RemoteFrame notebook > header.top > tabs > tab label { min-width: 0; margin: 0; padding: 0; font-size: 12px; }";
     gtk_css_provider_load_from_data(tabProvider, notebookCss.c_str(), -1, nullptr);
-    gtk_style_context_add_provider(gtk_widget_get_style_context(window), GTK_STYLE_PROVIDER(tabProvider), GTK_STYLE_PROVIDER_PRIORITY_USER + 1);
+    gtk_style_context_add_provider_for_screen(gdk_screen_get_default(), GTK_STYLE_PROVIDER(tabProvider), GTK_STYLE_PROVIDER_PRIORITY_USER + 1);
     g_object_unref(tabProvider);
     if (graphicalFixed != nullptr) {
         gtk_widget_set_size_request(notebook, 500, 194);
-        gtk_fixed_put(GTK_FIXED(graphicalFixed), notebook, 0, 132);
+        gtk_fixed_put(GTK_FIXED(graphicalFixed), notebook, 0, 146);
     } else gtk_box_pack_start(GTK_BOX(root), notebook, true, true, 0);
 
     editField = gtk_entry_new();
@@ -190,6 +197,7 @@ TRemoteFrame::~TRemoteFrame() {
 
 void TRemoteFrame::open(void* nextConnection, const std::string& serverName, const std::string& nickname) {
     connection = nextConnection;
+    disconnectHandled = false;
     this->nickname = nickname;
     ncConnectionAttempted = false;
     rc_on_connected(connection, onConnected, this);
@@ -364,6 +372,11 @@ void TRemoteFrame::onServerOptions(GtkMenuItem*, gpointer data) {
     frame->serverOptionsEditor->open(frame->connection);
 }
 
+void TRemoteFrame::onListServerSettings(GtkButton*, gpointer data) {
+    TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
+    if (frame->onListServerSettingsCallback) frame->onListServerSettingsCallback();
+}
+
 void TRemoteFrame::onServerFlags(GtkMenuItem*, gpointer data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
     if (frame->connection == nullptr) return;
@@ -398,6 +411,10 @@ gboolean TRemoteFrame::onGraphicalButton(GtkWidget* button, GdkEventButton* even
 
 gboolean TRemoteFrame::onEditKey(GtkWidget*, GdkEventKey* event, gpointer data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
+    if (event->keyval == GDK_KEY_F8) {
+        frame->onCloseCallback();
+        return true;
+    }
     if (event->keyval == GDK_KEY_Up && !frame->chatHistory.empty()) {
         frame->chatHistoryIndex = std::min(frame->chatHistoryIndex + 1, static_cast<int>(frame->chatHistory.size()) - 1);
         gtk_entry_set_text(GTK_ENTRY(frame->editField), frame->chatHistory[frame->chatHistoryIndex].c_str());
@@ -429,11 +446,11 @@ void TRemoteFrame::onGraphicalAllocate(GtkWidget*, GdkRectangle* allocation, gpo
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
     if (allocation->width <= 0 || allocation->height <= 0) return;
     if (frame->backgroundPixbuf != nullptr) {
-        GdkPixbuf* scaled = gdk_pixbuf_scale_simple(frame->backgroundPixbuf, allocation->width, 166, GDK_INTERP_BILINEAR);
+        GdkPixbuf* scaled = gdk_pixbuf_scale_simple(frame->backgroundPixbuf, allocation->width, 180, GDK_INTERP_BILINEAR);
         gtk_image_set_from_pixbuf(GTK_IMAGE(frame->backgroundImage), scaled);
         if (scaled != nullptr) g_object_unref(scaled);
     }
-    gtk_widget_set_size_request(frame->backgroundImage, allocation->width, 166);
+    gtk_widget_set_size_request(frame->backgroundImage, allocation->width, 180);
     const int positions[12][2] = {{5, 15}, {5, 48}, {38, 15}, {71, 15}, {394, 15}, {427, 15}, {460, 15}, {460, 48}, {460, 81}, {460, 114}, {427, 114}, {394, 114}};
     for (int index = 4; index < 12; ++index) gtk_fixed_move(GTK_FIXED(frame->graphicalFixed), frame->graphicalButtons[index], allocation->width - (500 - positions[index][0]), positions[index][1]);
 }
@@ -464,10 +481,13 @@ gboolean TRemoteFrame::processEvents(gpointer data) {
 void TRemoteFrame::onConnected(void* data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
     if (!frame->nickname.empty()) rc_set_nickname(frame->connection, frame->nickname.c_str());
+    rc_execute(frame->connection, (std::string("/npc newrc,") + REMOTE_CONTROL_BUILD_DATE).c_str());
 }
 
 void TRemoteFrame::onDisconnected(const char* reason, void* data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
+    if (frame->disconnectHandled) return;
+    frame->disconnectHandled = true;
     GtkWidget* dialog = gtk_dialog_new_with_buttons("Connection Error", GTK_WINDOW(frame->window), GTK_DIALOG_MODAL, "OK", GTK_RESPONSE_OK, nullptr);
     gtk_window_set_default_size(GTK_WINDOW(dialog), 400, 150);
     GtkWidget* message = gtk_label_new(reason == nullptr ? "Disconnected." : reason);

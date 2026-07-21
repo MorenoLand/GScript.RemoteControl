@@ -15,11 +15,14 @@ private:
     static void onGetAccounts(GtkButton*, gpointer data);
     static void onAdd(GtkButton*, gpointer data);
     static void onAccountActivated(GtkTreeView*, GtkTreePath*, GtkTreeViewColumn*, gpointer data);
+    static gboolean onAccountContext(GtkWidget*, GdkEventButton*, gpointer data);
+    static void onEditAccount(GtkMenuItem*, gpointer data);
     static void onApply(GtkButton*, gpointer data);
     static void onClose(GtkButton*, gpointer data);
     static gboolean onDelete(GtkWidget*, GdkEvent*, gpointer data);
     void openQuery();
     void openEditor(const std::string& account, const char* content);
+    void requestSelectedAccount();
     std::string accountText() const;
     GtkWidget* queryWindow = nullptr;
     GtkWidget* listWindow = nullptr;
@@ -35,6 +38,7 @@ private:
     GtkWidget* guestCheck = nullptr;
     GtkWidget* banTimeField = nullptr;
     GtkWidget* reasonField = nullptr;
+    GtkWidget* accountTree = nullptr;
     GtkListStore* store = nullptr;
     void* connection = nullptr;
     std::string editingAccount;

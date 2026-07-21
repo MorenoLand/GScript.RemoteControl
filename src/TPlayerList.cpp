@@ -167,7 +167,7 @@ TPlayerList::TPlayerList(const std::filesystem::path& nextApplicationDirectory) 
     g_object_unref(expanderProvider);
     gtk_notebook_append_page(GTK_NOTEBOOK(notebook), scrolled, gtk_label_new("This server "));
     GtkCssProvider* tabProvider = gtk_css_provider_new();
-    gtk_css_provider_load_from_data(tabProvider, "#PlayerList notebook > header > tabs > tab { border: 1px solid #777777; border-bottom: 0; border-radius: 4px 4px 0 0; margin-right: 4px; padding: 4px 10px; } #PlayerList notebook > header > tabs > tab:checked { border-color: #aaaaaa; margin-bottom: -1px; }", -1, nullptr);
+    gtk_css_provider_load_from_data(tabProvider, "#PlayerList notebook > header > tabs > tab { min-height: 0; border: 1px solid #777777; border-bottom: 0; border-radius: 4px 4px 0 0; margin-right: 1px; padding: 5px 8px; } #PlayerList notebook > header > tabs > tab label { margin: 0; padding: 0; font-size: 12px; } #PlayerList notebook > header > tabs > tab:checked { border-color: #aaaaaa; margin-bottom: -1px; }", -1, nullptr);
     gtk_style_context_add_provider_for_screen(gdk_screen_get_default(), GTK_STYLE_PROVIDER(tabProvider), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION + 1);
     g_object_unref(tabProvider);
     for (const char* title : {"Guilds", "Servers", "Channels"}) {
@@ -692,6 +692,10 @@ gboolean TPlayerList::onServerButtonPress(GtkWidget* widget, GdkEventButton* eve
     TPlayerList* list = static_cast<TPlayerList*>(data);
     const int depth = gtk_tree_path_get_depth(path);
     if (depth == 1 && event->type == GDK_BUTTON_PRESS && event->button == GDK_BUTTON_PRIMARY) onServerActivated(GTK_TREE_VIEW(widget), path, nullptr, data);
+    else if (depth == 2 && event->type == GDK_BUTTON_PRESS && event->button == GDK_BUTTON_PRIMARY) {
+        gtk_tree_path_free(path);
+        return false;
+    }
     else if (depth == 2 && event->type == GDK_2BUTTON_PRESS && event->button == GDK_BUTTON_PRIMARY) {
         GtkTreeIter row;
         if (gtk_tree_model_get_iter(GTK_TREE_MODEL(list->serverStore), &row, path)) {

@@ -28,6 +28,7 @@ namespace RC {
         bool smarthomeend = true;
         bool showbrackets = true;
         bool showlinenumbers = true;
+        bool lsp = true;
         bool separatenc = false;
         bool rctimestamps = true;
         bool newpmalerts = true;

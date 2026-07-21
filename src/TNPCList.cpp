@@ -191,6 +191,10 @@ void TNPCList::onDeleteNPC(GtkMenuItem*, gpointer data) {
 void TNPCList::showScriptEditor(const char* name, int id, const char* script) {
     struct EditorState { void* connection; int id; GtkWidget* editor; };
     GtkWidget* dialog = gtk_dialog_new_with_buttons(name, GTK_WINDOW(window), static_cast<GtkDialogFlags>(0), "Cancel", GTK_RESPONSE_CANCEL, "Save", GTK_RESPONSE_ACCEPT, nullptr);
+    gtk_window_set_destroy_with_parent(GTK_WINDOW(dialog), false);
+    gtk_window_set_transient_for(GTK_WINDOW(dialog), nullptr);
+    gtk_window_set_type_hint(GTK_WINDOW(dialog), GDK_WINDOW_TYPE_HINT_NORMAL);
+    gtk_window_set_resizable(GTK_WINDOW(dialog), true);
     gtk_window_set_default_size(GTK_WINDOW(dialog), 700, 520);
     GtkSourceLanguage* language = gtk_source_language_manager_get_language(gtk_source_language_manager_get_default(), "graal");
     GtkSourceBuffer* sourceBuffer = language != nullptr ? gtk_source_buffer_new_with_language(language) : gtk_source_buffer_new(nullptr);
@@ -273,6 +277,7 @@ void TNPCList::showAttributes(int id, const char* attributes) {
     GtkSourceStyleScheme* scheme = gtk_source_style_scheme_manager_get_scheme(gtk_source_style_scheme_manager_get_default(), "graalcolors");
     if (scheme != nullptr) gtk_source_buffer_set_style_scheme(sourceBuffer, scheme);
     GtkWidget* text = gtk_source_view_new_with_buffer(sourceBuffer);
+    configureGScriptEditor(text);
     gtk_widget_set_name(text, "NPCAttributes");
     gtk_text_view_set_editable(GTK_TEXT_VIEW(text), false);
     gtk_text_view_set_cursor_visible(GTK_TEXT_VIEW(text), false);
