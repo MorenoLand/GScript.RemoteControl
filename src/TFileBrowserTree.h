@@ -29,7 +29,7 @@ private:
     static void onFileReceived(const char* path, const void* content, int length, void* data);
     void refresh();
     void refreshFolders();
-    void refreshFiles(const char* folder);
+    void refreshFiles(const char* folder, int count);
     void addFolder(const char* pattern, const char* rights);
     void appendLog(const char* message);
     void showTextEditor(const char* path, const void* content, int length);

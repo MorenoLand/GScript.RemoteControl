@@ -176,7 +176,7 @@ void TFileBrowserTree::open(void* nextConnection) {
 
 void TFileBrowserTree::onRefresh(GtkButton*, gpointer data) { gtk_widget_hide(static_cast<TFileBrowserTree*>(data)->window); }
 void TFileBrowserTree::onFolders(int, void* data) { static_cast<TFileBrowserTree*>(data)->refreshFolders(); }
-void TFileBrowserTree::onFiles(const char* folder, int, void* data) { static_cast<TFileBrowserTree*>(data)->refreshFiles(folder); }
+void TFileBrowserTree::onFiles(const char* folder, int count, void* data) { static_cast<TFileBrowserTree*>(data)->refreshFiles(folder, count); }
 void TFileBrowserTree::onMessage(const char* message, void* data) { static_cast<TFileBrowserTree*>(data)->appendLog(message == nullptr ? "" : message); }
 gboolean TFileBrowserTree::onDelete(GtkWidget*, GdkEvent*, gpointer data) { gtk_widget_hide(static_cast<TFileBrowserTree*>(data)->window); return true; }
 
@@ -474,20 +474,20 @@ void TFileBrowserTree::refreshFolders() {
     rc_free_filebrowser_folders(entries, count);
 }
 
-void TFileBrowserTree::refreshFiles(const char* folder) {
+void TFileBrowserTree::refreshFiles(const char* folder, int count) {
     RCFileBrowserEntry* entries = nullptr;
-    const int count = rc_copy_filebrowser_files(connection, &entries);
+    const int entryCount = count > 0 ? rc_copy_filebrowser_files(connection, &entries) : 0;
     gtk_list_store_clear(files);
     currentFolder = folder == nullptr ? "" : folder;
     gtk_label_set_text(GTK_LABEL(folderPath), (std::string("Current Folder: ") + (folder == nullptr ? "" : folder)).c_str());
-    for (int index = 0; index < count; ++index) {
+    for (int index = 0; index < entryCount; ++index) {
         GtkTreeIter row;
         gtk_list_store_append(files, &row);
         const std::string modified = formatModified(entries[index].modified);
         const std::string size = entries[index].size == 0 ? "" : std::to_string(entries[index].size);
         gtk_list_store_set(files, &row, FileIconColumn, fileIcon(entries[index], textFileIcon, nwFileIcon, graalFileIcon, gmapFileIcon), FilePathColumn, entries[index].path == nullptr ? "" : entries[index].path, FileRightsColumn, entries[index].rights == nullptr ? "" : entries[index].rights, FileSizeColumn, size.c_str(), FileModifiedColumn, modified.c_str(), FileSizeSortColumn, entries[index].size, FileModifiedSortColumn, entries[index].modified, -1);
     }
-    rc_free_filebrowser_files(entries, count);
+    rc_free_filebrowser_files(entries, entryCount);
 }
 
 void TFileBrowserTree::addFolder(const char* pattern, const char* rights) {
