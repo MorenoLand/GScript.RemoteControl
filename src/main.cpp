@@ -8,6 +8,7 @@
 #include <array>
 #include <cstdio>
 #include <filesystem>
+#include <fstream>
 #include <functional>
 #include <memory>
 #include <vector>
@@ -114,16 +115,24 @@ namespace {
 
     void configureGtkRuntime(const std::filesystem::path& applicationDirectory) {
 #ifdef _WIN32
-        SetDllDirectoryW(applicationDirectory.c_str());
+        SetDefaultDllDirectories(LOAD_LIBRARY_SEARCH_DEFAULT_DIRS | LOAD_LIBRARY_SEARCH_USER_DIRS);
+        AddDllDirectory(applicationDirectory.c_str());
         const std::string loaders = (applicationDirectory / "lib" / "gdk-pixbuf-2.0" / "2.10.0" / "loaders").string();
+        const auto svgLoader = applicationDirectory / "lib" / "gdk-pixbuf-2.0" / "2.10.0" / "loaders" / "pixbufloader_svg.dll";
+        LoadLibraryExW(svgLoader.c_str(), nullptr, LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_DEFAULT_DIRS | LOAD_LIBRARY_SEARCH_USER_DIRS);
         const std::string sharedData = (applicationDirectory / "share").string();
         g_setenv("XDG_DATA_DIRS", sharedData.c_str(), true);
         g_setenv("GDK_PIXBUF_MODULEDIR", loaders.c_str(), true);
-        g_unsetenv("GDK_PIXBUF_MODULE_FILE");
+        const auto loaderCacheTemplate = applicationDirectory / "lib" / "gdk-pixbuf-2.0" / "2.10.0" / "loaders.cache";
+        std::ifstream loaderCacheInput(loaderCacheTemplate, std::ios::binary);
+        std::string loaderCacheContent((std::istreambuf_iterator<char>(loaderCacheInput)), std::istreambuf_iterator<char>());
+        const std::string absolutePrefix = "\"" + applicationDirectory.generic_string() + "/";
+        for (std::size_t offset = 0; (offset = loaderCacheContent.find("\"./", offset)) != std::string::npos; offset += absolutePrefix.size()) loaderCacheContent.replace(offset, 3, absolutePrefix);
+        const auto runtimeCache = applicationDirectory / "cache" / "gdk-pixbuf-loaders.cache";
+        std::filesystem::create_directories(runtimeCache.parent_path());
+        std::ofstream(runtimeCache, std::ios::binary | std::ios::trunc) << loaderCacheContent;
+        g_setenv("GDK_PIXBUF_MODULE_FILE", runtimeCache.string().c_str(), true);
         g_setenv("GSETTINGS_SCHEMA_DIR", (applicationDirectory / "share" / "glib-2.0" / "schemas").string().c_str(), true);
-        GError* error = nullptr;
-        gdk_pixbuf_init_modules(loaders.c_str(), &error);
-        if (error != nullptr) g_error_free(error);
 #endif
     }
 
