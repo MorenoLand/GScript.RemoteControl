@@ -1,4 +1,5 @@
 #include "TScriptList.h"
+#include "Backup.h"
 #include "EditorFind.h"
 #include "GScriptEditor.h"
 
@@ -123,7 +124,7 @@ void TScriptList::onScript(const char* scriptType, const char* name, int, const 
 
 void TScriptList::showEditor(const char* name, const char* script) {
     struct EditorState { void* connection; bool weapon; std::string name; GtkWidget* editor; };
-    GtkWidget* dialog = gtk_dialog_new_with_buttons(name, GTK_WINDOW(window), static_cast<GtkDialogFlags>(0), "Cancel", GTK_RESPONSE_CANCEL, "Save", GTK_RESPONSE_ACCEPT, nullptr);
+    GtkWidget* dialog = gtk_dialog_new_with_buttons(name, GTK_WINDOW(window), static_cast<GtkDialogFlags>(0), "Apply", GTK_RESPONSE_ACCEPT, "Close", GTK_RESPONSE_CANCEL, nullptr);
     gtk_window_set_destroy_with_parent(GTK_WINDOW(dialog), false);
     gtk_window_set_transient_for(GTK_WINDOW(dialog), nullptr);
     gtk_window_set_type_hint(GTK_WINDOW(dialog), GDK_WINDOW_TYPE_HINT_NORMAL);
@@ -138,6 +139,7 @@ void TScriptList::showEditor(const char* name, const char* script) {
     addEditorFindButton(dialog, editor);
     gtk_text_view_set_monospace(GTK_TEXT_VIEW(editor), true);
     gtk_text_buffer_set_text(GTK_TEXT_BUFFER(sourceBuffer), script, -1);
+    backupEditorText(type == "weapons" ? "weapon" : "class", name, script, false);
     g_object_unref(sourceBuffer);
     GtkWidget* scrolled = gtk_scrolled_window_new(nullptr, nullptr);
     gtk_container_add(GTK_CONTAINER(scrolled), editor);
@@ -162,6 +164,7 @@ void TScriptList::showEditor(const char* name, const char* script) {
             GtkTextIter end;
             gtk_text_buffer_get_bounds(editorBuffer, &start, &end);
             gchar* updated = gtk_text_buffer_get_text(editorBuffer, &start, &end, false);
+            backupEditorText(editorState->weapon ? "weapon" : "class", editorState->name, updated == nullptr ? "" : updated, true);
             if (editorState->weapon) rc_update_weapon(editorState->connection, editorState->name.c_str(), "", updated);
             else rc_update_class(editorState->connection, editorState->name.c_str(), updated);
             g_free(updated);

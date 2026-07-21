@@ -1,4 +1,5 @@
 #include "TPlayerList.h"
+#include "Backup.h"
 #include "TLocalBanWindow.h"
 
 #include <grclib.h>
@@ -218,7 +219,11 @@ TPlayerList::TPlayerList(const std::filesystem::path& nextApplicationDirectory) 
         gtk_notebook_append_page(GTK_NOTEBOOK(notebook), page, gtk_label_new((std::string(title) + " ").c_str()));
     }
     gtk_box_pack_start(GTK_BOX(root), notebook, true, true, 0);
-    GtkWidget* bottom = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+    GtkWidget* bottom = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
+    gtk_widget_set_margin_start(bottom, 4);
+    gtk_widget_set_margin_end(bottom, 4);
+    gtk_widget_set_margin_top(bottom, 2);
+    gtk_widget_set_margin_bottom(bottom, 4);
     gtk_box_pack_start(GTK_BOX(bottom), gtk_label_new("Status:"), false, false, 5);
     GtkWidget* status = gtk_combo_box_text_new();
     gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(status), "Online");
@@ -232,6 +237,7 @@ TPlayerList::TPlayerList(const std::filesystem::path& nextApplicationDirectory) 
     GtkWidget* massPMButton = gtk_button_new_with_label("Mass PM");
     GtkWidget* adminMessageButton = gtk_button_new_with_label("Admin Message");
     GtkWidget* closeButton = gtk_button_new_with_label("Close");
+    for (GtkWidget* button : {refreshButton, massPMButton, adminMessageButton, closeButton}) gtk_widget_set_size_request(button, -1, 28);
     gtk_container_add(GTK_CONTAINER(buttons), refreshButton);
     gtk_container_add(GTK_CONTAINER(buttons), massPMButton);
     gtk_container_add(GTK_CONTAINER(buttons), adminMessageButton);
@@ -431,6 +437,7 @@ void TPlayerList::handlePlayerRights(const char* account, int rights, const char
 }
 void TPlayerList::handlePlayerAttributes(const char* account, const char*, const char* editorText) {
     if (account == nullptr || *account == '\0') return;
+    backupEditorText("attributes", account, editorText == nullptr ? "" : editorText, false);
     struct AttributeState { TPlayerList* list; std::string account; std::map<std::string, GtkWidget*> fields; GtkWidget* male; GtkWidget* weapons; GtkWidget* spin; GtkWidget* chests; GtkWidget* weaponList; GtkWidget* flags; };
     auto fieldValues = [](const char* source) {
         std::map<std::string, std::string> values;
@@ -510,6 +517,7 @@ void TPlayerList::handlePlayerAttributes(const char* account, const char*, const
             for (const auto& list : lists) { GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(list.field)); GtkTextIter start; GtkTextIter end; gtk_text_buffer_get_bounds(buffer, &start, &end); gchar* content = gtk_text_buffer_get_text(buffer, &start, &end, false); text << '[' << list.title << "]\n" << (content == nullptr ? "" : content) << '\n'; g_free(content); }
             char* properties = rc_parse_player_attributes_text(text.str().c_str());
             if (properties != nullptr) {
+                backupEditorText("attributes", state->account, text.str(), true);
                 rc_set_player_attributes(state->list->connection, state->account.c_str(), properties);
                 free(properties);
             }
@@ -524,6 +532,7 @@ void TPlayerList::handlePlayerText(const char* type, const char* account, const 
     if (type == nullptr || account == nullptr) return;
     const std::string dataType(type);
     if (dataType != "comments" && dataType != "profile") return;
+    backupEditorText(dataType, account, content == nullptr ? "" : content, false);
     if (dataType == "profile") {
         struct ProfileState { TPlayerList* list; std::string account; GtkWidget* fields[8]{}; GtkWidget* quote; };
         std::vector<std::string> values;
@@ -615,6 +624,7 @@ void TPlayerList::handlePlayerText(const char* type, const char* account, const 
                 gchar* quote = gtk_text_buffer_get_text(buffer, &start, &end, false);
                 profile << "Favourite Quote: " << (quote == nullptr ? "" : quote);
                 g_free(quote);
+                backupEditorText("profile", state->account, profile.str(), true);
                 rc_set_player_profile(state->list->connection, state->account.c_str(), profile.str().c_str());
             }
             gtk_widget_destroy(GTK_WIDGET(responseDialog));
@@ -634,7 +644,7 @@ void TPlayerList::handlePlayerText(const char* type, const char* account, const 
     gtk_container_add(GTK_CONTAINER(scrolled), text);
     gtk_box_pack_start(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), scrolled, true, true, 0);
     auto* state = new TextState{this, account, dataType, text};
-    g_signal_connect(dialog, "response", G_CALLBACK(+[](GtkDialog* responseDialog, gint response, gpointer userData) { auto* state = static_cast<TextState*>(userData); if (response == GTK_RESPONSE_ACCEPT) { GtkTextIter start; GtkTextIter end; GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(state->text)); gtk_text_buffer_get_bounds(buffer, &start, &end); gchar* value = gtk_text_buffer_get_text(buffer, &start, &end, false); if (state->type == "profile") rc_set_player_profile(state->list->connection, state->account.c_str(), value == nullptr ? "" : value); else rc_set_player_comments(state->list->connection, state->account.c_str(), value == nullptr ? "" : value); g_free(value); } else gtk_widget_destroy(GTK_WIDGET(responseDialog)); }), state);
+    g_signal_connect(dialog, "response", G_CALLBACK(+[](GtkDialog* responseDialog, gint response, gpointer userData) { auto* state = static_cast<TextState*>(userData); if (response == GTK_RESPONSE_ACCEPT) { GtkTextIter start; GtkTextIter end; GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(state->text)); gtk_text_buffer_get_bounds(buffer, &start, &end); gchar* value = gtk_text_buffer_get_text(buffer, &start, &end, false); backupEditorText(state->type, state->account, value == nullptr ? "" : value, true); if (state->type == "profile") rc_set_player_profile(state->list->connection, state->account.c_str(), value == nullptr ? "" : value); else rc_set_player_comments(state->list->connection, state->account.c_str(), value == nullptr ? "" : value); g_free(value); } else gtk_widget_destroy(GTK_WIDGET(responseDialog)); }), state);
     g_signal_connect(dialog, "destroy", G_CALLBACK(+[](GtkWidget*, gpointer userData) { delete static_cast<TextState*>(userData); }), state);
     gtk_widget_show_all(dialog);
 }

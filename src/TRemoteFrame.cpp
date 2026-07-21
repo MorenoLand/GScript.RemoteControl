@@ -1,4 +1,5 @@
 #include "TRemoteFrame.h"
+#include "Backup.h"
 #include "RCOptions.h"
 #include "TFileBrowserTree.h"
 #include "TPlayerList.h"
@@ -197,6 +198,7 @@ TRemoteFrame::~TRemoteFrame() {
 
 void TRemoteFrame::open(void* nextConnection, const std::string& serverName, const std::string& nickname) {
     connection = nextConnection;
+    setBackupServerName(serverName);
     disconnectHandled = false;
     this->nickname = nickname;
     ncConnectionAttempted = false;

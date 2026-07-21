@@ -208,6 +208,11 @@ void TServerList::reopen() {
     open(account, password, nickname);
 }
 
+void TServerList::show() {
+    gtk_widget_show_all(window);
+    gtk_window_present(GTK_WINDOW(window));
+}
+
 void TServerList::openListServerSettings() {
     struct SettingsState { TServerList* serverList; GtkWidget* host; GtkWidget* port; GtkWidget* error; };
     GtkWidget* dialog = gtk_dialog_new_with_buttons("List server settings", GTK_WINDOW(window), GTK_DIALOG_MODAL, "Cancel", GTK_RESPONSE_CANCEL, "Apply", GTK_RESPONSE_OK, nullptr);

@@ -1,4 +1,5 @@
 #include "RCOptions.h"
+#include "Backup.h"
 #include "GScriptEditor.h"
 #include "TRemoteFrame.h"
 #include "TServerList.h"
@@ -146,7 +147,7 @@ int main(int argc, char** argv) {
 #ifdef _WIN32
     bool debugMode = false;
     for (int index = 1; index < argc; ++index) if (std::string(argv[index]) == "--debug") debugMode = true;
-    if (debugMode && AllocConsole()) {
+    if (debugMode && AttachConsole(ATTACH_PARENT_PROCESS)) {
         FILE* stream = nullptr;
         freopen_s(&stream, "CONOUT$", "w", stdout);
         freopen_s(&stream, "CONOUT$", "w", stderr);
@@ -154,6 +155,7 @@ int main(int argc, char** argv) {
 #endif
     const std::filesystem::path applicationDirectory = getApplicationDirectory();
     std::filesystem::current_path(applicationDirectory);
+    setBackupDataDirectory(applicationDirectory);
     const std::filesystem::path certificateBundle = applicationDirectory / "certs" / "ca-bundle.crt";
     if (std::filesystem::is_regular_file(certificateBundle)) g_setenv("SSL_CERT_FILE", certificateBundle.string().c_str(), true);
     configureGtkRuntime(applicationDirectory);
@@ -181,8 +183,6 @@ int main(int argc, char** argv) {
     g_signal_connect(serverListTrayItem, "activate", G_CALLBACK(onTrayServerList), nullptr);
     g_signal_connect(quitTrayItem, "activate", G_CALLBACK(onTrayQuit), nullptr);
     gtk_widget_show_all(trayMenu);
-    gtk_widget_realize(trayMenu);
-    gtk_widget_hide(trayMenu);
     g_signal_connect(trayIcon, "activate", G_CALLBACK(onTrayActivate), nullptr);
     g_signal_connect(trayIcon, "popup-menu", G_CALLBACK(onTrayPopup), nullptr);
     TStartFrame* startFrame = nullptr;
@@ -195,7 +195,7 @@ int main(int argc, char** argv) {
     TStartFrame frame(options, applicationDirectory, [&](const std::string& account, const std::string& password, const std::string& nickname) { serverList.open(account, password, nickname); }, [&] { serverList.openListServerSettings(); });
     startFrame = &frame;
     trayStartFrame = startFrame;
-    trayServerListOpen = [&] { serverList.reopen(); };
+    trayServerListOpen = [&] { serverList.show(); };
 #ifdef _WIN32
     frame.show();
     if (GdkWindow* startWindow = frame.nativeWindow()) {

@@ -17,6 +17,7 @@ public:
 
     void open(const std::string& account, const std::string& password, const std::string& nickname);
     void reopen();
+    void show();
     void openListServerSettings();
 
 private:

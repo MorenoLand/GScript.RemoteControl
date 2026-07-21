@@ -134,6 +134,9 @@ jobs:
           merge-multiple: true
       - uses: actions/checkout@v4
         with:
+          path: source
+      - uses: actions/checkout@v4
+        with:
           repository: MorenoLand/GScript.RC-releases
           token: ${{ secrets.RC_RELEASES_TOKEN }}
           path: releases-repo
@@ -143,11 +146,46 @@ jobs:
           cd releases-repo
           mkdir -p "releases/$build_id"
           cp ../artifacts/* "releases/$build_id/"
+          (
+            cd "releases/$build_id"
+            sha256sum * > SHA256SUMS.txt
+          )
           git rm -r --ignore-unmatch releases/latest
           mkdir -p releases/latest
           cp "releases/$build_id"/* releases/latest/
+          cp ../source/LICENSE LICENSE
+          cat >> LICENSE <<'EOF'
+
+The reconstructed source code is MIT licensed. Original Graal artwork, logos, and other supplied runtime assets remain the property of their respective owners.
+EOF
+          {
+            echo "# Remote Control - GTK3 Edition"
+            echo
+            echo "Automated builds of an independent GTK3 Remote Control project. It is not affiliated with Toonslab or an official client release."
+            echo
+            echo "## Latest SHA-256"
+            echo
+            echo '```text'
+            cat releases/latest/SHA256SUMS.txt
+            echo '```'
+            echo
+            echo "## License"
+            echo
+            echo "The reconstructed source code is MIT licensed. Original Graal artwork, logos, and other supplied runtime assets remain the property of their respective owners."
+          } > README.md
+          {
+            echo "# SHA-256 checksums"
+            for manifest in $(find releases -mindepth 2 -maxdepth 2 -name SHA256SUMS.txt -not -path 'releases/latest/*' | sort); do
+              echo
+              echo "## $(basename "$(dirname "$manifest")")"
+              echo
+              echo '```text'
+              cat "$manifest"
+              echo '```'
+            done
+          } > hashes.md
           git config user.name "GScript RemoteControl CI"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add releases
+          git add LICENSE README.md hashes.md releases
           git diff --cached --quiet || git commit -m "Publish Remote Control build $build_id"
           git push origin main
