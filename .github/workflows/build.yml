@@ -48,7 +48,9 @@ jobs:
           cp "$grclib" "$bundle/lib/"
           cp -a remotecontrol/bin/images remotecontrol/bin/language-specs remotecontrol/bin/sounds "$bundle/"
           cp remotecontrol/bin/control2config.txt "$bundle/"
-          { lddtree -l remotecontrol/bin/RemoteControl; lddtree -l "$grclib"; } | sort -u | while read -r library; do
+          sourceview="$(pkg-config --variable=libdir gtksourceview-3.0)/libgtksourceview-3.0.so.1"
+          test -f "$sourceview"
+          { lddtree -l remotecontrol/bin/RemoteControl; lddtree -l "$grclib"; lddtree -l "$sourceview"; } | sort -u | while read -r library; do
             case "$library" in
               /lib/*|/usr/lib/*/ld-linux-*|/usr/lib/*/libc.so.*|/usr/lib/*/libm.so.*|/usr/lib/*/libpthread.so.*|/usr/lib/*/libdl.so.*|/usr/lib/*/librt.so.*|/usr/lib/*/libgcc_s.so.*|/usr/lib/*/libstdc++.so.*) continue ;;
             esac
