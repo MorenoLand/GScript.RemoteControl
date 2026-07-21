@@ -1,6 +1,6 @@
-get_filename_component(runtimePrefix "${RC3_MINGW_RUNTIME_DIRECTORY}" DIRECTORY)
+get_filename_component(runtimePrefix "${REMOTE_CONTROL_MINGW_RUNTIME_DIRECTORY}" DIRECTORY)
 set(sourceLoaderDirectory "${runtimePrefix}/lib/gdk-pixbuf-2.0/2.10.0/loaders")
-set(loaderDirectory "${RC3_OUTPUT_DIRECTORY}/lib/gdk-pixbuf-2.0/2.10.0/loaders")
+set(loaderDirectory "${REMOTE_CONTROL_OUTPUT_DIRECTORY}/lib/gdk-pixbuf-2.0/2.10.0/loaders")
 file(GLOB loaderModules "${sourceLoaderDirectory}/*.dll")
 file(MAKE_DIRECTORY "${loaderDirectory}")
 foreach(loaderModule IN LISTS loaderModules)
@@ -10,7 +10,7 @@ file(GLOB deployedLoaderModules "${loaderDirectory}/*.dll")
 
 file(GET_RUNTIME_DEPENDENCIES
     MODULES ${loaderModules}
-    DIRECTORIES "${RC3_MINGW_RUNTIME_DIRECTORY}"
+    DIRECTORIES "${REMOTE_CONTROL_MINGW_RUNTIME_DIRECTORY}"
     PRE_EXCLUDE_REGEXES "api-ms-.*" "ext-ms-.*" "Azure.*" "HvsiFileTrust.*" "PdmUtilities.*" "wpaxholder.*" "WTDSENSOR\\.dll" "wtdccm\\.dll"
     RESOLVED_DEPENDENCIES_VAR loaderDependencies
     UNRESOLVED_DEPENDENCIES_VAR unresolvedDependencies)
@@ -26,13 +26,13 @@ if(requiredUnresolvedDependencies)
 endif()
 
 foreach(loaderDependency IN LISTS loaderDependencies)
-    file(TO_CMAKE_PATH "${RC3_MINGW_RUNTIME_DIRECTORY}" normalizedRuntimeDirectory)
+    file(TO_CMAKE_PATH "${REMOTE_CONTROL_MINGW_RUNTIME_DIRECTORY}" normalizedRuntimeDirectory)
     file(TO_CMAKE_PATH "${loaderDependency}" normalizedLoaderDependency)
     string(FIND "${normalizedLoaderDependency}" "${normalizedRuntimeDirectory}/" loaderDependencyPrefix)
     if(loaderDependencyPrefix EQUAL 0)
-        file(COPY "${loaderDependency}" DESTINATION "${RC3_OUTPUT_DIRECTORY}")
+        file(COPY "${loaderDependency}" DESTINATION "${REMOTE_CONTROL_OUTPUT_DIRECTORY}")
     endif()
 endforeach()
 
-set(loaderCache "${RC3_OUTPUT_DIRECTORY}/lib/gdk-pixbuf-2.0/2.10.0/loaders.cache")
-execute_process(COMMAND "${RC3_MINGW_RUNTIME_DIRECTORY}/gdk-pixbuf-query-loaders.exe" ${deployedLoaderModules} OUTPUT_FILE "${loaderCache}" COMMAND_ERROR_IS_FATAL ANY)
+set(loaderCache "${REMOTE_CONTROL_OUTPUT_DIRECTORY}/lib/gdk-pixbuf-2.0/2.10.0/loaders.cache")
+execute_process(COMMAND "${REMOTE_CONTROL_MINGW_RUNTIME_DIRECTORY}/gdk-pixbuf-query-loaders.exe" ${deployedLoaderModules} OUTPUT_FILE "${loaderCache}" COMMAND_ERROR_IS_FATAL ANY)

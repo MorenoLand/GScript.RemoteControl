@@ -7,7 +7,7 @@
 
 class TOptionsWindow {
 public:
-    TOptionsWindow(RC3::RCOptions& options, const std::filesystem::path& applicationDirectory);
+    TOptionsWindow(RC::RCOptions& options, const std::filesystem::path& applicationDirectory);
     ~TOptionsWindow();
     void open();
 private:
@@ -37,6 +37,6 @@ private:
     GtkWidget* lineNumbers = nullptr;
     GtkWidget* scriptTabWidth = nullptr;
     GtkWidget* scriptFontSize = nullptr;
-    RC3::RCOptions& options;
+    RC::RCOptions& options;
     std::filesystem::path applicationDirectory;
 };

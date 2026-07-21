@@ -3,7 +3,7 @@
 #include <string>
 #include <vector>
 
-namespace RC3 {
+namespace RC {
 
     class RCAccounts {
     public:

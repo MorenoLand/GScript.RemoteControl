@@ -12,7 +12,7 @@ class TStartFrame {
 public:
     using ConnectCallback = std::function<void(const std::string&, const std::string&, const std::string&)>;
 
-    TStartFrame(RC3::RCOptions& options, const std::filesystem::path& applicationDirectory, ConnectCallback onConnect);
+    TStartFrame(RC::RCOptions& options, const std::filesystem::path& applicationDirectory, ConnectCallback onConnect);
     ~TStartFrame();
 
     void show();
@@ -25,8 +25,8 @@ private:
     void connect();
     std::string getText(GtkWidget* widget) const;
 
-    RC3::RCOptions& options;
-    RC3::RCAccounts accounts;
+    RC::RCOptions& options;
+    RC::RCAccounts accounts;
     std::filesystem::path applicationDirectory;
     ConnectCallback onConnectCallback;
     GtkWidget* window = nullptr;

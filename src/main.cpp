@@ -133,7 +133,7 @@ namespace {
 
 }
 
-void rc3_begin_pm_tray_alert() {
+void remote_control_begin_pm_tray_alert() {
     if (pmTrayIcon == nullptr || pmTrayBlinkSource != 0) return;
     pmTrayAlertVisible = true;
     gtk_status_icon_set_from_file(pmTrayIcon, pmTrayAlertIcon.c_str());
@@ -155,9 +155,9 @@ int main(int argc, char** argv) {
     configureGtkRuntime(applicationDirectory);
     gtk_init(&argc, &argv);
     gtk_icon_theme_append_search_path(gtk_icon_theme_get_default(), (applicationDirectory / "share" / "icons").string().c_str());
-    RC3::RCOptions options;
+    RC::RCOptions options;
     copySyntaxFiles(applicationDirectory);
-    RC3::loadRCOptions(options, applicationDirectory);
+    RC::loadRCOptions(options, applicationDirectory);
     applyDarkTheme();
     GtkStatusIcon* trayIcon = gtk_status_icon_new_from_file((applicationDirectory / "images" / "rcicon.png").string().c_str());
     pmTrayIcon = trayIcon;

@@ -157,7 +157,7 @@ namespace {
 
 }
 
-namespace RC3 {
+namespace RC {
 
     RCAccounts::RCAccounts() {
 #ifdef _WIN32

@@ -4,8 +4,8 @@
 #include <filesystem>
 
 int main() {
-    RC3::RCOptions options;
-    RC3::loadRCOptions(options, std::filesystem::current_path() / "original" / "rc3_win_dark");
+    RC::RCOptions options;
+    RC::loadRCOptions(options, std::filesystem::current_path() / "original" / "rc3_win_dark");
     assert(options.nickname.empty());
     assert(options.attachaway);
     assert(!options.logrcchat);

@@ -141,8 +141,8 @@ TFileBrowserTree::TFileBrowserTree() {
     g_signal_connect(gtk_tree_view_get_selection(GTK_TREE_VIEW(folderView)), "changed", G_CALLBACK(onFolderSelected), this);
     g_signal_connect(folderView, "button-press-event", G_CALLBACK(onFolderButtonPress), this);
     g_signal_connect(fileView, "button-press-event", G_CALLBACK(onFileButtonPress), this);
-    GtkTargetEntry fileTarget[] = {{const_cast<gchar*>("application/x-rc3-file-path"), GTK_TARGET_SAME_APP, 1}};
-    GtkTargetEntry dropTargets[] = {{const_cast<gchar*>("application/x-rc3-file-path"), GTK_TARGET_SAME_APP, 1}, {const_cast<gchar*>("text/uri-list"), 0, 2}};
+    GtkTargetEntry fileTarget[] = {{const_cast<gchar*>("application/x-remote-control-file-path"), GTK_TARGET_SAME_APP, 1}};
+    GtkTargetEntry dropTargets[] = {{const_cast<gchar*>("application/x-remote-control-file-path"), GTK_TARGET_SAME_APP, 1}, {const_cast<gchar*>("text/uri-list"), 0, 2}};
     gtk_drag_source_set(fileView, GDK_BUTTON1_MASK, fileTarget, G_N_ELEMENTS(fileTarget), GDK_ACTION_MOVE);
     gtk_drag_dest_set(folderView, GTK_DEST_DEFAULT_ALL, dropTargets, G_N_ELEMENTS(dropTargets), static_cast<GdkDragAction>(GDK_ACTION_COPY | GDK_ACTION_MOVE));
     gtk_drag_dest_set(fileView, GTK_DEST_DEFAULT_ALL, dropTargets, G_N_ELEMENTS(dropTargets), static_cast<GdkDragAction>(GDK_ACTION_COPY | GDK_ACTION_MOVE));

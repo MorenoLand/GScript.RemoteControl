@@ -7,7 +7,7 @@
 #include <string>
 #include <unordered_map>
 
-namespace RC3 { struct RCOptions; }
+namespace RC { struct RCOptions; }
 
 class TPlayerList;
 class TFileBrowserTree;
@@ -20,7 +20,7 @@ class TNPCList;
 
 class TRemoteFrame {
 public:
-    TRemoteFrame(const RC3::RCOptions& options, const std::filesystem::path& applicationDirectory, std::function<void()> onClose);
+    TRemoteFrame(const RC::RCOptions& options, const std::filesystem::path& applicationDirectory, std::function<void()> onClose);
     ~TRemoteFrame();
 
     void open(void* connection, const std::string& serverName, const std::string& nickname);
@@ -103,7 +103,7 @@ private:
     TAccountsWindow* accountsWindow = nullptr;
     TOptionsWindow* optionsWindow = nullptr;
     TNPCList* npcList = nullptr;
-    const RC3::RCOptions& options;
+    const RC::RCOptions& options;
     std::filesystem::path applicationDirectory;
     std::unordered_map<std::string, GtkWidget*> channelFields;
 };

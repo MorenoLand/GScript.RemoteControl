@@ -1,6 +1,6 @@
 file(GET_RUNTIME_DEPENDENCIES
-    EXECUTABLES "${RC3_EXECUTABLE}"
-    DIRECTORIES "${RC3_OUTPUT_DIRECTORY}" "${RC3_MINGW_RUNTIME_DIRECTORY}"
+    EXECUTABLES "${REMOTE_CONTROL_EXECUTABLE}"
+    DIRECTORIES "${REMOTE_CONTROL_OUTPUT_DIRECTORY}" "${REMOTE_CONTROL_MINGW_RUNTIME_DIRECTORY}"
     PRE_EXCLUDE_REGEXES "api-ms-.*" "ext-ms-.*" "Azure.*" "HvsiFileTrust.*" "PdmUtilities.*" "wpaxholder.*" "WTDSENSOR\\.dll" "wtdccm\\.dll"
     POST_EXCLUDE_REGEXES ".*[Ww]indows[/\\]System32[/\\].*"
     RESOLVED_DEPENDENCIES_VAR runtimeDependencies
@@ -13,14 +13,14 @@ foreach(unresolvedDependency IN LISTS unresolvedDependencies)
 endforeach()
 
 if(requiredUnresolvedDependencies)
-    message(FATAL_ERROR "Unresolved RC3 runtime dependencies: ${requiredUnresolvedDependencies}")
+    message(FATAL_ERROR "Unresolved Remote Control runtime dependencies: ${requiredUnresolvedDependencies}")
 endif()
 
 foreach(runtimeDependency IN LISTS runtimeDependencies)
-    file(TO_CMAKE_PATH "${RC3_MINGW_RUNTIME_DIRECTORY}" normalizedRuntimeDirectory)
+    file(TO_CMAKE_PATH "${REMOTE_CONTROL_MINGW_RUNTIME_DIRECTORY}" normalizedRuntimeDirectory)
     file(TO_CMAKE_PATH "${runtimeDependency}" normalizedRuntimeDependency)
     string(FIND "${normalizedRuntimeDependency}" "${normalizedRuntimeDirectory}/" runtimeDependencyPrefix)
     if(runtimeDependencyPrefix EQUAL 0)
-        file(COPY "${runtimeDependency}" DESTINATION "${RC3_OUTPUT_DIRECTORY}")
+        file(COPY "${runtimeDependency}" DESTINATION "${REMOTE_CONTROL_OUTPUT_DIRECTORY}")
     endif()
 endforeach()

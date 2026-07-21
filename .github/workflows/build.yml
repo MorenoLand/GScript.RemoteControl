@@ -16,15 +16,15 @@ jobs:
         include:
           - os: ubuntu-latest
             setup: sudo apt-get update && sudo apt-get install -y cmake ninja-build pkg-config libgtk-3-dev libgtksourceview-3.0-dev libssl-dev pax-utils patchelf zip
-            bundle: RemoteControl3-linux-x86_64
+            bundle: RemoteControl-linux-x86_64
           - os: macos-latest
             setup: brew install cmake ninja pkg-config gtk+3 gtksourceview3 openssl dylibbundler
-            bundle: RemoteControl3-macos-arm64
+            bundle: RemoteControl-macos-arm64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
         with:
-          path: rc3
+          path: remotecontrol
       - uses: actions/checkout@v4
         with:
           repository: MorenoLand/GScript.GRClib
@@ -32,11 +32,11 @@ jobs:
       - name: Install dependencies
         run: ${{ matrix.setup }}
       - name: Configure
-        run: cmake -S rc3 -B rc3/build -G Ninja -DGRCLIB_SOURCE_DIR=${{ github.workspace }}/grclib
+        run: cmake -S remotecontrol -B remotecontrol/build -G Ninja -DGRCLIB_SOURCE_DIR=${{ github.workspace }}/grclib
       - name: Build
-        run: cmake --build rc3/build --parallel
+        run: cmake --build remotecontrol/build --parallel
       - name: Test
-        run: ctest --test-dir rc3/build --output-on-failure
+        run: ctest --test-dir remotecontrol/build --output-on-failure
       - name: Stage Linux bundle
         if: runner.os == 'Linux'
         run: |
@@ -44,11 +44,11 @@ jobs:
           mkdir -p "$bundle/lib"
           grclib="$(find grclib/bin -type f -name 'grclib.so*' -print -quit)"
           test -n "$grclib"
-          cp rc3/bin/RemoteControl3 "$bundle/"
+          cp remotecontrol/bin/RemoteControl "$bundle/"
           cp "$grclib" "$bundle/lib/"
-          cp -a rc3/bin/images rc3/bin/language-specs rc3/bin/sounds "$bundle/"
-          cp rc3/bin/control2config.txt "$bundle/"
-          { lddtree -l rc3/bin/RemoteControl3; lddtree -l "$grclib"; } | sort -u | while read -r library; do
+          cp -a remotecontrol/bin/images remotecontrol/bin/language-specs remotecontrol/bin/sounds "$bundle/"
+          cp remotecontrol/bin/control2config.txt "$bundle/"
+          { lddtree -l remotecontrol/bin/RemoteControl; lddtree -l "$grclib"; } | sort -u | while read -r library; do
             case "$library" in
               /lib/*|/usr/lib/*/ld-linux-*|/usr/lib/*/libc.so.*|/usr/lib/*/libm.so.*|/usr/lib/*/libpthread.so.*|/usr/lib/*/libdl.so.*|/usr/lib/*/librt.so.*|/usr/lib/*/libgcc_s.so.*|/usr/lib/*/libstdc++.so.*) continue ;;
             esac
@@ -56,14 +56,14 @@ jobs:
           done
           cp -a /usr/lib/x86_64-linux-gnu/gdk-pixbuf-2.0 "$bundle/lib/" || true
           cp -a /usr/share/glib-2.0/schemas "$bundle/share-schemas" || true
-          find "$bundle" -type f \( -name 'RemoteControl3' -o -name '*.so*' \) -exec patchelf --set-rpath '$ORIGIN/lib' {} +
+          find "$bundle" -type f \( -name 'RemoteControl' -o -name '*.so*' \) -exec patchelf --set-rpath '$ORIGIN/lib' {} +
           (cd "$bundle" && zip -r "../$bundle.zip" .)
           appDir="${bundle}.AppDir"
           mkdir -p "$appDir"
           cp -a "$bundle/." "$appDir/"
-          cp rc3/assets/appimage/AppRun "$appDir/"
-          cp rc3/assets/appimage/RemoteControl3.desktop "$appDir/"
-          cp "$appDir/images/rcicon.png" "$appDir/RemoteControl3.png"
+          cp remotecontrol/assets/appimage/AppRun "$appDir/"
+          cp remotecontrol/assets/appimage/RemoteControl.desktop "$appDir/"
+          cp "$appDir/images/rcicon.png" "$appDir/RemoteControl.png"
           chmod +x "$appDir/AppRun"
           curl -L --fail --retry 3 -o appimagetool.AppImage https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
           chmod +x appimagetool.AppImage
@@ -75,12 +75,12 @@ jobs:
           mkdir -p "$bundle/lib"
           grclib="$(find grclib/bin -type f -name 'grclib*.dylib' -print -quit)"
           test -n "$grclib"
-          cp rc3/bin/RemoteControl3 "$bundle/"
-          cp -a rc3/bin/images rc3/bin/language-specs rc3/bin/sounds "$bundle/"
-          cp rc3/bin/control2config.txt "$bundle/"
-          dylibbundler -cd -b -x "$bundle/RemoteControl3" -d "$bundle/lib" -p @executable_path/lib -of -s "$(dirname "$grclib")"
+          cp remotecontrol/bin/RemoteControl "$bundle/"
+          cp -a remotecontrol/bin/images remotecontrol/bin/language-specs remotecontrol/bin/sounds "$bundle/"
+          cp remotecontrol/bin/control2config.txt "$bundle/"
+          dylibbundler -cd -b -x "$bundle/RemoteControl" -d "$bundle/lib" -p @executable_path/lib -of -s "$(dirname "$grclib")"
           (cd "$bundle" && zip -r "../$bundle.zip" .)
-          hdiutil create -volname "Graal Remote Control" -srcfolder "$bundle" -ov -format UDZO "${bundle}.dmg"
+          hdiutil create -volname "Remote Control" -srcfolder "$bundle" -ov -format UDZO "${bundle}.dmg"
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.bundle }}
@@ -95,7 +95,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          path: rc3
+          path: remotecontrol
       - uses: actions/checkout@v4
         with:
           repository: MorenoLand/GScript.GRClib
@@ -111,20 +111,20 @@ jobs:
       - name: Configure, build, and test
         shell: msys2 {0}
         run: |
-          cmake -S rc3 -B rc3/build -G Ninja -DGRCLIB_SOURCE_DIR="$PWD/grclib"
-          cmake --build rc3/build --parallel
-          ctest --test-dir rc3/build --output-on-failure
-          cd rc3/bin
+          cmake -S remotecontrol -B remotecontrol/build -G Ninja -DGRCLIB_SOURCE_DIR="$PWD/grclib"
+          cmake --build remotecontrol/build --parallel
+          ctest --test-dir remotecontrol/build --output-on-failure
+          cd remotecontrol/bin
           mkdir -p share/themes share/icons share/glib-2.0 share/gtk-3.0
           cp -a "$MINGW_PREFIX/share/themes/." share/themes/
           cp -a "$MINGW_PREFIX/share/icons/." share/icons/
           cp -a "$MINGW_PREFIX/share/glib-2.0/schemas" share/glib-2.0/
           cp -a "$MINGW_PREFIX/share/gtk-3.0/." share/gtk-3.0/
-          zip -r ../../RemoteControl3-windows-x86_64.zip .
+          zip -r ../../RemoteControl-windows-x86_64.zip .
       - uses: actions/upload-artifact@v4
         with:
-          name: RemoteControl3-windows-x86_64
-          path: RemoteControl3-windows-x86_64.zip
+          name: RemoteControl-windows-x86_64
+          path: RemoteControl-windows-x86_64.zip
 
   publish:
     if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
@@ -152,5 +152,5 @@ jobs:
           git config user.name "GScript RemoteControl CI"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add releases
-          git diff --cached --quiet || git commit -m "Publish RC3 build $build_id"
+          git diff --cached --quiet || git commit -m "Publish Remote Control build $build_id"
           git push origin main

@@ -15,10 +15,10 @@
 #include <iomanip>
 #include <sstream>
 
-extern void rc3_begin_pm_tray_alert();
+extern void remote_control_begin_pm_tray_alert();
 
 namespace {
-    std::string chatTimestamp(const RC3::RCOptions& options) {
+    std::string chatTimestamp(const RC::RCOptions& options) {
         if (!options.rctimestamps) return "";
         const std::time_t now = std::time(nullptr);
         std::tm local{};
@@ -33,13 +33,13 @@ namespace {
     }
 }
 
-TRemoteFrame::TRemoteFrame(const RC3::RCOptions& nextOptions, const std::filesystem::path& nextApplicationDirectory, std::function<void()> onClose) : onCloseCallback(std::move(onClose)), options(nextOptions), applicationDirectory(nextApplicationDirectory) {
+TRemoteFrame::TRemoteFrame(const RC::RCOptions& nextOptions, const std::filesystem::path& nextApplicationDirectory, std::function<void()> onClose) : onCloseCallback(std::move(onClose)), options(nextOptions), applicationDirectory(nextApplicationDirectory) {
     kappaEmote = gdk_pixbuf_new_from_file((applicationDirectory / "images" / "emote_kappa.png").string().c_str(), nullptr);
     pmNormalEmote = gdk_pixbuf_new_from_file((applicationDirectory / "images" / "pmicon_normal.png").string().c_str(), nullptr);
     pacmanEmote = gdk_pixbuf_new_from_file((applicationDirectory / "images" / "emote_pacman.png").string().c_str(), nullptr);
     window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
     gtk_widget_set_name(window, "RemoteFrame");
-    gtk_window_set_title(GTK_WINDOW(window), (std::string("Remote Control ") + RC3_BUILD_DATE).c_str());
+    gtk_window_set_title(GTK_WINDOW(window), (std::string("Remote Control ") + REMOTE_CONTROL_BUILD_DATE).c_str());
     gtk_window_set_default_size(GTK_WINDOW(window), 500, 350);
 
     GtkWidget* root = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
@@ -245,7 +245,7 @@ void TRemoteFrame::onAccounts(GtkMenuItem*, gpointer data) {
 
 void TRemoteFrame::onRCOptions(GtkMenuItem*, gpointer data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
-    if (frame->optionsWindow == nullptr) frame->optionsWindow = new TOptionsWindow(const_cast<RC3::RCOptions&>(frame->options), frame->applicationDirectory);
+    if (frame->optionsWindow == nullptr) frame->optionsWindow = new TOptionsWindow(const_cast<RC::RCOptions&>(frame->options), frame->applicationDirectory);
     frame->optionsWindow->open();
 }
 
@@ -482,7 +482,7 @@ void TRemoteFrame::onPrivateMessage(int playerId, const char* account, const cha
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
     if (frame->playerList == nullptr) frame->playerList = new TPlayerList(frame->applicationDirectory);
     frame->playerList->notePrivateMessage(playerId, account, nick, message, type);
-    rc3_begin_pm_tray_alert();
+    remote_control_begin_pm_tray_alert();
 }
 
 void TRemoteFrame::onServerData(const char* type, const char* content, void* data) {

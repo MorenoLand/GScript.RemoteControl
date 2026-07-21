@@ -38,7 +38,7 @@ namespace {
 
 }
 
-namespace RC3 {
+namespace RC {
 
     void loadRCOptions(RCOptions& options, const std::filesystem::path& applicationDirectory) {
         std::ifstream stream(applicationDirectory / "control2config.txt");

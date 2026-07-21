@@ -19,7 +19,7 @@ namespace {
     }
 }
 
-TOptionsWindow::TOptionsWindow(RC3::RCOptions& nextOptions, const std::filesystem::path& nextApplicationDirectory) : options(nextOptions), applicationDirectory(nextApplicationDirectory) {
+TOptionsWindow::TOptionsWindow(RC::RCOptions& nextOptions, const std::filesystem::path& nextApplicationDirectory) : options(nextOptions), applicationDirectory(nextApplicationDirectory) {
     window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
     gtk_widget_set_name(window, "OptionsWindow");
     gtk_window_set_title(GTK_WINDOW(window), "Options");
@@ -114,5 +114,5 @@ gboolean TOptionsWindow::onDelete(GtkWidget*, GdkEvent*, gpointer data) { TOptio
 void TOptionsWindow::save() {
     options.nickname = gtk_entry_get_text(GTK_ENTRY(nickname)); options.downloadfolder = gtk_entry_get_text(GTK_ENTRY(downloadFolder)); options.chatlogfile = gtk_entry_get_text(GTK_ENTRY(logFile)); options.chatfontsize = std::max(1, std::atoi(gtk_entry_get_text(GTK_ENTRY(chatFontSize))));
     options.nomassmessages = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(ignoreMass)); options.nomassifclienton = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(ignoreMassClient)); options.attachaway = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(attachAway)); options.globalpms = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(globalPMs)); options.showbuddies = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(buddies)); options.separatenc = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(separateNC)); options.rctimestamps = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(timestamps)); options.newpmalerts = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(pmAlerts)); options.logrcchat = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(logChat)); options.syntaxhighlighting = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(syntax)); options.autoindenting = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(autoIndent)); options.smarthomeend = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(smartHomeEnd)); options.showbrackets = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(brackets)); options.showlinenumbers = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(lineNumbers)); options.scripttabwidth = std::max(1, std::atoi(gtk_entry_get_text(GTK_ENTRY(scriptTabWidth)))); options.scriptfontsize = std::max(1, std::atoi(gtk_entry_get_text(GTK_ENTRY(scriptFontSize))));
-    RC3::saveRCOptions(options, applicationDirectory);
+    RC::saveRCOptions(options, applicationDirectory);
 }

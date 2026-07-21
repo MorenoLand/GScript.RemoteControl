@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-namespace RC3 {
+namespace RC {
 
     struct RCOptions {
         std::string nickname;

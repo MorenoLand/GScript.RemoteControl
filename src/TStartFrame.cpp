@@ -2,7 +2,7 @@
 
 #include <utility>
 
-TStartFrame::TStartFrame(RC3::RCOptions& options, const std::filesystem::path& applicationDirectory, ConnectCallback onConnect)
+TStartFrame::TStartFrame(RC::RCOptions& options, const std::filesystem::path& applicationDirectory, ConnectCallback onConnect)
     : options(options), applicationDirectory(applicationDirectory), onConnectCallback(std::move(onConnect)) {
     window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
     gtk_widget_set_name(window, "StartFrame");
@@ -104,7 +104,7 @@ void TStartFrame::connect() {
     options.nickname = getText(nicknameField);
     options.dontsavepassword = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(passwordCheck));
     options.graphicalmenu = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(graphicsCheck));
-    RC3::saveRCOptions(options, applicationDirectory);
+    RC::saveRCOptions(options, applicationDirectory);
     accounts.save(getText(accountField), getText(passwordField), options.dontsavepassword);
     gtk_widget_hide(window);
     onConnectCallback(getText(accountField), getText(passwordField), options.nickname);
