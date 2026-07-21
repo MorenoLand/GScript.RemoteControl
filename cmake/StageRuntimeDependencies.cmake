@@ -1,7 +1,7 @@
 file(GET_RUNTIME_DEPENDENCIES
     EXECUTABLES "${RC3_EXECUTABLE}"
     DIRECTORIES "${RC3_OUTPUT_DIRECTORY}" "${RC3_MINGW_RUNTIME_DIRECTORY}"
-    PRE_EXCLUDE_REGEXES "api-ms-.*" "ext-ms-.*" "Azure.*" "HvsiFileTrust.*" "PdmUtilities.*" "wpaxholder.*"
+    PRE_EXCLUDE_REGEXES "api-ms-.*" "ext-ms-.*" "Azure.*" "HvsiFileTrust.*" "PdmUtilities.*" "wpaxholder.*" "WTDSENSOR\\.dll" "wtdccm\\.dll"
     POST_EXCLUDE_REGEXES ".*[Ww]indows[/\\]System32[/\\].*"
     RESOLVED_DEPENDENCIES_VAR runtimeDependencies
     UNRESOLVED_DEPENDENCIES_VAR unresolvedDependencies)
