@@ -78,7 +78,7 @@ TServerList::TServerList(std::function<void()> onClose, std::function<void(void*
     gtk_tree_view_column_set_sort_column_id(playerColumn, 3);
     gtk_tree_view_column_set_alignment(playerColumn, 1.0F);
     gtk_tree_view_append_column(GTK_TREE_VIEW(tree), playerColumn);
-    gtk_tree_sortable_set_sort_column_id(GTK_TREE_SORTABLE(store), 3, GTK_SORT_ASCENDING);
+    gtk_tree_sortable_set_sort_column_id(GTK_TREE_SORTABLE(store), 3, GTK_SORT_DESCENDING);
 
     GtkTreeSelection* selection = gtk_tree_view_get_selection(GTK_TREE_VIEW(tree));
     g_signal_connect(selection, "changed", G_CALLBACK(onSelectionChanged), this);
