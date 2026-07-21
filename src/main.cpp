@@ -114,11 +114,9 @@ namespace {
 
     void configureGtkRuntime(const std::filesystem::path& applicationDirectory) {
 #ifdef _WIN32
-        const std::string applicationPath = applicationDirectory.string();
         const std::string loaders = (applicationDirectory / "lib" / "gdk-pixbuf-2.0" / "2.10.0" / "loaders").string();
-        g_setenv("GTK_DATA_PREFIX", applicationPath.c_str(), true);
-        g_setenv("GTK_THEME", "Default", true);
-        g_setenv("GTK_CSD", "0", true);
+        const std::string sharedData = (applicationDirectory / "share").string();
+        g_setenv("XDG_DATA_DIRS", sharedData.c_str(), true);
         g_setenv("GDK_PIXBUF_MODULEDIR", loaders.c_str(), true);
         g_setenv("GDK_PIXBUF_MODULE_FILE", (applicationDirectory / "lib" / "gdk-pixbuf-2.0" / "2.10.0" / "loaders.cache").string().c_str(), true);
         g_setenv("GSETTINGS_SCHEMA_DIR", (applicationDirectory / "share" / "glib-2.0" / "schemas").string().c_str(), true);
