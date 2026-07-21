@@ -1,5 +1,6 @@
 #include "TFileBrowserTree.h"
 #include "EditorFind.h"
+#include "GScriptEditor.h"
 
 #include <grclib.h>
 #include <gtksourceview/gtksource.h>
@@ -430,6 +431,7 @@ void TFileBrowserTree::showTextEditor(const char* path, const void* content, int
     GtkSourceStyleScheme* scheme = gtk_source_style_scheme_manager_get_scheme(gtk_source_style_scheme_manager_get_default(), "graalcolors");
     if (scheme != nullptr) gtk_source_buffer_set_style_scheme(sourceBuffer, scheme);
     GtkWidget* editor = gtk_source_view_new_with_buffer(sourceBuffer);
+    configureGScriptEditor(editor);
     addEditorFindButton(dialog, editor);
     gtk_text_view_set_monospace(GTK_TEXT_VIEW(editor), true);
     gtk_text_buffer_set_text(GTK_TEXT_BUFFER(sourceBuffer), static_cast<const char*>(content), length);

@@ -6,6 +6,7 @@
 #include <functional>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 namespace RC { struct RCOptions; }
 
@@ -89,6 +90,8 @@ private:
     GdkPixbuf* backgroundPixbuf = nullptr;
     void* connection = nullptr;
     std::string nickname;
+    std::vector<std::string> chatHistory;
+    int chatHistoryIndex = -1;
     guint eventSource = 0;
     gint64 nextNcConnectAttempt = 0;
     bool ncConnectionAttempted = false;

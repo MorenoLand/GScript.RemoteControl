@@ -1,6 +1,12 @@
+file(GLOB openSslRuntimeFiles "${REMOTE_CONTROL_MINGW_RUNTIME_DIRECTORY}/libcrypto*.dll" "${REMOTE_CONTROL_MINGW_RUNTIME_DIRECTORY}/libssl*.dll")
+foreach(openSslRuntimeFile IN LISTS openSslRuntimeFiles)
+    get_filename_component(openSslRuntimeName "${openSslRuntimeFile}" NAME)
+    file(REMOVE "${REMOTE_CONTROL_OUTPUT_DIRECTORY}/${openSslRuntimeName}")
+endforeach()
+
 file(GET_RUNTIME_DEPENDENCIES
     EXECUTABLES "${REMOTE_CONTROL_EXECUTABLE}"
-    DIRECTORIES "${REMOTE_CONTROL_OUTPUT_DIRECTORY}" "${REMOTE_CONTROL_MINGW_RUNTIME_DIRECTORY}"
+    DIRECTORIES "${REMOTE_CONTROL_MINGW_RUNTIME_DIRECTORY}"
     PRE_EXCLUDE_REGEXES "api-ms-.*" "ext-ms-.*" "Azure.*" "HvsiFileTrust.*" "PdmUtilities.*" "wpaxholder.*" "WTDSENSOR\\.dll" "wtdccm\\.dll"
     POST_EXCLUDE_REGEXES ".*[Ww]indows[/\\]System32[/\\].*"
     RESOLVED_DEPENDENCIES_VAR runtimeDependencies

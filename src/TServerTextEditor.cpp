@@ -1,5 +1,6 @@
 #include "TServerTextEditor.h"
 #include "EditorFind.h"
+#include "GScriptEditor.h"
 
 #include <grclib.h>
 #include <gtksourceview/gtksource.h>
@@ -16,6 +17,7 @@ TServerTextEditor::TServerTextEditor(Kind nextKind, const char* title) : kind(ne
     GtkSourceStyleScheme* scheme = gtk_source_style_scheme_manager_get_scheme(gtk_source_style_scheme_manager_get_default(), "graalcolors");
     if (scheme != nullptr) gtk_source_buffer_set_style_scheme(sourceBuffer, scheme);
     GtkWidget* text = gtk_source_view_new_with_buffer(sourceBuffer);
+    configureGScriptEditor(text);
     g_object_unref(sourceBuffer);
     buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(text));
     gtk_text_view_set_monospace(GTK_TEXT_VIEW(text), true);

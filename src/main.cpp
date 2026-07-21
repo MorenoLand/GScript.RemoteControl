@@ -1,4 +1,5 @@
 #include "RCOptions.h"
+#include "GScriptEditor.h"
 #include "TRemoteFrame.h"
 #include "TServerList.h"
 #include "TStartFrame.h"
@@ -158,6 +159,7 @@ int main(int argc, char** argv) {
     RC::RCOptions options;
     copySyntaxFiles(applicationDirectory);
     RC::loadRCOptions(options, applicationDirectory);
+    setGScriptEditorOptions(options);
     applyDarkTheme();
     GtkStatusIcon* trayIcon = gtk_status_icon_new_from_file((applicationDirectory / "images" / "rcicon.png").string().c_str());
     pmTrayIcon = trayIcon;

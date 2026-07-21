@@ -36,6 +36,7 @@ private:
     GtkWidget* brackets = nullptr;
     GtkWidget* lineNumbers = nullptr;
     GtkWidget* scriptTabWidth = nullptr;
+    GtkWidget* scriptUseTabs = nullptr;
     GtkWidget* scriptFontSize = nullptr;
     RC::RCOptions& options;
     std::filesystem::path applicationDirectory;

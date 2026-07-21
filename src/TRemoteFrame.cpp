@@ -397,8 +397,19 @@ gboolean TRemoteFrame::onGraphicalButton(GtkWidget* button, GdkEventButton* even
 }
 
 gboolean TRemoteFrame::onEditKey(GtkWidget*, GdkEventKey* event, gpointer data) {
+    TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
+    if (event->keyval == GDK_KEY_Up && !frame->chatHistory.empty()) {
+        frame->chatHistoryIndex = std::min(frame->chatHistoryIndex + 1, static_cast<int>(frame->chatHistory.size()) - 1);
+        gtk_entry_set_text(GTK_ENTRY(frame->editField), frame->chatHistory[frame->chatHistoryIndex].c_str());
+        return true;
+    }
+    if (event->keyval == GDK_KEY_Down && frame->chatHistoryIndex >= 0) {
+        --frame->chatHistoryIndex;
+        gtk_entry_set_text(GTK_ENTRY(frame->editField), frame->chatHistoryIndex < 0 ? "" : frame->chatHistory[frame->chatHistoryIndex].c_str());
+        return true;
+    }
     if (event->keyval != GDK_KEY_Return && event->keyval != GDK_KEY_KP_Enter) return false;
-    static_cast<TRemoteFrame*>(data)->send();
+    frame->send();
     return true;
 }
 
@@ -683,6 +694,9 @@ void TRemoteFrame::send() {
     if (connection == nullptr) return;
     const std::string message = gtk_entry_get_text(GTK_ENTRY(editField));
     if (message.empty()) return;
+    if (chatHistory.empty() || chatHistory.front() != message) chatHistory.insert(chatHistory.begin(), message);
+    if (chatHistory.size() > 30) chatHistory.pop_back();
+    chatHistoryIndex = -1;
     if (!rc_execute(connection, message.c_str())) appendChat(rc_last_error(connection));
     gtk_entry_set_text(GTK_ENTRY(editField), "");
 }

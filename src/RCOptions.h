@@ -32,6 +32,7 @@ namespace RC {
         bool rctimestamps = true;
         bool newpmalerts = true;
         int scripttabwidth = 2;
+        bool scriptusetabs = false;
         int scriptfontsize = 10;
         std::vector<std::string> webbrowsers = {"firefox", "mozilla", "konqueror", "netscape"};
         std::string background = "rc_graalonline2.jpg";

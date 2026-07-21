@@ -71,6 +71,7 @@ namespace RC {
             else if (key == "showbrackets") options.showbrackets = isTrue(value);
             else if (key == "showlinenumbers") options.showlinenumbers = isTrue(value);
             else if (key == "scripttabwidth") options.scripttabwidth = std::stoi(value);
+            else if (key == "scriptusetabs") options.scriptusetabs = isTrue(value);
             else if (key == "scriptfontsize") options.scriptfontsize = std::stoi(value);
             else if (key == "webbrowsers") options.webbrowsers = splitCommaText(value);
             else if (key == "background") options.background = value;
@@ -121,6 +122,7 @@ namespace RC {
         writeBool(stream, "rctimestamps", options.rctimestamps);
         writeBool(stream, "newpmalerts", options.newpmalerts);
         stream << "scripttabwidth=" << options.scripttabwidth << '\n';
+        writeBool(stream, "scriptusetabs", options.scriptusetabs);
         stream << "scriptfontsize=" << options.scriptfontsize << '\n';
         writeString(stream, "webbrowsers", joinCommaText(options.webbrowsers));
         writeString(stream, "background", options.background);
