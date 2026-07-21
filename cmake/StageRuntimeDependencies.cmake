@@ -7,7 +7,7 @@ file(GET_RUNTIME_DEPENDENCIES
     UNRESOLVED_DEPENDENCIES_VAR unresolvedDependencies)
 
 foreach(unresolvedDependency IN LISTS unresolvedDependencies)
-    if(NOT unresolvedDependency MATCHES "^(AzureAttestManager|AzureAttestNormal|HvsiFileTrust|PdmUtilities|wpaxholder)\\.dll$")
+    if(NOT unresolvedDependency MATCHES "^(AzureAttestManager|AzureAttestNormal|HvsiFileTrust|PdmUtilities|wpaxholder|[Ww][Tt][Dd][Ss][Ee][Nn][Ss][Oo][Rr]|[Ww][Tt][Dd][Cc][Cc][Mm])\\.dll$")
         list(APPEND requiredUnresolvedDependencies "${unresolvedDependency}")
     endif()
 endforeach()
