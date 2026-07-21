@@ -3,9 +3,10 @@ name: build
 on:
   push:
   pull_request:
+  workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build:
@@ -57,6 +58,16 @@ jobs:
           cp -a /usr/share/glib-2.0/schemas "$bundle/share-schemas" || true
           find "$bundle" -type f \( -name 'RemoteControl3' -o -name '*.so*' \) -exec patchelf --set-rpath '$ORIGIN/lib' {} +
           (cd "$bundle" && zip -r "../$bundle.zip" .)
+          appDir="${bundle}.AppDir"
+          mkdir -p "$appDir"
+          cp -a "$bundle/." "$appDir/"
+          cp rc3/assets/appimage/AppRun "$appDir/"
+          cp rc3/assets/appimage/RemoteControl3.desktop "$appDir/"
+          cp "$appDir/images/rcicon.png" "$appDir/RemoteControl3.png"
+          chmod +x "$appDir/AppRun"
+          curl -L --fail --retry 3 -o appimagetool.AppImage https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x appimagetool.AppImage
+          ARCH=x86_64 APPIMAGE_EXTRACT_AND_RUN=1 ./appimagetool.AppImage "$appDir" "${bundle}.AppImage"
       - name: Stage macOS bundle
         if: runner.os == 'macOS'
         run: |
@@ -69,10 +80,15 @@ jobs:
           cp rc3/bin/control2config.txt "$bundle/"
           dylibbundler -cd -b -x "$bundle/RemoteControl3" -d "$bundle/lib" -p @executable_path/lib -of -s "$(dirname "$grclib")"
           (cd "$bundle" && zip -r "../$bundle.zip" .)
+          hdiutil create -volname "Graal Remote Control" -srcfolder "$bundle" -ov -format UDZO "${bundle}.dmg"
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.bundle }}
-          path: ${{ matrix.bundle }}.zip
+          path: |
+            ${{ matrix.bundle }}.zip
+            ${{ matrix.bundle }}.AppImage
+            ${{ matrix.bundle }}.dmg
+          if-no-files-found: error
 
   windows:
     runs-on: windows-latest
@@ -105,16 +121,31 @@ jobs:
           name: RemoteControl3-windows-x86_64
           path: RemoteControl3-windows-x86_64.zip
 
-  release:
-    if: startsWith(github.ref, 'refs/tags/v')
+  publish:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: [build, windows]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
         with:
-          path: release
+          path: artifacts
           merge-multiple: true
+      - uses: actions/checkout@v4
+        with:
+          repository: MorenoLand/GScript.RC-releases
+          token: ${{ secrets.RC_RELEASES_TOKEN }}
+          path: releases-repo
       - name: Publish release bundles
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh release create "${GITHUB_REF_NAME}" release/*.zip --verify-tag --generate-notes
+        run: |
+          build_id="$(date -u +%Y%m%d-%H%M%S)"
+          cd releases-repo
+          mkdir -p "releases/$build_id"
+          cp ../artifacts/* "releases/$build_id/"
+          git rm -r --ignore-unmatch releases/latest
+          mkdir -p releases/latest
+          cp "releases/$build_id"/* releases/latest/
+          git config user.name "GScript RemoteControl CI"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add releases
+          git diff --cached --quiet || git commit -m "Publish RC3 build $build_id"
+          git push origin main
