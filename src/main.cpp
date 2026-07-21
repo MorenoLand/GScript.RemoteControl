@@ -116,8 +116,11 @@ namespace {
         const std::string sharedData = (applicationDirectory / "share").string();
         g_setenv("XDG_DATA_DIRS", sharedData.c_str(), true);
         g_setenv("GDK_PIXBUF_MODULEDIR", loaders.c_str(), true);
-        g_setenv("GDK_PIXBUF_MODULE_FILE", (applicationDirectory / "lib" / "gdk-pixbuf-2.0" / "2.10.0" / "loaders.cache").string().c_str(), true);
+        g_unsetenv("GDK_PIXBUF_MODULE_FILE");
         g_setenv("GSETTINGS_SCHEMA_DIR", (applicationDirectory / "share" / "glib-2.0" / "schemas").string().c_str(), true);
+        GError* error = nullptr;
+        gdk_pixbuf_init_modules(loaders.c_str(), &error);
+        if (error != nullptr) g_error_free(error);
 #endif
     }
 
