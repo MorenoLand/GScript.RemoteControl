@@ -41,10 +41,13 @@ jobs:
         run: |
           bundle="${{ matrix.bundle }}"
           mkdir -p "$bundle/lib"
-          cp rc3/bin/RemoteControl3 rc3/bin/libgrclib.so "$bundle/"
+          grclib="$(find rc3/build -type f -name 'libgrclib.so*' -print -quit)"
+          test -n "$grclib"
+          cp rc3/bin/RemoteControl3 "$bundle/"
+          cp "$grclib" "$bundle/lib/"
           cp -a rc3/bin/images rc3/bin/language-specs rc3/bin/sounds "$bundle/"
           cp rc3/bin/control2config.txt "$bundle/"
-          { lddtree -l rc3/bin/RemoteControl3; lddtree -l rc3/bin/libgrclib.so; } | sort -u | while read -r library; do
+          { lddtree -l rc3/bin/RemoteControl3; lddtree -l "$grclib"; } | sort -u | while read -r library; do
             case "$library" in
               /lib/*|/usr/lib/*/ld-linux-*|/usr/lib/*/libc.so.*|/usr/lib/*/libm.so.*|/usr/lib/*/libpthread.so.*|/usr/lib/*/libdl.so.*|/usr/lib/*/librt.so.*|/usr/lib/*/libgcc_s.so.*|/usr/lib/*/libstdc++.so.*) continue ;;
             esac
@@ -59,11 +62,14 @@ jobs:
         run: |
           bundle="${{ matrix.bundle }}"
           mkdir -p "$bundle/lib"
-          cp rc3/bin/RemoteControl3 rc3/bin/libgrclib.dylib "$bundle/"
+          grclib="$(find rc3/build -type f -name 'libgrclib*.dylib' -print -quit)"
+          test -n "$grclib"
+          cp rc3/bin/RemoteControl3 "$bundle/"
+          cp "$grclib" "$bundle/lib/"
           cp -a rc3/bin/images rc3/bin/language-specs rc3/bin/sounds "$bundle/"
           cp rc3/bin/control2config.txt "$bundle/"
           dylibbundler -od -b -x -d "$bundle/lib" -p @executable_path/lib -b -of -s "$bundle/RemoteControl3"
-          dylibbundler -od -b -x -d "$bundle/lib" -p @loader_path -b -of -s "$bundle/lib/libgrclib.dylib"
+          dylibbundler -od -b -x -d "$bundle/lib" -p @loader_path -b -of -s "$bundle/lib/$(basename "$grclib")"
           (cd "$bundle" && zip -r "../$bundle.zip" .)
       - uses: actions/upload-artifact@v4
         with:
