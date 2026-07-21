@@ -115,6 +115,10 @@ jobs:
           cmake --build rc3/build --parallel
           ctest --test-dir rc3/build --output-on-failure
           cd rc3/bin
+          mkdir -p share/themes share/icons share/glib-2.0
+          cp -a "$MINGW_PREFIX/share/themes/." share/themes/
+          cp -a "$MINGW_PREFIX/share/icons/." share/icons/
+          cp -a "$MINGW_PREFIX/share/glib-2.0/schemas" share/glib-2.0/
           zip -r ../../RemoteControl3-windows-x86_64.zip .
       - uses: actions/upload-artifact@v4
         with:
