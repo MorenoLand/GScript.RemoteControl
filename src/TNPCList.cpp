@@ -24,7 +24,7 @@ TNPCList::TNPCList(std::string accountName) : accountName(std::move(accountName)
     store = gtk_list_store_new(4, G_TYPE_INT, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING);
     tree = gtk_tree_view_new_with_model(GTK_TREE_MODEL(store));
     gtk_tree_view_set_search_column(GTK_TREE_VIEW(tree), 1);
-    const struct { const char* title; int column; int width; } columns[] = {{"ID", 0, 60}, {"Name", 1, 180}, {"Type", 2, 120}, {"Image", 3, 120}};
+    const struct { const char* title; int column; int width; } columns[] = {{"ID", 0, 60}, {"Name", 1, 180}, {"Type", 2, 120}, {"Level", 3, 120}};
     for (const auto& column : columns) {
         GtkCellRenderer* renderer = gtk_cell_renderer_text_new();
         GtkTreeViewColumn* viewColumn = gtk_tree_view_column_new_with_attributes(column.title, renderer, "text", column.column, nullptr);
@@ -333,7 +333,7 @@ void TNPCList::refresh() {
     for (int index = 0; index < count; ++index) {
         GtkTreeIter row;
         gtk_list_store_append(store, &row);
-        gtk_list_store_set(store, &row, 0, npcs[index].id, 1, npcs[index].name == nullptr ? "" : npcs[index].name, 2, npcs[index].type == nullptr ? "" : npcs[index].type, 3, npcs[index].image == nullptr ? "" : npcs[index].image, -1);
+        gtk_list_store_set(store, &row, 0, npcs[index].id, 1, npcs[index].name == nullptr ? "" : npcs[index].name, 2, npcs[index].type == nullptr ? "" : npcs[index].type, 3, npcs[index].level == nullptr ? "" : npcs[index].level, -1);
     }
 }
 int TNPCList::firstFreeNPCId() const {
