@@ -764,6 +764,7 @@ void TRemoteFrame::onServerData(const char* type, const char* content, void* dat
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
     const std::string value = content == nullptr ? "" : content;
     if (type != nullptr && std::string(type) == "toall" && frame->toallsWindow != nullptr) frame->toallsWindow->append(value.c_str());
+    else if (type != nullptr && std::string(type) == "server_text") frame->appendChat(value);
     else if (type != nullptr && std::string(type) == "nc_message") {
         if (frame->options.separatenc) frame->appendChannelMessage("NC", value);
         else frame->appendChat(value);

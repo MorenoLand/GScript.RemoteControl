@@ -271,7 +271,6 @@ void TServerList::setListServer(const std::string& host, int port) {
         RegCloseKey(key);
     }
 #endif
-    if (!account.empty()) refresh();
 }
 
 void TServerList::onRefresh(GtkButton*, gpointer data) { static_cast<TServerList*>(data)->refresh(); }
