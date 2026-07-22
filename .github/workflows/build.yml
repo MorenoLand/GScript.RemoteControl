@@ -156,10 +156,7 @@ jobs:
           mkdir -p releases/latest
           cp "releases/$build_id"/* releases/latest/
           cp ../source/LICENSE LICENSE
-          cat >> LICENSE <<'EOF'
-
-The reconstructed source code is MIT licensed. Original Graal artwork, logos, and other supplied runtime assets remain the property of their respective owners.
-EOF
+          printf '\n%s\n' 'The reconstructed source code is MIT licensed. Original Graal artwork, logos, and other supplied runtime assets remain the property of their respective owners.' >> LICENSE
           {
             echo "# Remote Control - GTK3 Edition"
             echo
