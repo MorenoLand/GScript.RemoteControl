@@ -1,6 +1,9 @@
 #include "TPlayerList.h"
 #include "Backup.h"
+#include "EditorFind.h"
+#include "GScriptEditor.h"
 #include "TLocalBanWindow.h"
+#include "Theme.h"
 
 #include <grclib.h>
 #include <IEnums.h>
@@ -12,7 +15,11 @@
 #include <sstream>
 #include <filesystem>
 #include <fstream>
+#include <ctime>
+#include <iomanip>
 #include <map>
+
+#include <gtksourceview/gtksource.h>
 
 extern void remote_control_clear_pm_tray_alert();
 
@@ -49,6 +56,7 @@ namespace {
         int playerId;
         std::string account;
         std::string nick;
+        std::string localAccount;
         std::string message;
     };
 
@@ -109,6 +117,26 @@ namespace {
         return output.str();
     }
 
+    std::string pmHistoryTimestamp() {
+        const std::time_t now = std::time(nullptr);
+        std::tm localTime{};
+#ifdef _WIN32
+        localtime_s(&localTime, &now);
+#else
+        localtime_r(&now, &localTime);
+#endif
+        std::ostringstream output;
+        output << std::put_time(&localTime, "%a %b %d %H:%M:%S %Y");
+        return output.str();
+    }
+
+    void writePMHistory(const std::filesystem::path& directory, const std::string& account, const std::string& sender, const char* message) {
+        if (account.empty() || sender.empty() || message == nullptr || *message == '\0') return;
+        std::filesystem::create_directories(directory);
+        std::ofstream output(directory / (account + ".txt"), std::ios::app | std::ios::binary);
+        output << sender << " (" << pmHistoryTimestamp() << "):\n" << formatPMCommaText(message) << "\n\n";
+    }
+
     void onPMSend(GtkButton*, gpointer data) {
         PMWindowData* windowData = static_cast<PMWindowData*>(data);
         GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(windowData->reply));
@@ -118,32 +146,54 @@ namespace {
         gchar* text = gtk_text_buffer_get_text(buffer, &start, &end, false);
         if (text == nullptr || *text == '\0') { g_free(text); return; }
         if (rc_send_private_message(windowData->connection, windowData->playerId, text) == 0) { g_free(text); return; }
-        std::filesystem::create_directories(windowData->historyDirectory);
-        std::ofstream output(windowData->historyDirectory / (windowData->account + ".txt"), std::ios::app | std::ios::binary);
-        output << "You:\n" << text << "\n";
+        writePMHistory(windowData->historyDirectory, windowData->account, windowData->localAccount.empty() ? "You" : windowData->localAccount, text);
         g_free(text);
         gtk_widget_destroy(windowData->window);
     }
 
     void onPMHistory(GtkButton*, gpointer data) {
         PMWindowData* windowData = static_cast<PMWindowData*>(data);
-        GtkWidget* history = gtk_window_new(GTK_WINDOW_TOPLEVEL);
+        GtkWidget* history = gtk_dialog_new_with_buttons(("History: " + windowData->account + " - " + windowData->nick).c_str(), GTK_WINDOW(windowData->window), GTK_DIALOG_DESTROY_WITH_PARENT, "Close", GTK_RESPONSE_CLOSE, nullptr);
         gtk_widget_set_name(history, "PrivateMessageHistory");
-        gtk_window_set_title(GTK_WINDOW(history), ("History: " + windowData->account + " - " + windowData->nick).c_str());
-        gtk_window_set_default_size(GTK_WINDOW(history), 440, 320);
+        gtk_window_set_default_size(GTK_WINDOW(history), 540, 475);
         GtkWidget* scrolled = gtk_scrolled_window_new(nullptr, nullptr);
-        GtkWidget* field = gtk_text_view_new();
+        GtkSourceBuffer* sourceBuffer = gtk_source_buffer_new(nullptr);
+        applyRemoteControlSourceStyle(sourceBuffer);
+        GtkWidget* field = gtk_source_view_new_with_buffer(sourceBuffer);
+        configureGScriptEditor(field);
         gtk_widget_set_name(field, "PrivateMessageHistoryText");
         gtk_text_view_set_editable(GTK_TEXT_VIEW(field), false);
         gtk_text_view_set_cursor_visible(GTK_TEXT_VIEW(field), false);
+        gtk_text_view_set_monospace(GTK_TEXT_VIEW(field), true);
         gtk_container_add(GTK_CONTAINER(scrolled), field);
-        gtk_container_add(GTK_CONTAINER(history), scrolled);
+        gtk_box_pack_start(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(history))), scrolled, true, true, 0);
+        GtkWidget* find = gtk_button_new_with_label("Find");
+        gtk_widget_set_tooltip_text(find, "Find (Ctrl+F)");
+        gtk_container_add(GTK_CONTAINER(gtk_dialog_get_action_area(GTK_DIALOG(history))), find);
+        g_signal_connect(find, "clicked", G_CALLBACK(editorFind), field);
+        addEditorFindShortcut(field);
+        addGScriptEditorLineStatus(GTK_DIALOG(history), field);
         const std::filesystem::path path = windowData->historyDirectory / (windowData->account + ".txt");
         std::ifstream input(path, std::ios::binary);
         std::ostringstream content;
         content << input.rdbuf();
-        GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(field));
-        gtk_text_buffer_set_text(buffer, content.str().c_str(), -1);
+        gchar* validContent = g_utf8_make_valid(content.str().c_str(), -1);
+        gtk_text_buffer_set_text(GTK_TEXT_BUFFER(sourceBuffer), validContent, -1);
+        GtkTextTag* headerTag = gtk_text_buffer_create_tag(GTK_TEXT_BUFFER(sourceBuffer), "pm-history-header", "foreground", remoteControlDarkMode() ? "#ff00ff" : "#a000a0", "weight", PANGO_WEIGHT_BOLD, nullptr);
+        GtkTextIter lineStart;
+        gtk_text_buffer_get_start_iter(GTK_TEXT_BUFFER(sourceBuffer), &lineStart);
+        do {
+            GtkTextIter lineEnd = lineStart;
+            gtk_text_iter_forward_to_line_end(&lineEnd);
+            gchar* line = gtk_text_buffer_get_text(GTK_TEXT_BUFFER(sourceBuffer), &lineStart, &lineEnd, false);
+            const bool modernHeader = line != nullptr && std::string(line).find(" (") != std::string::npos && g_str_has_suffix(line, "):");
+            const bool legacyHeader = line != nullptr && (g_strcmp0(line, "You:") == 0 || g_strcmp0(line, "Opposite:") == 0);
+            if (modernHeader || legacyHeader) gtk_text_buffer_apply_tag(GTK_TEXT_BUFFER(sourceBuffer), headerTag, &lineStart, &lineEnd);
+            g_free(line);
+        } while (gtk_text_iter_forward_line(&lineStart));
+        g_free(validContent);
+        g_object_unref(sourceBuffer);
+        g_signal_connect(history, "response", G_CALLBACK(+[](GtkDialog* dialog, gint, gpointer) { gtk_widget_destroy(GTK_WIDGET(dialog)); }), nullptr);
         gtk_widget_show_all(history);
     }
 
@@ -186,7 +236,7 @@ namespace {
     }
 }
 
-TPlayerList::TPlayerList(const std::filesystem::path& nextApplicationDirectory) : applicationDirectory(nextApplicationDirectory) {
+TPlayerList::TPlayerList(const std::filesystem::path& nextApplicationDirectory, std::string nextAccountName) : applicationDirectory(nextApplicationDirectory), accountName(std::move(nextAccountName)) {
     window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
     gtk_widget_set_name(window, "PlayerList");
     gtk_window_set_title(GTK_WINDOW(window), "Players");
@@ -957,7 +1007,7 @@ gboolean TPlayerList::onServerButtonPress(GtkWidget* widget, GdkEventButton* eve
             gchar* nick = nullptr;
             gtk_tree_model_get(model, &row, 2, &account, 1, &nick, -1);
             if (account != nullptr && *account != '\0') {
-                PMWindowData historyData{remoteList->connection, remoteList->applicationDirectory / "PMs", nullptr, nullptr, nullptr, 0, account, nick == nullptr ? "" : nick, ""};
+                PMWindowData historyData{remoteList->connection, remoteList->applicationDirectory / "PMs", nullptr, nullptr, nullptr, 0, account, nick == nullptr ? "" : nick, remoteList->accountName, ""};
                 onPMHistory(nullptr, &historyData);
             }
             g_free(account);
@@ -1043,7 +1093,7 @@ std::string TPlayerList::notePrivateMessage(int playerId, const char* account, c
         if (!identity.account.empty()) accountText = identity.account;
         if (!identity.nick.empty()) nickText = identity.nick;
     }
-    appendHistory(accountText.c_str(), "Opposite", message);
+    appendHistory(accountText.c_str(), nickText.empty() ? accountText.c_str() : nickText.c_str(), message);
     pmPlayers[playerId] = {accountText, nickText};
     if (!pmMessages[playerId].empty()) pmMessages[playerId] += '\n';
     pmMessages[playerId] += formatPMCommaText(message == nullptr ? "" : message);
@@ -1062,18 +1112,14 @@ bool TPlayerList::openLatestPrivateMessage() {
     return true;
 }
 
-void TPlayerList::appendHistory(const char* account, const char* direction, const char* message) const {
-    if (account == nullptr || *account == '\0' || message == nullptr || *message == '\0') return;
-    const std::filesystem::path directory = applicationDirectory / "PMs";
-    std::filesystem::create_directories(directory);
-    std::ofstream output(directory / (std::string(account) + ".txt"), std::ios::app | std::ios::binary);
-    output << direction << ":\n" << message << "\n";
+void TPlayerList::appendHistory(const char* account, const char* sender, const char* message) const {
+    writePMHistory(applicationDirectory / "PMs", account == nullptr ? "" : account, sender == nullptr ? "" : sender, message);
 }
 
 void TPlayerList::openPrivateMessage(int playerId, const char* account, const char* nick) {
     if (playerId == 0 || account == nullptr || *account == '\0') return;
     const auto unread = pmMessages.find(playerId);
-    PMWindowData* data = new PMWindowData{connection, applicationDirectory / "PMs", nullptr, nullptr, nullptr, playerId, account, nick == nullptr ? "" : nick, unread == pmMessages.end() ? "" : unread->second};
+    PMWindowData* data = new PMWindowData{connection, applicationDirectory / "PMs", nullptr, nullptr, nullptr, playerId, account, nick == nullptr ? "" : nick, accountName, unread == pmMessages.end() ? "" : unread->second};
     data->window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
     gtk_widget_set_name(data->window, "PrivateMessage");
     gtk_window_set_title(GTK_WINDOW(data->window), "PM");
@@ -1129,7 +1175,7 @@ void TPlayerList::openPrivateMessage(int playerId, const char* account, const ch
 }
 
 void TPlayerList::openPrivateMessageHistory(const char* account, const char* nick) {
-    PMWindowData data{connection, applicationDirectory / "PMs", nullptr, nullptr, nullptr, 0, account == nullptr ? "" : account, nick == nullptr ? "" : nick, ""};
+    PMWindowData data{connection, applicationDirectory / "PMs", nullptr, nullptr, nullptr, 0, account == nullptr ? "" : account, nick == nullptr ? "" : nick, accountName, ""};
     onPMHistory(nullptr, &data);
 }
 
@@ -1315,7 +1361,7 @@ void TPlayerList::openSelectedHistory() {
     gchar* nick = nullptr;
     gtk_tree_model_get(model, &row, PlayerAccountColumn, &account, PlayerNickColumn, &nick, -1);
     if (account != nullptr && *account != '\0') {
-        PMWindowData data{connection, applicationDirectory / "PMs", nullptr, nullptr, nullptr, 0, account, nick == nullptr ? "" : nick, ""};
+        PMWindowData data{connection, applicationDirectory / "PMs", nullptr, nullptr, nullptr, 0, account, nick == nullptr ? "" : nick, accountName, ""};
         onPMHistory(nullptr, &data);
     }
     g_free(account);

@@ -8,7 +8,7 @@
 
 class TPlayerList {
 public:
-    explicit TPlayerList(const std::filesystem::path& applicationDirectory);
+    TPlayerList(const std::filesystem::path& applicationDirectory, std::string accountName);
     ~TPlayerList();
     void open(void* connection);
     void setConnection(void* connection);
@@ -64,7 +64,7 @@ private:
     void openPrivateMessage(int playerId, const char* account, const char* nick);
     void openPrivateMessageHistory(const char* account, const char* nick);
     void markPrivateMessageRead(int playerId);
-    void appendHistory(const char* account, const char* direction, const char* message) const;
+    void appendHistory(const char* account, const char* sender, const char* message) const;
     GdkPixbuf* pmIconFor(const std::string& type) const;
     std::vector<int> playerIds() const;
     GtkWidget* window = nullptr;
@@ -92,4 +92,5 @@ private:
     bool pmIconsVisible = true;
     void* connection = nullptr;
     std::filesystem::path applicationDirectory;
+    std::string accountName;
 };
