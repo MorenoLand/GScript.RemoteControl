@@ -105,11 +105,33 @@ TRemoteFrame::TRemoteFrame(const RC::RCOptions& nextOptions, const std::filesyst
         graphicalFixed = fixed;
         const std::filesystem::path background = applicationDirectory / "images" / options.background;
         GError* imageError = nullptr;
-        backgroundPixbuf = gdk_pixbuf_new_from_file(background.string().c_str(), &imageError);
-        backgroundImage = gtk_image_new_from_pixbuf(backgroundPixbuf);
+        backgroundAnimation = gdk_pixbuf_animation_new_from_file(background.string().c_str(), &imageError);
+        if (backgroundAnimation != nullptr && gdk_pixbuf_animation_is_static_image(backgroundAnimation)) {
+            backgroundPixbuf = gdk_pixbuf_animation_get_static_image(backgroundAnimation);
+            g_object_ref(backgroundPixbuf);
+            g_object_unref(backgroundAnimation);
+            backgroundAnimation = nullptr;
+        } else if (backgroundAnimation != nullptr) {
+            GTimeVal now;
+            g_get_current_time(&now);
+            backgroundAnimationIter = gdk_pixbuf_animation_get_iter(backgroundAnimation, &now);
+        }
+        backgroundImage = gtk_image_new_from_pixbuf(backgroundAnimationIter == nullptr ? backgroundPixbuf : gdk_pixbuf_animation_iter_get_pixbuf(backgroundAnimationIter));
         if (imageError != nullptr) g_error_free(imageError);
         gtk_widget_set_size_request(backgroundImage, 1, 180);
         gtk_fixed_put(GTK_FIXED(fixed), backgroundImage, 0, 0);
+        if (backgroundAnimationIter != nullptr) backgroundAnimationSource = g_timeout_add(16, +[](gpointer data) -> gboolean {
+            TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
+            if (frame->backgroundAnimationIter == nullptr || frame->backgroundImage == nullptr) return G_SOURCE_REMOVE;
+            GTimeVal now;
+            g_get_current_time(&now);
+            if (!gdk_pixbuf_animation_iter_advance(frame->backgroundAnimationIter, &now)) return G_SOURCE_CONTINUE;
+            GdkPixbuf* pixbuf = gdk_pixbuf_animation_iter_get_pixbuf(frame->backgroundAnimationIter);
+            GdkPixbuf* scaled = gdk_pixbuf_scale_simple(pixbuf, std::max(1, frame->graphicalBackgroundWidth), 180, GDK_INTERP_BILINEAR);
+            gtk_image_set_from_pixbuf(GTK_IMAGE(frame->backgroundImage), scaled);
+            if (scaled != nullptr) g_object_unref(scaled);
+            return G_SOURCE_CONTINUE;
+        }, this);
         const int positions[12][2] = {{5, 15}, {5, 48}, {38, 15}, {71, 15}, {394, 15}, {427, 15}, {460, 15}, {460, 48}, {460, 81}, {460, 114}, {427, 114}, {394, 114}};
         for (int index = 0; index < 12; ++index) {
             GtkWidget* button = gtk_event_box_new();
@@ -212,8 +234,11 @@ TRemoteFrame::TRemoteFrame(const RC::RCOptions& nextOptions, const std::filesyst
 TRemoteFrame::~TRemoteFrame() {
     *callbackAlive = false;
     if (eventSource != 0) g_source_remove(eventSource);
+    if (backgroundAnimationSource != 0) g_source_remove(backgroundAnimationSource);
     if (window != nullptr) gtk_widget_destroy(window);
     if (backgroundPixbuf != nullptr) g_object_unref(backgroundPixbuf);
+    if (backgroundAnimationIter != nullptr) g_object_unref(backgroundAnimationIter);
+    if (backgroundAnimation != nullptr) g_object_unref(backgroundAnimation);
     if (kappaEmote != nullptr) g_object_unref(kappaEmote);
     if (pmNormalEmote != nullptr) g_object_unref(pmNormalEmote);
     if (pacmanEmote != nullptr) g_object_unref(pacmanEmote);
@@ -526,8 +551,13 @@ gboolean TRemoteFrame::onDelete(GtkWidget*, GdkEvent*, gpointer data) {
 void TRemoteFrame::onGraphicalAllocate(GtkWidget*, GdkRectangle* allocation, gpointer data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
     if (allocation->width <= 0 || allocation->height <= 0) return;
+    frame->graphicalBackgroundWidth = allocation->width;
     if (frame->backgroundPixbuf != nullptr) {
         GdkPixbuf* scaled = gdk_pixbuf_scale_simple(frame->backgroundPixbuf, allocation->width, 180, GDK_INTERP_BILINEAR);
+        gtk_image_set_from_pixbuf(GTK_IMAGE(frame->backgroundImage), scaled);
+        if (scaled != nullptr) g_object_unref(scaled);
+    } else if (frame->backgroundAnimationIter != nullptr) {
+        GdkPixbuf* scaled = gdk_pixbuf_scale_simple(gdk_pixbuf_animation_iter_get_pixbuf(frame->backgroundAnimationIter), allocation->width, 180, GDK_INTERP_BILINEAR);
         gtk_image_set_from_pixbuf(GTK_IMAGE(frame->backgroundImage), scaled);
         if (scaled != nullptr) g_object_unref(scaled);
     }

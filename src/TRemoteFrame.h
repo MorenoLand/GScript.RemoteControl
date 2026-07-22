@@ -104,6 +104,10 @@ private:
     GdkPixbuf* pmNormalEmote = nullptr;
     GdkPixbuf* pacmanEmote = nullptr;
     GdkPixbuf* backgroundPixbuf = nullptr;
+    GdkPixbufAnimation* backgroundAnimation = nullptr;
+    GdkPixbufAnimationIter* backgroundAnimationIter = nullptr;
+    unsigned int backgroundAnimationSource = 0;
+    int graphicalBackgroundWidth = 500;
     void* connection = nullptr;
     std::string serverName;
     std::string nickname;
