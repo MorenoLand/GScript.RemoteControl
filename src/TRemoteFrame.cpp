@@ -2,6 +2,10 @@
 #include "ErrorWindow.h"
 #include "Backup.h"
 #include "Debug.h"
+#ifdef _WIN32
+#include <gdk/gdkwin32.h>
+#include <windows.h>
+#endif
 #include "GScriptEditor.h"
 #include "RCOptions.h"
 #include "Theme.h"
@@ -71,6 +75,7 @@ TRemoteFrame::TRemoteFrame(const RC::RCOptions& nextOptions, const std::filesyst
 
     GtkWidget* root = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
     gtk_container_add(GTK_CONTAINER(window), root);
+    GtkWidget* graphicalContainer = nullptr;
 
     if (!options.graphicalmenu) {
         GtkWidget* menuBar = gtk_menu_bar_new();
@@ -101,6 +106,11 @@ TRemoteFrame::TRemoteFrame(const RC::RCOptions& nextOptions, const std::filesyst
         }
         gtk_box_pack_start(GTK_BOX(root), menuBar, false, false, 0);
     } else {
+        graphicalContainer = gtk_overlay_new();
+        GtkWidget* graphicalBase = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+        gtk_container_add(GTK_CONTAINER(graphicalContainer), graphicalBase);
+        GtkWidget* header = gtk_overlay_new();
+        gtk_widget_set_size_request(header, 1, 180);
         GtkWidget* fixed = gtk_fixed_new();
         graphicalFixed = fixed;
         const std::filesystem::path background = applicationDirectory / "images" / options.background;
@@ -116,20 +126,18 @@ TRemoteFrame::TRemoteFrame(const RC::RCOptions& nextOptions, const std::filesyst
             g_get_current_time(&now);
             backgroundAnimationIter = gdk_pixbuf_animation_get_iter(backgroundAnimation, &now);
         }
-        backgroundImage = gtk_image_new_from_pixbuf(backgroundAnimationIter == nullptr ? backgroundPixbuf : gdk_pixbuf_animation_iter_get_pixbuf(backgroundAnimationIter));
+        backgroundImage = gtk_drawing_area_new();
         if (imageError != nullptr) g_error_free(imageError);
-        gtk_widget_set_size_request(backgroundImage, 1, 180);
-        gtk_fixed_put(GTK_FIXED(fixed), backgroundImage, 0, 0);
+        gtk_container_add(GTK_CONTAINER(header), backgroundImage);
+        gtk_overlay_add_overlay(GTK_OVERLAY(header), fixed);
+        g_signal_connect(backgroundImage, "draw", G_CALLBACK(onGraphicalDraw), this);
         if (backgroundAnimationIter != nullptr) backgroundAnimationSource = g_timeout_add(16, +[](gpointer data) -> gboolean {
             TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
             if (frame->backgroundAnimationIter == nullptr || frame->backgroundImage == nullptr) return G_SOURCE_REMOVE;
             GTimeVal now;
             g_get_current_time(&now);
             if (!gdk_pixbuf_animation_iter_advance(frame->backgroundAnimationIter, &now)) return G_SOURCE_CONTINUE;
-            GdkPixbuf* pixbuf = gdk_pixbuf_animation_iter_get_pixbuf(frame->backgroundAnimationIter);
-            GdkPixbuf* scaled = gdk_pixbuf_scale_simple(pixbuf, std::max(1, frame->graphicalBackgroundWidth), 180, GDK_INTERP_BILINEAR);
-            gtk_image_set_from_pixbuf(GTK_IMAGE(frame->backgroundImage), scaled);
-            if (scaled != nullptr) g_object_unref(scaled);
+            gtk_widget_queue_draw(frame->backgroundImage);
             return G_SOURCE_CONTINUE;
         }, this);
         const int positions[12][2] = {{5, 15}, {5, 48}, {38, 15}, {71, 15}, {394, 15}, {427, 15}, {460, 15}, {460, 48}, {460, 81}, {460, 114}, {427, 114}, {394, 114}};
@@ -175,8 +183,11 @@ TRemoteFrame::TRemoteFrame(const RC::RCOptions& nextOptions, const std::filesyst
         addLabel(options.labelservers, 10, 90, &serverLabel, &serverLabelShadows);
         addLabel(options.labelplayers, 10, 110, &playersLabel, &playersLabelShadows);
         pango_font_description_free(labelFont);
-        gtk_box_pack_start(GTK_BOX(root), fixed, true, true, 0);
-        g_signal_connect(fixed, "size-allocate", G_CALLBACK(onGraphicalAllocate), this);
+        gtk_box_pack_start(GTK_BOX(graphicalBase), header, false, false, 0);
+        GtkWidget* filler = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+        gtk_box_pack_start(GTK_BOX(graphicalBase), filler, true, true, 0);
+        gtk_box_pack_start(GTK_BOX(root), graphicalContainer, true, true, 0);
+        g_signal_connect(header, "size-allocate", G_CALLBACK(onGraphicalAllocate), this);
     }
 
     notebook = gtk_notebook_new();
@@ -208,9 +219,11 @@ TRemoteFrame::TRemoteFrame(const RC::RCOptions& nextOptions, const std::filesyst
     gtk_css_provider_load_from_data(tabProvider, notebookCss.c_str(), -1, nullptr);
     gtk_style_context_add_provider_for_screen(gdk_screen_get_default(), GTK_STYLE_PROVIDER(tabProvider), GTK_STYLE_PROVIDER_PRIORITY_USER + 1);
     g_object_unref(tabProvider);
-    if (graphicalFixed != nullptr) {
-        gtk_widget_set_size_request(notebook, 1, 1);
-        gtk_fixed_put(GTK_FIXED(graphicalFixed), notebook, 0, 156);
+    if (graphicalContainer != nullptr) {
+        gtk_widget_set_halign(notebook, GTK_ALIGN_FILL);
+        gtk_widget_set_valign(notebook, GTK_ALIGN_FILL);
+        gtk_widget_set_margin_top(notebook, 156);
+        gtk_overlay_add_overlay(GTK_OVERLAY(graphicalContainer), notebook);
     } else gtk_box_pack_start(GTK_BOX(root), notebook, true, true, 0);
 
     editField = gtk_entry_new();
@@ -227,8 +240,73 @@ TRemoteFrame::TRemoteFrame(const RC::RCOptions& nextOptions, const std::filesyst
 
     g_signal_connect(editField, "key-press-event", G_CALLBACK(onEditKey), this);
     g_signal_connect(window, "key-press-event", G_CALLBACK(onWindowKey), this);
+    g_signal_connect(window, "configure-event", G_CALLBACK(onConfigure), this);
+    g_signal_connect(window, "window-state-event", G_CALLBACK(onWindowState), this);
     g_signal_connect(window, "focus-in-event", G_CALLBACK(+[](GtkWidget*, GdkEventFocus*, gpointer data) -> gboolean { TRemoteFrame* frame = static_cast<TRemoteFrame*>(data); clearRemoteControlUrgency(); remote_control_clear_pm_tray_alert(); if (frame->playerList != nullptr) frame->playerList->clearPrivateMessageAlert(); return false; }), this);
     g_signal_connect(window, "delete-event", G_CALLBACK(onDelete), this);
+}
+
+gboolean TRemoteFrame::onConfigure(GtkWidget*, GdkEventConfigure* event, gpointer data) {
+    TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
+    GdkWindow* nativeWindow = gtk_widget_get_window(frame->window);
+    const bool maximized = nativeWindow != nullptr && (gdk_window_get_state(nativeWindow) & GDK_WINDOW_STATE_MAXIMIZED) != 0;
+    if (!frame->windowMaximized && !maximized && event->width > 0 && event->height > 0) {
+        frame->normalWindowWidth = event->width;
+        frame->normalWindowHeight = event->height;
+    }
+    return false;
+}
+
+gboolean TRemoteFrame::onWindowState(GtkWidget*, GdkEventWindowState* event, gpointer data) {
+    TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
+    if ((event->changed_mask & GDK_WINDOW_STATE_MAXIMIZED) == 0) return false;
+    const bool maximized = (event->new_window_state & GDK_WINDOW_STATE_MAXIMIZED) != 0;
+#ifdef _WIN32
+    if (!frame->windowMaximized && maximized) {
+        GdkWindow* nativeWindow = gtk_widget_get_window(frame->window);
+        HWND handle = nativeWindow == nullptr ? nullptr : reinterpret_cast<HWND>(GDK_WINDOW_HWND(nativeWindow));
+        WINDOWPLACEMENT placement = {sizeof(WINDOWPLACEMENT)};
+        if (handle != nullptr && GetWindowPlacement(handle, &placement)) {
+            frame->normalWindowX = placement.rcNormalPosition.left;
+            frame->normalWindowY = placement.rcNormalPosition.top;
+            frame->normalWindowWidth = placement.rcNormalPosition.right - placement.rcNormalPosition.left;
+            frame->normalWindowHeight = placement.rcNormalPosition.bottom - placement.rcNormalPosition.top;
+            frame->hasNativeNormalWindowGeometry = frame->normalWindowWidth > 0 && frame->normalWindowHeight > 0;
+        }
+    }
+#endif
+    if (frame->windowMaximized && !maximized) {
+        g_idle_add(+[](gpointer value) -> gboolean {
+            TRemoteFrame* target = static_cast<TRemoteFrame*>(value);
+            target->windowMaximized = false;
+#ifdef _WIN32
+            GdkWindow* nativeWindow = gtk_widget_get_window(target->window);
+            HWND handle = nativeWindow == nullptr ? nullptr : reinterpret_cast<HWND>(GDK_WINDOW_HWND(nativeWindow));
+            if (target->hasNativeNormalWindowGeometry && handle != nullptr) SetWindowPos(handle, nullptr, target->normalWindowX, target->normalWindowY, target->normalWindowWidth, target->normalWindowHeight, SWP_NOACTIVATE | SWP_NOZORDER);
+            else gtk_window_resize(GTK_WINDOW(target->window), target->normalWindowWidth, target->normalWindowHeight);
+#else
+            gtk_window_resize(GTK_WINDOW(target->window), target->normalWindowWidth, target->normalWindowHeight);
+#endif
+            return G_SOURCE_REMOVE;
+        }, frame);
+        return false;
+    }
+    frame->windowMaximized = maximized;
+    return false;
+}
+
+gboolean TRemoteFrame::onGraphicalDraw(GtkWidget* widget, cairo_t* context, gpointer data) {
+    TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
+    GdkPixbuf* pixbuf = frame->backgroundAnimationIter != nullptr ? gdk_pixbuf_animation_iter_get_pixbuf(frame->backgroundAnimationIter) : frame->backgroundPixbuf;
+    if (pixbuf == nullptr) return false;
+    GtkAllocation allocation;
+    gtk_widget_get_allocation(widget, &allocation);
+    cairo_save(context);
+    cairo_scale(context, static_cast<double>(std::max(1, allocation.width)) / gdk_pixbuf_get_width(pixbuf), static_cast<double>(std::max(1, allocation.height)) / gdk_pixbuf_get_height(pixbuf));
+    gdk_cairo_set_source_pixbuf(context, pixbuf, 0, 0);
+    cairo_paint(context);
+    cairo_restore(context);
+    return false;
 }
 
 TRemoteFrame::~TRemoteFrame() {
@@ -307,6 +385,11 @@ bool TRemoteFrame::isNCAuthenticated() const { return connection != nullptr && r
 void TRemoteFrame::show() {
     gtk_widget_show_all(window);
     gtk_window_present(GTK_WINDOW(window));
+}
+
+void TRemoteFrame::toggleVisibility() {
+    if (gtk_widget_get_visible(window)) gtk_widget_hide(window);
+    else show();
 }
 
 bool TRemoteFrame::openLatestPrivateMessage() {
@@ -552,19 +635,7 @@ void TRemoteFrame::onGraphicalAllocate(GtkWidget*, GdkRectangle* allocation, gpo
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
     if (allocation->width <= 0 || allocation->height <= 0) return;
     frame->graphicalBackgroundWidth = allocation->width;
-    if (frame->backgroundPixbuf != nullptr) {
-        GdkPixbuf* scaled = gdk_pixbuf_scale_simple(frame->backgroundPixbuf, allocation->width, 180, GDK_INTERP_BILINEAR);
-        gtk_image_set_from_pixbuf(GTK_IMAGE(frame->backgroundImage), scaled);
-        if (scaled != nullptr) g_object_unref(scaled);
-    } else if (frame->backgroundAnimationIter != nullptr) {
-        GdkPixbuf* scaled = gdk_pixbuf_scale_simple(gdk_pixbuf_animation_iter_get_pixbuf(frame->backgroundAnimationIter), allocation->width, 180, GDK_INTERP_BILINEAR);
-        gtk_image_set_from_pixbuf(GTK_IMAGE(frame->backgroundImage), scaled);
-        if (scaled != nullptr) g_object_unref(scaled);
-    }
-    GtkAllocation backgroundAllocation = {0, 0, allocation->width, 180};
-    GtkAllocation notebookAllocation = {0, 156, allocation->width, std::max(1, allocation->height - 156)};
-    gtk_widget_size_allocate(frame->backgroundImage, &backgroundAllocation);
-    gtk_widget_size_allocate(frame->notebook, &notebookAllocation);
+    gtk_widget_queue_draw(frame->backgroundImage);
     const int positions[12][2] = {{5, 15}, {5, 48}, {38, 15}, {71, 15}, {394, 15}, {427, 15}, {460, 15}, {460, 48}, {460, 81}, {460, 114}, {427, 114}, {394, 114}};
     for (int index = 4; index < 12; ++index) gtk_fixed_move(GTK_FIXED(frame->graphicalFixed), frame->graphicalButtons[index], allocation->width - (500 - positions[index][0]), positions[index][1]);
 }
@@ -628,12 +699,11 @@ void TRemoteFrame::onPrivateMessage(int playerId, const char* account, const cha
     const std::string messageType = type == nullptr ? "normal" : type;
     if (messageType == "mass" && frame->options.nomassmessages) return;
     if (frame->playerList == nullptr) frame->playerList = new TPlayerList(frame->applicationDirectory);
-    const bool alert = !hasActiveRemoteControlWindow() && !gtk_widget_has_focus(frame->editField);
     const std::string display = frame->playerList->notePrivateMessage(playerId, account, nick, message, type);
     if (frame->options.newpmalerts) {
         frame->appendChat("#ALERT New PM from " + display, true);
     }
-    if (frame->options.newpmalerts && alert) remote_control_begin_pm_tray_alert();
+    remote_control_begin_pm_tray_alert();
 }
 
 void TRemoteFrame::onServerData(const char* type, const char* content, void* data) {

@@ -29,6 +29,7 @@ public:
     void disconnect();
     void signOut();
     void show();
+    void toggleVisibility();
     bool openLatestPrivateMessage();
     bool isNCAuthenticated() const;
 
@@ -59,6 +60,9 @@ private:
     static gboolean onEditKey(GtkWidget*, GdkEventKey*, gpointer data);
     static gboolean onWindowKey(GtkWidget*, GdkEventKey*, gpointer data);
     static gboolean onDelete(GtkWidget*, GdkEvent*, gpointer data);
+    static gboolean onConfigure(GtkWidget*, GdkEventConfigure*, gpointer data);
+    static gboolean onWindowState(GtkWidget*, GdkEventWindowState*, gpointer data);
+    static gboolean onGraphicalDraw(GtkWidget*, cairo_t*, gpointer data);
     static void onGraphicalAllocate(GtkWidget*, GdkRectangle*, gpointer data);
     static gboolean processEvents(gpointer data);
     static void onConnected(void* data);
@@ -113,6 +117,12 @@ private:
     std::string nickname;
     std::string accountName;
     int trayPlayerCount = -1;
+    int normalWindowWidth = 500;
+    int normalWindowHeight = 350;
+    int normalWindowX = 0;
+    int normalWindowY = 0;
+    bool hasNativeNormalWindowGeometry = false;
+    bool windowMaximized = false;
     std::vector<std::string> chatHistory;
     int chatHistoryIndex = -1;
     guint eventSource = 0;

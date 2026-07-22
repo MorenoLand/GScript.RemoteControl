@@ -696,23 +696,50 @@ GtkWidget* createGScriptEditorLineStatus(GtkWidget* editor) {
 
 void addGScriptEditorLineStatus(GtkDialog* dialog, GtkWidget* editor) {
     GtkWidget* actionArea = gtk_dialog_get_action_area(dialog);
+    GtkWidget* contentArea = gtk_dialog_get_content_area(dialog);
+    GtkWidget* footer = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 5);
     GtkWidget* status = createGScriptEditorLineStatus(editor);
-    GtkWidget* controls = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 5);
+    GtkWidget* actions = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 5);
+    GtkWidget* spacer = gtk_label_new(nullptr);
+    GtkWidget* goToLine = nullptr;
+    GtkWidget* find = nullptr;
+    GtkWidget* apply = nullptr;
+    GtkWidget* close = nullptr;
+    GList* remaining = nullptr;
     GList* children = gtk_container_get_children(GTK_CONTAINER(actionArea));
     for (GList* child = children; child != nullptr; child = child->next) {
         GtkWidget* button = GTK_WIDGET(child->data);
         g_object_ref(button);
         gtk_container_remove(GTK_CONTAINER(actionArea), button);
-        gtk_box_pack_start(GTK_BOX(controls), button, false, false, 0);
-        g_object_unref(button);
+        const char* label = GTK_IS_BUTTON(button) ? gtk_button_get_label(GTK_BUTTON(button)) : nullptr;
+        if (g_strcmp0(label, "Go to line") == 0) goToLine = button;
+        else if (g_strcmp0(label, "Find") == 0) find = button;
+        else if (g_strcmp0(label, "Apply") == 0 || g_strcmp0(label, "Save") == 0) apply = button;
+        else if (g_strcmp0(label, "Close") == 0 || g_strcmp0(label, "Cancel") == 0) close = button;
+        else remaining = g_list_append(remaining, button);
     }
     g_list_free(children);
     gtk_widget_set_margin_start(status, 5);
     gtk_widget_set_margin_end(status, 5);
-    gtk_widget_set_margin_top(controls, 3);
-    gtk_widget_set_margin_bottom(controls, 3);
-    gtk_widget_set_margin_end(controls, 5);
-    gtk_box_pack_start(GTK_BOX(actionArea), status, false, false, 0);
-    gtk_box_pack_start(GTK_BOX(actionArea), controls, false, false, 0);
-    gtk_button_box_set_layout(GTK_BUTTON_BOX(actionArea), GTK_BUTTONBOX_EDGE);
+    gtk_widget_set_margin_top(actions, 3);
+    gtk_widget_set_margin_bottom(actions, 3);
+    gtk_widget_set_margin_end(actions, 5);
+    gtk_widget_set_hexpand(spacer, true);
+    if (goToLine != nullptr) gtk_box_pack_start(GTK_BOX(actions), goToLine, false, false, 0);
+    if (find != nullptr) gtk_box_pack_start(GTK_BOX(actions), find, false, false, 0);
+    if (apply != nullptr) gtk_box_pack_start(GTK_BOX(actions), apply, false, false, 0);
+    if (close != nullptr) gtk_box_pack_start(GTK_BOX(actions), close, false, false, 0);
+    for (GList* item = remaining; item != nullptr; item = item->next) gtk_box_pack_start(GTK_BOX(actions), GTK_WIDGET(item->data), false, false, 0);
+    for (GList* item = remaining; item != nullptr; item = item->next) g_object_unref(item->data);
+    g_list_free(remaining);
+    if (goToLine != nullptr) g_object_unref(goToLine);
+    if (find != nullptr) g_object_unref(find);
+    if (apply != nullptr) g_object_unref(apply);
+    if (close != nullptr) g_object_unref(close);
+    gtk_box_pack_start(GTK_BOX(footer), status, false, false, 0);
+    gtk_box_pack_start(GTK_BOX(footer), spacer, true, true, 0);
+    gtk_box_pack_end(GTK_BOX(footer), actions, false, false, 0);
+    gtk_widget_set_no_show_all(actionArea, true);
+    gtk_widget_hide(actionArea);
+    gtk_box_pack_end(GTK_BOX(contentArea), footer, false, false, 0);
 }

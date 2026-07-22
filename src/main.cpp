@@ -33,6 +33,8 @@ GtkWidget* traySignOutItem = nullptr;
 std::string pmTrayNormalIcon;
 std::string pmTrayAlertIcon;
 guint pmTrayBlinkSource = 0;
+guint traySingleClickSource = 0;
+gint64 trayDoubleClickUntil = 0;
 bool pmTrayAlertVisible = false;
 std::function<void()> trayServerListOpen;
 std::function<void()> traySignOut;
@@ -149,12 +151,34 @@ namespace {
 
     void onTrayQuit(GtkMenuItem*, gpointer) { gtk_main_quit(); }
 
-    void onTrayActivate(GtkStatusIcon*, gpointer) {
-        if (trayRemoteFrame != nullptr && trayRemoteFrame->openLatestPrivateMessage()) {
-            clearTrayPMAlert();
-            return;
+    void toggleTrayApplication() {
+        if (trayRemoteFrame != nullptr) trayRemoteFrame->toggleVisibility();
+        else if (trayStartFrame != nullptr) trayStartFrame->toggleVisibility();
+    }
+
+    gboolean onTraySingleClick(gpointer) {
+        traySingleClickSource = 0;
+        toggleTrayApplication();
+        return G_SOURCE_REMOVE;
+    }
+
+    gboolean onTrayButtonPress(GtkStatusIcon*, GdkEventButton* event, gpointer) {
+        if (event->button != 1) return false;
+        if (event->type == GDK_2BUTTON_PRESS) {
+            if (traySingleClickSource != 0) g_source_remove(traySingleClickSource);
+            traySingleClickSource = 0;
+            trayDoubleClickUntil = g_get_monotonic_time() + 300000;
+            if (trayRemoteFrame != nullptr && trayRemoteFrame->openLatestPrivateMessage()) clearTrayPMAlert();
+            else onTrayOpen(nullptr, nullptr);
+            return true;
         }
-        onTrayOpen(nullptr, nullptr);
+        if (event->type == GDK_BUTTON_PRESS && traySingleClickSource == 0) traySingleClickSource = g_timeout_add(220, onTraySingleClick, nullptr);
+        return true;
+    }
+
+    void onTrayActivate(GtkStatusIcon*, gpointer) {
+        if (g_get_monotonic_time() < trayDoubleClickUntil) return;
+        if (traySingleClickSource == 0) traySingleClickSource = g_timeout_add(220, onTraySingleClick, nullptr);
     }
 
     void onTrayPopup(GtkStatusIcon* icon, guint button, guint32 activateTime, gpointer) {
@@ -326,6 +350,7 @@ int main(int argc, char** argv) {
     g_signal_connect(traySignOutItem, "activate", G_CALLBACK(onTraySignOut), nullptr);
     g_signal_connect(quitTrayItem, "activate", G_CALLBACK(onTrayQuit), nullptr);
     gtk_widget_show_all(trayMenu);
+    g_signal_connect(trayIcon, "button-press-event", G_CALLBACK(onTrayButtonPress), nullptr);
     g_signal_connect(trayIcon, "activate", G_CALLBACK(onTrayActivate), nullptr);
     g_signal_connect(trayIcon, "popup-menu", G_CALLBACK(onTrayPopup), nullptr);
     TStartFrame* startFrame = nullptr;

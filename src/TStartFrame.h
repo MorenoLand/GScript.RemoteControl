@@ -17,6 +17,7 @@ public:
     ~TStartFrame();
 
     void show();
+    void toggleVisibility();
     GdkWindow* nativeWindow() const { return window != nullptr ? gtk_widget_get_window(window) : nullptr; }
 
 private:

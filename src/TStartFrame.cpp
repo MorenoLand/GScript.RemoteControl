@@ -98,6 +98,11 @@ void TStartFrame::show() {
     gtk_window_present(GTK_WINDOW(window));
 }
 
+void TStartFrame::toggleVisibility() {
+    if (gtk_widget_get_visible(window)) gtk_widget_hide(window);
+    else show();
+}
+
 void TStartFrame::onConnect(GtkButton*, gpointer data) { static_cast<TStartFrame*>(data)->connect(); }
 
 void TStartFrame::onListServerSettings(GtkButton*, gpointer data) { TStartFrame* frame = static_cast<TStartFrame*>(data); if (frame->onListServerSettingsCallback) frame->onListServerSettingsCallback(); }
