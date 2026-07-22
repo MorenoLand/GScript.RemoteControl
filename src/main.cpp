@@ -29,11 +29,13 @@
 GtkStatusIcon* pmTrayIcon = nullptr;
 GtkWidget* trayMenu = nullptr;
 GtkWidget* trayServerListItem = nullptr;
+GtkWidget* traySignOutItem = nullptr;
 std::string pmTrayNormalIcon;
 std::string pmTrayAlertIcon;
 guint pmTrayBlinkSource = 0;
 bool pmTrayAlertVisible = false;
 std::function<void()> trayServerListOpen;
+std::function<void()> traySignOut;
 bool remoteControlDebug = false;
 
 namespace {
@@ -59,10 +61,12 @@ namespace {
     constexpr UINT TrayMenuOpenId = 1;
     constexpr UINT TrayMenuServerListId = 2;
     constexpr UINT TrayMenuQuitId = 3;
+    constexpr UINT TrayMenuSignOutId = 4;
     HWND serverListHotkeyWindow = nullptr;
     const wchar_t* trayMenuText(UINT itemId) {
         if (itemId == TrayMenuOpenId) return L"Open";
         if (itemId == TrayMenuServerListId) return L"Server List";
+        if (itemId == TrayMenuSignOutId) return L"Sign out";
         if (itemId == TrayMenuQuitId) return L"Quit";
         return L"";
     }
@@ -138,6 +142,11 @@ namespace {
         if (trayServerListOpen) trayServerListOpen();
     }
 
+    void onTraySignOut(GtkMenuItem*, gpointer) {
+        clearTrayPMAlert();
+        if (traySignOut) traySignOut();
+    }
+
     void onTrayQuit(GtkMenuItem*, gpointer) { gtk_main_quit(); }
 
     void onTrayActivate(GtkStatusIcon*, gpointer) {
@@ -160,6 +169,7 @@ namespace {
         AppendMenuW(menu, MF_OWNERDRAW, TrayMenuOpenId, L"Open");
         const bool canOpenServerList = trayRemoteFrame != nullptr && trayRemoteFrame->isNCAuthenticated();
         if (canOpenServerList) AppendMenuW(menu, MF_OWNERDRAW, TrayMenuServerListId, L"Server List");
+        if (trayRemoteFrame != nullptr) AppendMenuW(menu, MF_OWNERDRAW, TrayMenuSignOutId, L"Sign out");
         AppendMenuW(menu, MF_OWNERDRAW, TrayMenuQuitId, L"Quit");
         POINT cursor;
         GetCursorPos(&cursor);
@@ -172,9 +182,11 @@ namespace {
         DestroyWindow(owner);
         if (command == TrayMenuOpenId) onTrayOpen(nullptr, nullptr);
         else if (command == TrayMenuServerListId) onTrayServerList(nullptr, nullptr);
+        else if (command == TrayMenuSignOutId) onTraySignOut(nullptr, nullptr);
         else if (command == TrayMenuQuitId) onTrayQuit(nullptr, nullptr);
 #else
         gtk_widget_set_visible(trayServerListItem, trayRemoteFrame != nullptr && trayRemoteFrame->isNCAuthenticated());
+        gtk_widget_set_visible(traySignOutItem, trayRemoteFrame != nullptr);
         gtk_menu_popup(GTK_MENU(trayMenu), nullptr, nullptr, gtk_status_icon_position_menu, icon, button, activateTime);
 #endif
     }
@@ -236,9 +248,10 @@ namespace {
             g_object_unref(darkThemeProvider);
             darkThemeProvider = nullptr;
         }
+        g_object_set_data(G_OBJECT(gtk_settings_get_default()), "remote-control-dark-mode", GINT_TO_POINTER(enabled));
         if (!enabled) return;
         GtkCssProvider* provider = gtk_css_provider_new();
-        constexpr const char* css = "window, dialog, .background { background-color: #454545; color: #dddddd; } label, checkbutton label, button label { color: #dddddd; } entry { background-color: #1e1e1e; color: #dddddd; caret-color: #00ff00; border-color: #555555; } entry:disabled { background-color: #383838; color: #c1c1c1; } textview, textview text { background-color: #1e1e1e; color: #dddddd; } combobox button, button { background-image: none; background-color: #383838; color: #cbcbcb; border-color: #555555; } button:hover, combobox button:hover { background-image: none; background-color: #3b3b3b; } button:active, combobox button:active { background-image: none; background-color: #303030; } button:disabled { background-image: none; background-color: #383838; color: #828282; } checkbutton { color: #dddddd; } treeview.view { background-color: #272822; color: #dddddd; } filechooser box, filechooser .path-bar, filechooser .path-bar button, filechooser .pathbar, filechooser .pathbar button { background-image: none; background-color: #454545; color: #dddddd; } filechooser placessidebar, filechooser placessidebar viewport, filechooser placessidebar list, filechooser placessidebar row, filechooser .sidebar, filechooser .sidebar viewport, filechooser .sidebar list, filechooser .sidebar row { background-color: #272822; color: #dddddd; } filechooser placessidebar row:selected, filechooser .sidebar row:selected { background-color: #555555; color: #ffffff; } menubar, menu { background-color: #484848; color: #cbcbcb; } menuitem { color: #cbcbcb; } notebook, notebook > header, notebook > stack, scrolledwindow, viewport { background-color: transparent; border: none; box-shadow: none; padding: 0; } notebook > header, notebook > header > tabs { min-height: 0; } notebook > header > tabs > tab { background-image: none; background-color: #3d3d3d; border: 1px solid #707070; border-bottom: none; border-radius: 4px 4px 0 0; margin-right: 2px; padding: 2px 5px; } notebook > header > tabs > tab:checked { background-color: #454545; border-color: #909090; } treeview.view:selected { background-color: #555555; color: #ffffff; }";
+        constexpr const char* css = "window, dialog, .background { background-color: #454545; color: #dddddd; } label, checkbutton label, button label { color: #dddddd; } entry { background-color: #1e1e1e; color: #dddddd; caret-color: #00ff00; border-color: #555555; } entry:disabled { background-color: #383838; color: #c1c1c1; } textview, textview text { background-color: #1e1e1e; color: #dddddd; caret-color: #00ff00; } combobox button, button { background-image: none; background-color: #383838; color: #cbcbcb; border-color: #555555; } button:hover, combobox button:hover { background-image: none; background-color: #3b3b3b; } button:active, combobox button:active { background-image: none; background-color: #303030; } button:disabled { background-image: none; background-color: #383838; color: #828282; } checkbutton { color: #dddddd; } treeview.view { background-color: #272822; color: #dddddd; } filechooser box, filechooser .path-bar, filechooser .path-bar button, filechooser .pathbar, filechooser .pathbar button { background-image: none; background-color: #454545; color: #dddddd; } filechooser placessidebar, filechooser placessidebar viewport, filechooser placessidebar list, filechooser placessidebar row, filechooser .sidebar, filechooser .sidebar viewport, filechooser .sidebar list, filechooser .sidebar row { background-color: #272822; color: #dddddd; } filechooser placessidebar row:selected, filechooser .sidebar row:selected { background-color: #555555; color: #ffffff; } menubar, menu { background-color: #484848; color: #cbcbcb; } menuitem { color: #cbcbcb; } notebook, notebook > header, notebook > stack, scrolledwindow, viewport { background-color: transparent; border: none; box-shadow: none; padding: 0; } notebook > header, notebook > header > tabs { min-height: 0; } notebook > header > tabs > tab { background-image: none; background-color: #3d3d3d; border: 1px solid #707070; border-bottom: none; border-radius: 4px 4px 0 0; margin-right: 2px; padding: 2px 5px; } notebook > header > tabs > tab:checked { background-color: #454545; border-color: #909090; } treeview.view:selected { background-color: #555555; color: #ffffff; }";
         gtk_css_provider_load_from_data(provider, css, -1, nullptr);
         gtk_style_context_add_provider_for_screen(gdk_screen_get_default(), GTK_STYLE_PROVIDER(provider), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
         darkThemeProvider = provider;
@@ -266,9 +279,14 @@ int main(int argc, char** argv) {
     }
     argc = argumentCount;
     if (debugMode && AttachConsole(ATTACH_PARENT_PROCESS)) {
+#ifdef _MSC_VER
         FILE* stream = nullptr;
         freopen_s(&stream, "CONOUT$", "w", stdout);
         freopen_s(&stream, "CONOUT$", "w", stderr);
+#else
+        freopen("CONOUT$", "w", stdout);
+        freopen("CONOUT$", "w", stderr);
+#endif
     }
     remoteControlDebug = debugMode;
     remoteControlDebugLog("debug logging enabled");
@@ -297,12 +315,15 @@ int main(int argc, char** argv) {
     trayMenu = gtk_menu_new();
     GtkWidget* openTrayItem = gtk_menu_item_new_with_label("Open");
     trayServerListItem = gtk_menu_item_new_with_label("Server List");
+    traySignOutItem = gtk_menu_item_new_with_label("Sign out");
     GtkWidget* quitTrayItem = gtk_menu_item_new_with_label("Quit");
     gtk_menu_shell_append(GTK_MENU_SHELL(trayMenu), openTrayItem);
     gtk_menu_shell_append(GTK_MENU_SHELL(trayMenu), trayServerListItem);
+    gtk_menu_shell_append(GTK_MENU_SHELL(trayMenu), traySignOutItem);
     gtk_menu_shell_append(GTK_MENU_SHELL(trayMenu), quitTrayItem);
     g_signal_connect(openTrayItem, "activate", G_CALLBACK(onTrayOpen), nullptr);
     g_signal_connect(trayServerListItem, "activate", G_CALLBACK(onTrayServerList), nullptr);
+    g_signal_connect(traySignOutItem, "activate", G_CALLBACK(onTraySignOut), nullptr);
     g_signal_connect(quitTrayItem, "activate", G_CALLBACK(onTrayQuit), nullptr);
     gtk_widget_show_all(trayMenu);
     g_signal_connect(trayIcon, "activate", G_CALLBACK(onTrayActivate), nullptr);
@@ -331,6 +352,13 @@ int main(int argc, char** argv) {
     startFrame = &frame;
     trayStartFrame = startFrame;
     trayServerListOpen = switchServer;
+    traySignOut = [&] {
+        if (remoteFrame == nullptr) return;
+        trayRemoteFrame = nullptr;
+        remoteFrame->signOut();
+        remoteFrame.reset();
+        startFrame->show();
+    };
 #ifdef _WIN32
     frame.show();
     if (GdkWindow* startWindow = frame.nativeWindow()) {

@@ -1,9 +1,11 @@
 #include "TFileBrowserTree.h"
 #include "EditorFind.h"
 #include "GScriptEditor.h"
+#include "Theme.h"
 
 #include <grclib.h>
 #include <gtksourceview/gtksource.h>
+#include <glib/gstdio.h>
 
 #include <string>
 #include <ctime>
@@ -98,6 +100,9 @@ TFileBrowserTree::TFileBrowserTree() {
     GtkTreeViewColumn* nameColumn = gtk_tree_view_column_new_with_attributes("Name", image, "pixbuf", FileIconColumn, nullptr);
     gtk_tree_view_column_pack_start(nameColumn, text, true);
     gtk_tree_view_column_add_attribute(nameColumn, text, "text", FilePathColumn);
+    fileNameRenderer = text;
+    g_signal_connect(fileNameRenderer, "edited", G_CALLBACK(onFileNameEdited), this);
+    g_signal_connect(fileNameRenderer, "editing-canceled", G_CALLBACK(+[](GtkCellRenderer*, gpointer data) { g_object_set(static_cast<TFileBrowserTree*>(data)->fileNameRenderer, "editable", FALSE, nullptr); }), this);
     gtk_tree_view_column_set_resizable(nameColumn, true);
     gtk_tree_view_column_set_fixed_width(nameColumn, 290);
     gtk_tree_view_column_set_sort_column_id(nameColumn, FilePathColumn);
@@ -121,10 +126,6 @@ TFileBrowserTree::TFileBrowserTree() {
     log = gtk_text_view_new();
     gtk_text_view_set_editable(GTK_TEXT_VIEW(log), false);
     gtk_text_view_set_cursor_visible(GTK_TEXT_VIEW(log), false);
-    GtkCssProvider* logProvider = gtk_css_provider_new();
-    gtk_css_provider_load_from_data(logProvider, "textview, textview text { background-color: #1e1e1e; color: #d4d4d4; }", -1, nullptr);
-    gtk_style_context_add_provider(gtk_widget_get_style_context(log), GTK_STYLE_PROVIDER(logProvider), GTK_STYLE_PROVIDER_PRIORITY_USER);
-    g_object_unref(logProvider);
     gtk_container_add(GTK_CONTAINER(logScrolled), log);
     gtk_paned_pack2(GTK_PANED(panes), logScrolled, true, true);
     GtkWidget* buttons = gtk_button_box_new(GTK_ORIENTATION_HORIZONTAL);
@@ -152,9 +153,12 @@ TFileBrowserTree::TFileBrowserTree() {
     g_signal_connect(fileView, "drag-data-received", G_CALLBACK(onDropDataReceived), this);
     g_signal_connect(closeButton, "clicked", G_CALLBACK(onRefresh), this);
     g_signal_connect(window, "delete-event", G_CALLBACK(onDelete), this);
+    externalWatchId = g_timeout_add(2500, watchExternalFile, this);
 }
 
 TFileBrowserTree::~TFileBrowserTree() {
+    if (externalWatchId != 0) g_source_remove(externalWatchId);
+    if (inlineRenameId != 0) g_source_remove(inlineRenameId);
     if (closedFolderIcon != nullptr) g_object_unref(closedFolderIcon);
     if (openFolderIcon != nullptr) g_object_unref(openFolderIcon);
     if (textFileIcon != nullptr) g_object_unref(textFileIcon);
@@ -210,19 +214,39 @@ gboolean TFileBrowserTree::onFolderButtonPress(GtkWidget* widget, GdkEventButton
 
 gboolean TFileBrowserTree::onFileButtonPress(GtkWidget* widget, GdkEventButton* event, gpointer data) {
     TFileBrowserTree* browser = static_cast<TFileBrowserTree*>(data);
+    if (event->type == GDK_BUTTON_PRESS && event->button == GDK_BUTTON_PRIMARY) {
+        GtkTreePath* path = nullptr;
+        if (gtk_tree_view_get_path_at_pos(GTK_TREE_VIEW(widget), static_cast<gint>(event->x), static_cast<gint>(event->y), &path, nullptr, nullptr, nullptr)) {
+            GtkTreeSelection* selection = gtk_tree_view_get_selection(GTK_TREE_VIEW(widget));
+            if (gtk_tree_selection_path_is_selected(selection, path)) {
+                gchar* pathText = gtk_tree_path_to_string(path);
+                browser->pendingInlineRenamePath = pathText == nullptr ? "" : pathText;
+                g_free(pathText);
+                gtk_tree_path_free(path);
+                if (browser->inlineRenameId != 0) g_source_remove(browser->inlineRenameId);
+                browser->inlineRenameId = g_timeout_add(300, beginInlineRename, browser);
+                return false;
+            }
+            gtk_tree_path_free(path);
+        }
+    }
     if (event->type == GDK_2BUTTON_PRESS && event->button == GDK_BUTTON_PRIMARY) {
+        if (browser->inlineRenameId != 0) { g_source_remove(browser->inlineRenameId); browser->inlineRenameId = 0; browser->pendingInlineRenamePath.clear(); }
         GtkTreePath* path = nullptr;
         if (!gtk_tree_view_get_path_at_pos(GTK_TREE_VIEW(widget), static_cast<gint>(event->x), static_cast<gint>(event->y), &path, nullptr, nullptr, nullptr)) return false;
         GtkTreeIter row;
         GtkTreeModel* model = gtk_tree_view_get_model(GTK_TREE_VIEW(widget));
         gchar* itemPath = nullptr;
-        if (gtk_tree_model_get_iter(model, &row, path)) gtk_tree_model_get(model, &row, FilePathColumn, &itemPath, -1);
+        gchar* rights = nullptr;
+        if (gtk_tree_model_get_iter(model, &row, path)) gtk_tree_model_get(model, &row, FilePathColumn, &itemPath, FileRightsColumn, &rights, -1);
         gtk_tree_path_free(path);
         if (itemPath != nullptr && *itemPath != '\0') {
-            browser->pendingEditPath = itemPath;
+            browser->pendingExternalPath = itemPath;
+            browser->watchExternalWritable = rights != nullptr && std::string(rights).find('w') != std::string::npos;
             if (!rc_filebrowser_download(browser->connection, itemPath)) browser->appendLog(rc_last_error(browser->connection));
         }
         g_free(itemPath);
+        g_free(rights);
         return true;
     }
     if (event->type != GDK_BUTTON_PRESS || event->button != GDK_BUTTON_SECONDARY) return false;
@@ -327,12 +351,12 @@ void TFileBrowserTree::showItemMenu(GtkWidget* view, GdkEventButton* event, bool
         FileMenuItem* item = new FileMenuItem{this, itemPath};
         FileMenuItem* editItem = new FileMenuItem{this, itemPath};
         FileMenuItem* moveItem = new FileMenuItem{this, itemPath};
-        g_signal_connect_data(download, "activate", G_CALLBACK(onDownload), item, destroyFileMenuItem, G_CONNECT_AFTER);
-        g_signal_connect_data(editAsText, "activate", G_CALLBACK(onEditAsText), editItem, destroyFileMenuItem, G_CONNECT_AFTER);
+        g_signal_connect_data(download, "activate", G_CALLBACK(onDownload), item, destroyFileMenuItem, static_cast<GConnectFlags>(0));
+        g_signal_connect_data(editAsText, "activate", G_CALLBACK(onEditAsText), editItem, destroyFileMenuItem, static_cast<GConnectFlags>(0));
         gtk_menu_shell_append(GTK_MENU_SHELL(menu), upload);
         gtk_menu_shell_append(GTK_MENU_SHELL(menu), gtk_separator_menu_item_new());
         gtk_menu_shell_append(GTK_MENU_SHELL(menu), move);
-        g_signal_connect_data(move, "activate", G_CALLBACK(onMove), moveItem, destroyFileMenuItem, G_CONNECT_AFTER);
+        g_signal_connect_data(move, "activate", G_CALLBACK(onMove), moveItem, destroyFileMenuItem, static_cast<GConnectFlags>(0));
     } else {
         gtk_menu_shell_append(GTK_MENU_SHELL(menu), upload);
         gtk_menu_shell_append(GTK_MENU_SHELL(menu), gtk_separator_menu_item_new());
@@ -343,10 +367,9 @@ void TFileBrowserTree::showItemMenu(GtkWidget* view, GdkEventButton* event, bool
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), remove);
     FileMenuItem* renameItem = new FileMenuItem{this, itemPath};
     FileMenuItem* deleteItem = new FileMenuItem{this, itemPath};
-    g_signal_connect_data(rename, "activate", G_CALLBACK(onRename), renameItem, destroyFileMenuItem, G_CONNECT_AFTER);
-    g_signal_connect_data(remove, "activate", G_CALLBACK(onDeleteItem), deleteItem, destroyFileMenuItem, G_CONNECT_AFTER);
+    g_signal_connect_data(rename, "activate", G_CALLBACK(onRename), renameItem, destroyFileMenuItem, static_cast<GConnectFlags>(0));
+    g_signal_connect_data(remove, "activate", G_CALLBACK(onDeleteItem), deleteItem, destroyFileMenuItem, static_cast<GConnectFlags>(0));
     g_free(itemPath);
-    g_signal_connect(menu, "deactivate", G_CALLBACK(+[](GtkWidget* menuWidget, gpointer) { gtk_widget_destroy(menuWidget); }), nullptr);
     gtk_widget_show_all(menu);
     gtk_menu_popup_at_pointer(GTK_MENU(menu), reinterpret_cast<GdkEvent*>(event));
 }
@@ -370,16 +393,39 @@ void TFileBrowserTree::onDeleteItem(GtkMenuItem*, gpointer data) {
 
 void TFileBrowserTree::onRename(GtkMenuItem*, gpointer data) {
     FileMenuItem* item = static_cast<FileMenuItem*>(data);
-    GtkWidget* dialog = gtk_dialog_new_with_buttons("Rename", GTK_WINDOW(item->browser->window), GTK_DIALOG_MODAL, "Cancel", GTK_RESPONSE_CANCEL, "Rename", GTK_RESPONSE_ACCEPT, nullptr);
-    GtkWidget* entry = gtk_entry_new();
-    gtk_entry_set_text(GTK_ENTRY(entry), item->path.c_str());
-    gtk_box_pack_start(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), entry, false, false, 8);
-    gtk_widget_show_all(dialog);
-    if (gtk_dialog_run(GTK_DIALOG(dialog)) == GTK_RESPONSE_ACCEPT) {
-        if (!rc_filebrowser_rename(item->browser->connection, item->path.c_str(), gtk_entry_get_text(GTK_ENTRY(entry)))) item->browser->appendLog(rc_last_error(item->browser->connection));
-        else if (!item->browser->currentFolder.empty() && !rc_filebrowser_cd(item->browser->connection, item->browser->currentFolder.c_str())) item->browser->appendLog(rc_last_error(item->browser->connection));
+    GtkTreeModel* model = GTK_TREE_MODEL(item->browser->files);
+    GtkTreeIter row;
+    gboolean found = gtk_tree_model_get_iter_first(model, &row);
+    while (found) {
+        gchar* path = nullptr;
+        gtk_tree_model_get(model, &row, FilePathColumn, &path, -1);
+        const bool matches = path != nullptr && item->path == path;
+        g_free(path);
+        if (matches) {
+            GtkTreePath* treePath = gtk_tree_model_get_path(model, &row);
+            g_object_set(item->browser->fileNameRenderer, "editable", TRUE, nullptr);
+            gtk_tree_view_set_cursor_on_cell(GTK_TREE_VIEW(item->browser->fileView), treePath, gtk_tree_view_get_column(GTK_TREE_VIEW(item->browser->fileView), 0), item->browser->fileNameRenderer, true);
+            gtk_tree_path_free(treePath);
+            return;
+        }
+        found = gtk_tree_model_iter_next(model, &row);
     }
-    gtk_widget_destroy(dialog);
+}
+
+void TFileBrowserTree::onFileNameEdited(GtkCellRendererText*, gchar* path, gchar* value, gpointer data) {
+    TFileBrowserTree* browser = static_cast<TFileBrowserTree*>(data);
+    g_object_set(browser->fileNameRenderer, "editable", FALSE, nullptr);
+    if (path == nullptr || value == nullptr || *value == '\0') return;
+    GtkTreePath* treePath = gtk_tree_path_new_from_string(path);
+    GtkTreeIter row;
+    if (treePath == nullptr || !gtk_tree_model_get_iter(GTK_TREE_MODEL(browser->files), &row, treePath)) { if (treePath != nullptr) gtk_tree_path_free(treePath); return; }
+    gchar* oldPath = nullptr;
+    gtk_tree_model_get(GTK_TREE_MODEL(browser->files), &row, FilePathColumn, &oldPath, -1);
+    gtk_tree_path_free(treePath);
+    if (oldPath == nullptr || *oldPath == '\0' || std::string(oldPath) == value) { g_free(oldPath); return; }
+    if (!rc_filebrowser_rename(browser->connection, oldPath, value)) browser->appendLog(rc_last_error(browser->connection));
+    else if (!browser->currentFolder.empty() && !rc_filebrowser_cd(browser->connection, browser->currentFolder.c_str())) browser->appendLog(rc_last_error(browser->connection));
+    g_free(oldPath);
 }
 
 void TFileBrowserTree::onMove(GtkMenuItem*, gpointer data) {
@@ -427,6 +473,37 @@ void TFileBrowserTree::onFileReceived(const char* path, const void* content, int
     TFileBrowserTree* browser = static_cast<TFileBrowserTree*>(data);
     if (path == nullptr || content == nullptr || length < 0) return;
     const std::string receivedPath(path);
+    const bool externalPathMatches = browser->pendingExternalPath == receivedPath || receivedPath.ends_with("/" + browser->pendingExternalPath) || browser->pendingExternalPath.ends_with("/" + receivedPath);
+    if (!browser->pendingExternalPath.empty() && externalPathMatches) {
+        const std::string remotePath = browser->pendingExternalPath;
+        browser->pendingExternalPath.clear();
+        if (browser->downloadFolder.empty()) { browser->appendLog("Specify a download folder in RC Options first."); return; }
+        if (g_mkdir_with_parents(browser->downloadFolder.c_str(), 0755) != 0) { browser->appendLog("Could not create the download folder."); return; }
+        gchar* basename = g_path_get_basename(path);
+        gchar* destination = g_build_filename(browser->downloadFolder.c_str(), basename, nullptr);
+        g_free(basename);
+        if (!g_file_set_contents(destination, static_cast<const gchar*>(content), length, nullptr)) { g_free(destination); browser->appendLog("Could not save downloaded file."); return; }
+        gchar* absoluteDestination = g_canonicalize_filename(destination, nullptr);
+        g_free(destination);
+        const std::string localPath(absoluteDestination);
+        g_free(absoluteDestination);
+        const std::string extension = localPath.substr(localPath.find_last_of('.') == std::string::npos ? localPath.size() : localPath.find_last_of('.'));
+        if (g_ascii_strcasecmp(extension.c_str(), ".exe") == 0 || g_ascii_strcasecmp(extension.c_str(), ".bat") == 0 || g_ascii_strcasecmp(extension.c_str(), ".sh") == 0) { browser->showTextEditor(path, content, length); return; }
+        GError* error = nullptr;
+        gchar* uri = g_filename_to_uri(localPath.c_str(), nullptr, &error);
+        if (uri == nullptr || !g_app_info_launch_default_for_uri(uri, nullptr, &error)) browser->appendLog(error == nullptr ? "Could not open downloaded file." : error->message);
+        if (error != nullptr) g_error_free(error);
+        g_free(uri);
+        GStatBuf status{};
+        if (g_stat(localPath.c_str(), &status) == 0) {
+            browser->watchExternalPath = localPath;
+            browser->watchExternalFolder = browser->currentFolder;
+            browser->watchExternalRemotePath = remotePath;
+            browser->watchExternalModified = static_cast<gint64>(status.st_mtime);
+        }
+        browser->appendLog((std::string("Downloaded file ") + localPath).c_str());
+        return;
+    }
     const bool editPathMatches = browser->pendingEditPath == receivedPath || receivedPath.ends_with("/" + browser->pendingEditPath) || browser->pendingEditPath.ends_with("/" + receivedPath);
     if (!browser->pendingEditPath.empty() && editPathMatches) {
         browser->pendingEditPath.clear();
@@ -453,6 +530,41 @@ void TFileBrowserTree::onFileReceived(const char* path, const void* content, int
     g_free(destination);
 }
 
+gboolean TFileBrowserTree::watchExternalFile(gpointer data) {
+    TFileBrowserTree* browser = static_cast<TFileBrowserTree*>(data);
+    if (browser->watchExternalPath.empty() || browser->watchExternalFolder != browser->currentFolder) return G_SOURCE_CONTINUE;
+    GStatBuf status{};
+    if (g_stat(browser->watchExternalPath.c_str(), &status) != 0) return G_SOURCE_CONTINUE;
+    // The original client stopped watching files above 1 MiB; keep watching so externally edited large assets upload too.
+    if (static_cast<gint64>(status.st_mtime) == browser->watchExternalModified) return G_SOURCE_CONTINUE;
+    browser->watchExternalModified = static_cast<gint64>(status.st_mtime);
+    if (!browser->watchExternalWritable) { browser->appendLog((std::string("No write rights for ") + browser->watchExternalRemotePath).c_str()); return G_SOURCE_CONTINUE; }
+    gchar* contents = nullptr;
+    gsize length = 0;
+    GError* error = nullptr;
+    if (!g_file_get_contents(browser->watchExternalPath.c_str(), &contents, &length, &error)) {
+        browser->appendLog(error == nullptr ? "Could not read changed file." : error->message);
+        if (error != nullptr) g_error_free(error);
+        return G_SOURCE_CONTINUE;
+    }
+    if (!rc_upload_file(browser->connection, browser->watchExternalRemotePath.c_str(), contents, static_cast<int>(length))) browser->appendLog(rc_last_error(browser->connection));
+    g_free(contents);
+    return G_SOURCE_CONTINUE;
+}
+
+gboolean TFileBrowserTree::beginInlineRename(gpointer data) {
+    TFileBrowserTree* browser = static_cast<TFileBrowserTree*>(data);
+    browser->inlineRenameId = 0;
+    GtkTreePath* path = gtk_tree_path_new_from_string(browser->pendingInlineRenamePath.c_str());
+    browser->pendingInlineRenamePath.clear();
+    GtkTreeIter row;
+    if (path == nullptr || !gtk_tree_model_get_iter(GTK_TREE_MODEL(browser->files), &row, path)) { if (path != nullptr) gtk_tree_path_free(path); return G_SOURCE_REMOVE; }
+    g_object_set(browser->fileNameRenderer, "editable", TRUE, nullptr);
+    gtk_tree_view_set_cursor_on_cell(GTK_TREE_VIEW(browser->fileView), path, gtk_tree_view_get_column(GTK_TREE_VIEW(browser->fileView), 0), browser->fileNameRenderer, true);
+    gtk_tree_path_free(path);
+    return G_SOURCE_REMOVE;
+}
+
 void TFileBrowserTree::showTextEditor(const char* path, const void* content, int length) {
     struct EditorState { void* connection; std::string path; GtkWidget* editor; };
     GtkWidget* dialog = gtk_dialog_new_with_buttons(path, GTK_WINDOW(window), static_cast<GtkDialogFlags>(0), "Cancel", GTK_RESPONSE_CANCEL, "Save", GTK_RESPONSE_ACCEPT, nullptr);
@@ -463,8 +575,7 @@ void TFileBrowserTree::showTextEditor(const char* path, const void* content, int
     gtk_window_set_default_size(GTK_WINDOW(dialog), 700, 520);
     GtkSourceLanguage* language = gtk_source_language_manager_get_language(gtk_source_language_manager_get_default(), "graal");
     GtkSourceBuffer* sourceBuffer = language != nullptr ? gtk_source_buffer_new_with_language(language) : gtk_source_buffer_new(nullptr);
-    GtkSourceStyleScheme* scheme = gtk_source_style_scheme_manager_get_scheme(gtk_source_style_scheme_manager_get_default(), "graalcolors");
-    if (scheme != nullptr) gtk_source_buffer_set_style_scheme(sourceBuffer, scheme);
+    applyRemoteControlSourceStyle(sourceBuffer);
     GtkWidget* editor = gtk_source_view_new_with_buffer(sourceBuffer);
     configureGScriptEditor(editor);
     addEditorFindButton(dialog, editor);

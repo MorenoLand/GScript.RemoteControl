@@ -3,6 +3,7 @@
 #include "EditorFind.h"
 #include "GScriptEditor.h"
 #include "TScriptList.h"
+#include "Theme.h"
 
 #include <grclib.h>
 #include <gtksourceview/gtksource.h>
@@ -60,21 +61,21 @@ void TNPCList::open(void* nextConnection) { connection = nextConnection; rc_on_n
 void TNPCList::onRefresh(GtkButton*, gpointer data) { static_cast<TNPCList*>(data)->refresh(); }
 void TNPCList::onAdd(GtkButton*, gpointer data) {
     TNPCList* list = static_cast<TNPCList*>(data);
-    GtkWidget* dialog = gtk_dialog_new_with_buttons("Add NPC", GTK_WINDOW(list->window), GTK_DIALOG_MODAL, "Cancel", GTK_RESPONSE_CANCEL, "Send", GTK_RESPONSE_OK, nullptr);
+    GtkWidget* dialog = gtk_dialog_new_with_buttons("Add NPC", GTK_WINDOW(list->window), GTK_DIALOG_MODAL, "Apply", GTK_RESPONSE_OK, "Cancel", GTK_RESPONSE_CANCEL, nullptr);
     GtkWidget* grid = gtk_grid_new();
     gtk_container_set_border_width(GTK_CONTAINER(grid), 8);
     gtk_grid_set_row_spacing(GTK_GRID(grid), 5);
     gtk_grid_set_column_spacing(GTK_GRID(grid), 8);
     const std::string nextId = std::to_string(list->firstFreeNPCId());
-    const struct { const char* label; const char* key; const char* value; } fields[] = {{"Name:", "name", ""}, {"ID:", "id", nextId.c_str()}, {"Scripter:", "scripter", list->accountName.c_str()}, {"Starting level:", "level", list->addNPCLevel.c_str()}, {"X:", "x", list->addNPCX.c_str()}, {"Y:", "y", list->addNPCY.c_str()}};
+    const struct { const char* label; const char* key; const char* value; int row; } fields[] = {{"Name:", "name", "", 0}, {"ID:", "id", nextId.c_str(), 1}, {"Scripter:", "scripter", list->accountName.c_str(), 3}, {"Starting level:", "level", list->addNPCLevel.c_str(), 4}};
     for (int index = 0; index < static_cast<int>(G_N_ELEMENTS(fields)); ++index) {
         GtkWidget* label = gtk_label_new(fields[index].label);
         GtkWidget* entry = gtk_entry_new();
         gtk_entry_set_text(GTK_ENTRY(entry), fields[index].value);
         gtk_widget_set_hexpand(entry, true);
-        const int row = index < 2 ? index : index + 1;
-        gtk_grid_attach(GTK_GRID(grid), label, 0, row, 1, 1);
-        gtk_grid_attach(GTK_GRID(grid), entry, 1, row, 1, 1);
+        gtk_widget_set_size_request(entry, 162, -1);
+        gtk_grid_attach(GTK_GRID(grid), label, 0, fields[index].row, 1, 1);
+        gtk_grid_attach(GTK_GRID(grid), entry, 1, fields[index].row, 3, 1);
         g_object_set_data(G_OBJECT(dialog), fields[index].key, entry);
     }
     GtkWidget* typeLabel = gtk_label_new("Type:");
@@ -84,8 +85,22 @@ void TNPCList::onAdd(GtkButton*, gpointer data) {
     gtk_entry_set_text(GTK_ENTRY(typeField), list->addNPCType.c_str());
     gtk_widget_set_hexpand(typeCombo, true);
     gtk_grid_attach(GTK_GRID(grid), typeLabel, 0, 2, 1, 1);
-    gtk_grid_attach(GTK_GRID(grid), typeCombo, 1, 2, 1, 1);
+    gtk_grid_attach(GTK_GRID(grid), typeCombo, 1, 2, 3, 1);
     g_object_set_data(G_OBJECT(dialog), "type", typeField);
+    GtkWidget* xLabel = gtk_label_new("X:");
+    GtkWidget* xEntry = gtk_entry_new();
+    GtkWidget* yLabel = gtk_label_new("Y:");
+    GtkWidget* yEntry = gtk_entry_new();
+    gtk_entry_set_text(GTK_ENTRY(xEntry), list->addNPCX.c_str());
+    gtk_entry_set_text(GTK_ENTRY(yEntry), list->addNPCY.c_str());
+    gtk_widget_set_size_request(xEntry, 84, -1);
+    gtk_widget_set_size_request(yEntry, 84, -1);
+    gtk_grid_attach(GTK_GRID(grid), xLabel, 0, 5, 1, 1);
+    gtk_grid_attach(GTK_GRID(grid), xEntry, 1, 5, 1, 1);
+    gtk_grid_attach(GTK_GRID(grid), yLabel, 2, 5, 1, 1);
+    gtk_grid_attach(GTK_GRID(grid), yEntry, 3, 5, 1, 1);
+    g_object_set_data(G_OBJECT(dialog), "x", xEntry);
+    g_object_set_data(G_OBJECT(dialog), "y", yEntry);
     gtk_container_add(GTK_CONTAINER(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), grid);
     gtk_dialog_set_default_response(GTK_DIALOG(dialog), GTK_RESPONSE_OK);
     g_signal_connect(dialog, "response", G_CALLBACK(onAddResponse), list);
@@ -221,8 +236,7 @@ void TNPCList::showScriptEditor(const char* name, int id, const char* script) {
     gtk_window_set_default_size(GTK_WINDOW(dialog), 700, 520);
     GtkSourceLanguage* language = gtk_source_language_manager_get_language(gtk_source_language_manager_get_default(), "graal");
     GtkSourceBuffer* sourceBuffer = language != nullptr ? gtk_source_buffer_new_with_language(language) : gtk_source_buffer_new(nullptr);
-    GtkSourceStyleScheme* scheme = gtk_source_style_scheme_manager_get_scheme(gtk_source_style_scheme_manager_get_default(), "graalcolors");
-    if (scheme != nullptr) gtk_source_buffer_set_style_scheme(sourceBuffer, scheme);
+    applyRemoteControlSourceStyle(sourceBuffer);
     GtkWidget* editor = gtk_source_view_new_with_buffer(sourceBuffer);
     configureGScriptEditor(editor);
     addEditorFindButton(dialog, editor);
@@ -270,8 +284,7 @@ void TNPCList::showFlagsEditor(int id, const char* flags) {
     GtkWidget* scrolled = gtk_scrolled_window_new(nullptr, nullptr);
     GtkSourceLanguage* language = gtk_source_language_manager_get_language(gtk_source_language_manager_get_default(), "ini");
     GtkSourceBuffer* sourceBuffer = language != nullptr ? gtk_source_buffer_new_with_language(language) : gtk_source_buffer_new(nullptr);
-    GtkSourceStyleScheme* scheme = gtk_source_style_scheme_manager_get_scheme(gtk_source_style_scheme_manager_get_default(), "graalcolors");
-    if (scheme != nullptr) gtk_source_buffer_set_style_scheme(sourceBuffer, scheme);
+    applyRemoteControlSourceStyle(sourceBuffer);
     GtkWidget* text = gtk_source_view_new_with_buffer(sourceBuffer);
     configureGScriptEditor(text);
     gtk_text_view_set_monospace(GTK_TEXT_VIEW(text), true);
@@ -304,8 +317,7 @@ void TNPCList::showAttributes(int id, const char* attributes) {
     GtkWidget* scrolled = gtk_scrolled_window_new(nullptr, nullptr);
     GtkSourceLanguage* language = gtk_source_language_manager_get_language(gtk_source_language_manager_get_default(), "ini");
     GtkSourceBuffer* sourceBuffer = language != nullptr ? gtk_source_buffer_new_with_language(language) : gtk_source_buffer_new(nullptr);
-    GtkSourceStyleScheme* scheme = gtk_source_style_scheme_manager_get_scheme(gtk_source_style_scheme_manager_get_default(), "graalcolors");
-    if (scheme != nullptr) gtk_source_buffer_set_style_scheme(sourceBuffer, scheme);
+    applyRemoteControlSourceStyle(sourceBuffer);
     GtkWidget* text = gtk_source_view_new_with_buffer(sourceBuffer);
     configureGScriptEditor(text);
     gtk_widget_set_name(text, "NPCAttributes");
@@ -314,10 +326,6 @@ void TNPCList::showAttributes(int id, const char* attributes) {
     gtk_text_view_set_monospace(GTK_TEXT_VIEW(text), true);
     gtk_text_buffer_set_text(GTK_TEXT_BUFFER(sourceBuffer), attributes, -1);
     g_object_unref(sourceBuffer);
-    GtkCssProvider* provider = gtk_css_provider_new();
-    gtk_css_provider_load_from_data(provider, "#NPCAttributes, #NPCAttributes text { background-color: #1e1e1e; color: #d4d4d4; }", -1, nullptr);
-    gtk_style_context_add_provider(gtk_widget_get_style_context(text), GTK_STYLE_PROVIDER(provider), GTK_STYLE_PROVIDER_PRIORITY_USER);
-    g_object_unref(provider);
     gtk_container_add(GTK_CONTAINER(scrolled), text);
     gtk_box_pack_start(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), scrolled, true, true, 0);
     g_signal_connect(dialog, "response", G_CALLBACK(+[](GtkDialog* responseDialog, gint, gpointer) { gtk_widget_destroy(GTK_WIDGET(responseDialog)); }), nullptr);

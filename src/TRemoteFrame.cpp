@@ -1,8 +1,10 @@
 #include "TRemoteFrame.h"
+#include "ErrorWindow.h"
 #include "Backup.h"
 #include "Debug.h"
 #include "GScriptEditor.h"
 #include "RCOptions.h"
+#include "Theme.h"
 #include "TFileBrowserTree.h"
 #include "TPlayerList.h"
 #include "TScriptList.h"
@@ -176,7 +178,11 @@ TRemoteFrame::TRemoteFrame(const RC::RCOptions& nextOptions, const std::filesyst
     gtk_notebook_set_tab_detachable(GTK_NOTEBOOK(notebook), chatScrolled, false);
     gtk_notebook_set_tab_reorderable(GTK_NOTEBOOK(notebook), chatScrolled, true);
     GtkCssProvider* tabProvider = gtk_css_provider_new();
-    const std::string notebookCss = "#RemoteFrame notebook, #RemoteFrame notebook > header, #RemoteFrame notebook > header.top, #RemoteFrame notebook > header.top > tabs { margin: 0; padding: 0; border: 0; background-color: transparent; background-image: none; box-shadow: none; } #RemoteFrame notebook > header.top > tabs { padding-left: 6px; } #RemoteFrame notebook > header, #RemoteFrame notebook > header.top, #RemoteFrame notebook > header.top > tabs { min-height: 0; } #RemoteFrame notebook > stack, #RemoteFrame notebook > stack > scrolledwindow, #RemoteFrame notebook > stack > scrolledwindow > viewport { margin: 0; padding: 0; border: 0; background-color: " + options.colorchatback + "; } #RemoteFrame notebook > header.top > tabs > tab { min-height: 0; min-width: 0; margin: 0 1px 0 0; padding: 3px 7px; background-image: none; background-color: #3d3d3d; border: 1px solid #707070; border-bottom: none; border-radius: 3px 3px 0 0; } #RemoteFrame notebook > header.top > tabs > tab:checked { background-color: #454545; border-color: #909090; } #RemoteFrame notebook > header.top > tabs > tab label { min-width: 0; margin: 0; padding: 0; font-size: 12px; }";
+    const std::string tabBackground = options.darkmode ? "#3d3d3d" : "#f5f5f5";
+    const std::string tabBorder = options.darkmode ? "#707070" : "#c4c4c4";
+    const std::string activeTabBackground = options.darkmode ? "#454545" : "#ffffff";
+    const std::string activeTabBorder = options.darkmode ? "#909090" : "#9a9a9a";
+    const std::string notebookCss = "#RemoteFrame notebook, #RemoteFrame notebook > header, #RemoteFrame notebook > header.top, #RemoteFrame notebook > header.top > tabs { margin: 0; padding: 0; border: 0; background-color: transparent; background-image: none; box-shadow: none; } #RemoteFrame notebook > header.top > tabs { padding-left: 6px; } #RemoteFrame notebook > header, #RemoteFrame notebook > header.top, #RemoteFrame notebook > header.top > tabs { min-height: 0; } #RemoteFrame notebook > stack, #RemoteFrame notebook > stack > scrolledwindow, #RemoteFrame notebook > stack > scrolledwindow > viewport { margin: 0; padding: 0; border: 0; background-color: " + options.colorchatback + "; } #RemoteFrame notebook > header.top > tabs > tab { min-height: 0; min-width: 0; margin: 0 1px 0 0; padding: 3px 7px; background-image: none; background-color: " + tabBackground + "; border: 1px solid " + tabBorder + "; border-bottom: none; border-radius: 3px 3px 0 0; } #RemoteFrame notebook > header.top > tabs > tab:checked { background-color: " + activeTabBackground + "; border-color: " + activeTabBorder + "; } #RemoteFrame notebook > header.top > tabs > tab label { min-width: 0; margin: 0; padding: 0; font-size: 12px; }";
     gtk_css_provider_load_from_data(tabProvider, notebookCss.c_str(), -1, nullptr);
     gtk_style_context_add_provider_for_screen(gdk_screen_get_default(), GTK_STYLE_PROVIDER(tabProvider), GTK_STYLE_PROVIDER_PRIORITY_USER + 1);
     g_object_unref(tabProvider);
@@ -263,6 +269,12 @@ void TRemoteFrame::disconnect() {
     if (connection == nullptr) return;
     rc_disconnect(connection);
     connection = nullptr;
+}
+
+void TRemoteFrame::signOut() {
+    disconnectHandled = true;
+    if (window != nullptr) gtk_widget_hide(window);
+    disconnect();
 }
 
 bool TRemoteFrame::isNCAuthenticated() const { return connection != nullptr && rc_is_nc_authenticated(connection) != 0; }
@@ -417,8 +429,7 @@ void TRemoteFrame::onLocalNPCData(const char*, const char* content, void* data) 
     GtkWidget* scrolled = gtk_scrolled_window_new(nullptr, nullptr);
     GtkSourceLanguage* language = gtk_source_language_manager_get_language(gtk_source_language_manager_get_default(), "ini");
     GtkSourceBuffer* buffer = language != nullptr ? gtk_source_buffer_new_with_language(language) : gtk_source_buffer_new(nullptr);
-    GtkSourceStyleScheme* scheme = gtk_source_style_scheme_manager_get_scheme(gtk_source_style_scheme_manager_get_default(), "graalcolors");
-    if (scheme != nullptr) gtk_source_buffer_set_style_scheme(buffer, scheme);
+    applyRemoteControlSourceStyle(buffer);
     GtkWidget* text = gtk_source_view_new_with_buffer(buffer);
     configureGScriptEditor(text);
     gtk_text_view_set_editable(GTK_TEXT_VIEW(text), false);
@@ -569,23 +580,11 @@ void TRemoteFrame::onDisconnected(const char* reason, void* data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
     remote_control_set_tray_label(nullptr, 0);
     if (frame->disconnectHandled) return;
-    remoteControlDebugLog("connection disconnected: %s", reason == nullptr ? "Disconnected." : reason);
+    remoteControlDebugLog("connection disconnected: %s", reason == nullptr ? "You have been disconnected!" : reason);
     frame->disconnectHandled = true;
-    GtkWidget* dialog = gtk_dialog_new_with_buttons("Connection Error", GTK_WINDOW(frame->window), static_cast<GtkDialogFlags>(0), "OK", GTK_RESPONSE_OK, nullptr);
-    gtk_window_set_default_size(GTK_WINDOW(dialog), 400, 150);
-    GtkWidget* message = gtk_label_new(reason == nullptr ? "Disconnected." : reason);
-    gtk_label_set_line_wrap(GTK_LABEL(message), true);
-    gtk_label_set_xalign(GTK_LABEL(message), 0.5F);
-    gtk_label_set_yalign(GTK_LABEL(message), 0.5F);
-    gtk_widget_set_size_request(message, 360, -1);
-    gtk_box_pack_start(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), message, true, true, 12);
-    g_signal_connect(dialog, "response", G_CALLBACK(+[](GtkDialog* errorDialog, gint, gpointer data) {
-        TRemoteFrame* remoteFrame = static_cast<TRemoteFrame*>(data);
-        gtk_widget_destroy(GTK_WIDGET(errorDialog));
-        gtk_widget_hide(remoteFrame->window);
-        remoteFrame->onCloseCallback();
-    }), frame);
-    gtk_widget_show_all(dialog);
+    gtk_widget_hide(frame->window);
+    frame->onCloseCallback();
+    createErrorWindow("Connection Error", reason == nullptr ? "You have been disconnected!" : reason);
 }
 
 void TRemoteFrame::onMessage(const char* message, void* data) { static_cast<TRemoteFrame*>(data)->appendChat(message == nullptr ? "" : message); }
@@ -600,11 +599,8 @@ void TRemoteFrame::onPrivateMessage(int playerId, const char* account, const cha
     if (messageType == "mass" && frame->options.nomassmessages) return;
     if (frame->playerList == nullptr) frame->playerList = new TPlayerList(frame->applicationDirectory);
     const bool alert = !hasActiveRemoteControlWindow() && !gtk_widget_has_focus(frame->editField);
-    frame->playerList->notePrivateMessage(playerId, account, nick, message, type);
+    const std::string display = frame->playerList->notePrivateMessage(playerId, account, nick, message, type);
     if (frame->options.newpmalerts) {
-        const std::string accountText = account == nullptr ? "" : account;
-        const std::string nickText = nick == nullptr ? "" : nick;
-        const std::string display = nickText.empty() || nickText == accountText ? accountText : nickText + " (" + accountText + ")";
         frame->appendChat("#ALERT New PM from " + display, true);
     }
     if (frame->options.newpmalerts && alert) remote_control_begin_pm_tray_alert();

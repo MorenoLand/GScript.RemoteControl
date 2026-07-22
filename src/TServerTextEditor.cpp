@@ -1,4 +1,5 @@
 #include "TServerTextEditor.h"
+#include "Theme.h"
 #include "Backup.h"
 #include "EditorFind.h"
 #include "GScriptEditor.h"
@@ -15,8 +16,7 @@ TServerTextEditor::TServerTextEditor(Kind nextKind, const char* title) : kind(ne
     GtkWidget* scrolled = gtk_scrolled_window_new(nullptr, nullptr);
     GtkSourceLanguage* language = gtk_source_language_manager_get_language(gtk_source_language_manager_get_default(), "ini");
     GtkSourceBuffer* sourceBuffer = language != nullptr ? gtk_source_buffer_new_with_language(language) : gtk_source_buffer_new(nullptr);
-    GtkSourceStyleScheme* scheme = gtk_source_style_scheme_manager_get_scheme(gtk_source_style_scheme_manager_get_default(), "graalcolors");
-    if (scheme != nullptr) gtk_source_buffer_set_style_scheme(sourceBuffer, scheme);
+    applyRemoteControlSourceStyle(sourceBuffer);
     GtkWidget* text = gtk_source_view_new_with_buffer(sourceBuffer);
     configureGScriptEditor(text);
     g_object_unref(sourceBuffer);
@@ -32,23 +32,30 @@ TServerTextEditor::TServerTextEditor(Kind nextKind, const char* title) : kind(ne
     gtk_container_add(GTK_CONTAINER(scrolled), text);
     gtk_box_pack_start(GTK_BOX(root), scrolled, true, true, 0);
     GtkWidget* bottom = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 5);
-    gtk_box_pack_start(GTK_BOX(bottom), createGScriptEditorLineStatus(text), true, true, 0);
-    GtkWidget* buttons = gtk_button_box_new(GTK_ORIENTATION_HORIZONTAL);
-    gtk_button_box_set_layout(GTK_BUTTON_BOX(buttons), GTK_BUTTONBOX_END);
+    GtkWidget* lineStatus = createGScriptEditorLineStatus(text);
+    gtk_widget_set_size_request(lineStatus, 120, -1);
+    gtk_box_pack_start(GTK_BOX(bottom), lineStatus, false, false, 0);
     GtkWidget* saveButton = gtk_button_new_with_label("Apply");
     GtkWidget* goToLineButton = gtk_button_new_with_label("Go to line");
     GtkWidget* findButton = gtk_button_new_with_label("Find");
     gtk_widget_set_tooltip_text(goToLineButton, "Go to line (Ctrl+G)");
     gtk_widget_set_tooltip_text(findButton, "Find (Ctrl+F)");
     GtkWidget* closeButton = gtk_button_new_with_label("Close");
-    gtk_container_add(GTK_CONTAINER(buttons), goToLineButton);
-    gtk_container_add(GTK_CONTAINER(buttons), findButton);
-    gtk_container_add(GTK_CONTAINER(buttons), saveButton);
-    gtk_container_add(GTK_CONTAINER(buttons), closeButton);
-    gtk_box_pack_end(GTK_BOX(bottom), buttons, false, false, 5);
-    gtk_widget_set_margin_top(buttons, 3);
-    gtk_widget_set_margin_bottom(buttons, 3);
-    gtk_widget_set_margin_end(buttons, 3);
+    GtkWidget* navigationButtons = gtk_button_box_new(GTK_ORIENTATION_HORIZONTAL);
+    gtk_button_box_set_layout(GTK_BUTTON_BOX(navigationButtons), GTK_BUTTONBOX_START);
+    gtk_container_add(GTK_CONTAINER(navigationButtons), goToLineButton);
+    gtk_container_add(GTK_CONTAINER(navigationButtons), findButton);
+    gtk_box_pack_start(GTK_BOX(bottom), navigationButtons, false, false, 0);
+    GtkWidget* actionButtons = gtk_button_box_new(GTK_ORIENTATION_HORIZONTAL);
+    gtk_button_box_set_layout(GTK_BUTTON_BOX(actionButtons), GTK_BUTTONBOX_END);
+    gtk_container_add(GTK_CONTAINER(actionButtons), saveButton);
+    gtk_container_add(GTK_CONTAINER(actionButtons), closeButton);
+    gtk_box_pack_end(GTK_BOX(bottom), actionButtons, false, false, 5);
+    gtk_widget_set_margin_top(navigationButtons, 3);
+    gtk_widget_set_margin_bottom(navigationButtons, 3);
+    gtk_widget_set_margin_top(actionButtons, 3);
+    gtk_widget_set_margin_bottom(actionButtons, 3);
+    gtk_widget_set_margin_end(actionButtons, 3);
     gtk_box_pack_start(GTK_BOX(root), bottom, false, false, 0);
     g_signal_connect(goToLineButton, "clicked", G_CALLBACK(editorGoToLine), text);
     g_signal_connect(findButton, "clicked", G_CALLBACK(editorFind), text);

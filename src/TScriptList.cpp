@@ -2,6 +2,7 @@
 #include "Backup.h"
 #include "EditorFind.h"
 #include "GScriptEditor.h"
+#include "Theme.h"
 
 #include <grclib.h>
 #include <gtksourceview/gtksource.h>
@@ -154,8 +155,7 @@ void TScriptList::showEditor(const char* name, const char* script) {
     gtk_window_set_default_size(GTK_WINDOW(dialog), 700, 520);
     GtkSourceLanguage* language = gtk_source_language_manager_get_language(gtk_source_language_manager_get_default(), "graal");
     GtkSourceBuffer* sourceBuffer = language != nullptr ? gtk_source_buffer_new_with_language(language) : gtk_source_buffer_new(nullptr);
-    GtkSourceStyleScheme* scheme = gtk_source_style_scheme_manager_get_scheme(gtk_source_style_scheme_manager_get_default(), "graalcolors");
-    if (scheme != nullptr) gtk_source_buffer_set_style_scheme(sourceBuffer, scheme);
+    applyRemoteControlSourceStyle(sourceBuffer);
     GtkWidget* editor = gtk_source_view_new_with_buffer(sourceBuffer);
     configureGScriptEditor(editor);
     addEditorFindButton(dialog, editor);

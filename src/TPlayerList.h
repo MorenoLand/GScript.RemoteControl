@@ -18,7 +18,7 @@ public:
     void handlePlayerRights(const char* account, int rights, const char* ipRange, const char* folderAccess);
     void handlePlayerAttributes(const char* account, const char* properties, const char* editorText);
     void handlePlayerText(const char* type, const char* account, const char* content);
-    void notePrivateMessage(int playerId, const char* account, const char* nick, const char* message, const char* type);
+    std::string notePrivateMessage(int playerId, const char* account, const char* nick, const char* message, const char* type);
     bool openLatestPrivateMessage();
     void clearPrivateMessageAlert();
 private:

@@ -37,8 +37,8 @@ private:
     void* connection = nullptr;
     std::string accountName;
     std::string addNPCType = "OBJECT";
-    std::string addNPCLevel;
-    std::string addNPCX = "0";
-    std::string addNPCY = "0";
+    std::string addNPCLevel = "onlinestartlocal.nw";
+    std::string addNPCX = "30.5";
+    std::string addNPCY = "30";
     int selectedNPCId = -1;
 };

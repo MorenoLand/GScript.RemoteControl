@@ -52,10 +52,35 @@ namespace {
         std::string message;
     };
 
+    struct PMPlayerIdentity { int id; std::string account; std::string nick; };
+
+    gboolean findServerPlayerById(GtkTreeModel* model, GtkTreePath*, GtkTreeIter* row, gpointer data) {
+        PMPlayerIdentity* identity = static_cast<PMPlayerIdentity*>(data);
+        int playerId = 0;
+        gchar* account = nullptr;
+        gchar* nick = nullptr;
+        gtk_tree_model_get(model, row, 5, &playerId, 2, &account, 1, &nick, -1);
+        if (playerId == identity->id) {
+            identity->account = account == nullptr ? "" : account;
+            identity->nick = nick == nullptr ? "" : nick;
+            g_free(account);
+            g_free(nick);
+            return true;
+        }
+        g_free(account);
+        g_free(nick);
+        return false;
+    }
+
     gboolean onPMWindowDelete(GtkWidget*, GdkEvent*, gpointer) { return false; }
     void onPMWindowDestroy(GtkWidget*, gpointer data) { delete static_cast<PMWindowData*>(data); }
 
     std::string formatPMCommaText(const std::string& value) {
+        if (value.size() >= 2 && value.front() == '"' && value.back() == '"') {
+            std::string unquoted = value.substr(1, value.size() - 2);
+            for (size_t index = 0; (index = unquoted.find("\"\"", index)) != std::string::npos; ++index) unquoted.replace(index, 2, "\"");
+            return unquoted;
+        }
         if (value.find(',') == std::string::npos) return value;
         std::vector<std::string> fields;
         std::string field;
@@ -111,11 +136,6 @@ namespace {
         gtk_widget_set_name(field, "PrivateMessageHistoryText");
         gtk_text_view_set_editable(GTK_TEXT_VIEW(field), false);
         gtk_text_view_set_cursor_visible(GTK_TEXT_VIEW(field), false);
-        GtkCssProvider* provider = gtk_css_provider_new();
-        gtk_css_provider_load_from_data(provider, "#PrivateMessageHistory, #PrivateMessageHistory scrolledwindow, #PrivateMessageHistory viewport, #PrivateMessageHistoryText, #PrivateMessageHistoryText text { background-color: #1e1e1e; color: #d4d4d4; }", -1, nullptr);
-        gtk_style_context_add_provider(gtk_widget_get_style_context(history), GTK_STYLE_PROVIDER(provider), GTK_STYLE_PROVIDER_PRIORITY_USER);
-        gtk_style_context_add_provider(gtk_widget_get_style_context(field), GTK_STYLE_PROVIDER(provider), GTK_STYLE_PROVIDER_PRIORITY_USER);
-        g_object_unref(provider);
         gtk_container_add(GTK_CONTAINER(scrolled), field);
         gtk_container_add(GTK_CONTAINER(history), scrolled);
         const std::filesystem::path path = windowData->historyDirectory / (windowData->account + ".txt");
@@ -512,7 +532,7 @@ void TPlayerList::handlePlayerRights(const char* account, int rights, const char
 void TPlayerList::handlePlayerAttributes(const char* account, const char*, const char* editorText) {
     if (account == nullptr || *account == '\0') return;
     backupEditorText("attributes", account, editorText == nullptr ? "" : editorText, false);
-    struct AttributeState { TPlayerList* list; std::string account; std::map<std::string, GtkWidget*> fields; GtkWidget* male; GtkWidget* weapons; GtkWidget* spin; GtkWidget* chests; GtkWidget* weaponList; GtkWidget* flags; };
+    struct AttributeState { TPlayerList* list; std::string account; std::map<std::string, GtkWidget*> fields; GtkWidget* male; GtkWidget* weapons; GtkWidget* spin; GtkWidget* chests; GtkListStore* chestStore; GtkWidget* weaponList; GtkWidget* flags; };
     auto fieldValues = [](const char* source) {
         std::map<std::string, std::string> values;
         std::istringstream input(source == nullptr ? "" : source);
@@ -520,41 +540,116 @@ void TPlayerList::handlePlayerAttributes(const char* account, const char*, const
         return values;
     };
     const std::map<std::string, std::string> values = fieldValues(editorText);
-    GtkWidget* dialog = gtk_dialog_new_with_buttons(("Edit Attributes of " + std::string(account)).c_str(), GTK_WINDOW(window), GTK_DIALOG_DESTROY_WITH_PARENT, "Cancel", GTK_RESPONSE_CANCEL, "Apply", GTK_RESPONSE_ACCEPT, nullptr);
+    GtkWidget* dialog = gtk_window_new(GTK_WINDOW_TOPLEVEL);
+    gtk_window_set_title(GTK_WINDOW(dialog), ("Edit Attributes of " + std::string(account)).c_str());
+    gtk_window_set_transient_for(GTK_WINDOW(dialog), GTK_WINDOW(window));
+    gtk_window_set_destroy_with_parent(GTK_WINDOW(dialog), true);
     gtk_widget_set_name(dialog, "EditAttributesWindow");
     gtk_window_set_default_size(GTK_WINDOW(dialog), 400, 360);
+    GdkGeometry attributeGeometry{};
+    attributeGeometry.min_width = 400;
+    attributeGeometry.max_width = 400;
+    gtk_window_set_geometry_hints(GTK_WINDOW(dialog), nullptr, &attributeGeometry, static_cast<GdkWindowHints>(GDK_HINT_MIN_SIZE | GDK_HINT_MAX_SIZE));
+    GtkWidget* root = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    gtk_container_add(GTK_CONTAINER(dialog), root);
     GtkWidget* notebook = gtk_notebook_new();
+    gtk_widget_set_name(notebook, "AttributeNotebook");
     gtk_container_set_border_width(GTK_CONTAINER(notebook), 5);
-    auto* state = new AttributeState{this, account, {}, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr};
+    gtk_notebook_set_show_border(GTK_NOTEBOOK(notebook), true);
+    GtkCssProvider* tabProvider = gtk_css_provider_new();
+    gtk_css_provider_load_from_data(tabProvider, "#EditAttributesWindow notebook > header > tabs > tab { min-height: 0; margin: 0; padding: 3px 5px; } #EditAttributesWindow notebook > header > tabs > tab label { margin: 0; padding: 0; font-size: 12px; }", -1, nullptr);
+    gtk_style_context_add_provider_for_screen(gdk_screen_get_default(), GTK_STYLE_PROVIDER(tabProvider), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION + 1);
+    g_object_unref(tabProvider);
+    auto* state = new AttributeState{this, account, {}, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr};
     auto addFields = [&](const char* tab, const std::vector<std::pair<const char*, bool>>& labels) {
         GtkWidget* grid = gtk_grid_new();
         gtk_container_set_border_width(GTK_CONTAINER(grid), 5);
         gtk_grid_set_row_spacing(GTK_GRID(grid), 3);
         gtk_grid_set_column_spacing(GTK_GRID(grid), 6);
         for (int row = 0; row < static_cast<int>(labels.size()); ++row) {
-            GtkWidget* entry = gtk_entry_new();
+            const bool color = std::string(labels[row].first).find("Color") != std::string::npos;
+            GtkWidget* editor = color ? gtk_combo_box_text_new_with_entry() : gtk_entry_new();
+            GtkWidget* entry = color ? gtk_bin_get_child(GTK_BIN(editor)) : editor;
+            if (color) {
+                const char* colors[] = {"white", "yellow", "orange", "red", "darkred", "lightgreen", "green", "darkgreen", "lightblue", "blue", "darkblue", "brown", "cynober", "purple", "darkpurple", "lightgray", "gray", "black", "transparent"};
+                for (const char* colorName : colors) gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(editor), colorName);
+            }
             const auto found = values.find(labels[row].first);
             gtk_entry_set_text(GTK_ENTRY(entry), found == values.end() ? "" : found->second.c_str() + (found->second.empty() ? 0 : 1));
             gtk_editable_set_editable(GTK_EDITABLE(entry), labels[row].second);
-            gtk_grid_attach(GTK_GRID(grid), gtk_label_new((std::string(labels[row].first) + ":").c_str()), 0, row, 1, 1);
-            gtk_grid_attach(GTK_GRID(grid), entry, 1, row, 1, 1);
+            gtk_widget_set_size_request(editor, 190, -1);
+            std::string label(labels[row].first);
+            if (label == "Account") label = "Account name";
+            else if (label == "Online Seconds") label = "Online seconds";
+            else label[0] = static_cast<char>(std::tolower(static_cast<unsigned char>(label[0])));
+            GtkWidget* caption = gtk_label_new((label + ":").c_str());
+            gtk_widget_set_halign(caption, GTK_ALIGN_START);
+            gtk_widget_set_hexpand(caption, true);
+            gtk_grid_attach(GTK_GRID(grid), caption, 0, row, 1, 1);
+            gtk_grid_attach(GTK_GRID(grid), editor, 1, row, 1, 1);
             state->fields[labels[row].first] = entry;
         }
         gtk_notebook_append_page(GTK_NOTEBOOK(notebook), grid, gtk_label_new(tab));
     };
     addFields("Stats", {{"Account", false}, {"Last IP", false}, {"Kills", false}, {"Deaths", false}, {"Online Seconds", false}, {"Rating", false}, {"Rating Deviation", false}});
     addFields("Look", {{"Head Image", true}, {"Body Image", true}, {"Animation", true}, {"Skin Color", true}, {"Coat Color", true}, {"Sleeves Color", true}, {"Shoes Color", true}, {"Belt Color", true}});
-    addFields("Basic Attributes", {{"Level", true}, {"X", true}, {"Y", true}, {"Hearts", true}, {"Full Hearts", true}, {"AP", true}, {"MP", true}, {"Gralats", true}, {"Glove", true}, {"Bombs", true}, {"Arrows", true}, {"Sword Power", true}, {"Sword Image", true}, {"Shield Power", true}, {"Shield Image", true}});
-    GtkWidget* basic = gtk_notebook_get_nth_page(GTK_NOTEBOOK(notebook), 2);
+    GtkWidget* basic = gtk_grid_new();
+    gtk_container_set_border_width(GTK_CONTAINER(basic), 5);
+    gtk_grid_set_row_spacing(GTK_GRID(basic), 3);
+    gtk_grid_set_column_spacing(GTK_GRID(basic), 6);
+    auto addBasicField = [&](const char* key, const char* label, int column, int row, int width, int span = 1) {
+        GtkWidget* entry = gtk_entry_new();
+        const auto found = values.find(key);
+        gtk_entry_set_text(GTK_ENTRY(entry), found == values.end() ? "" : found->second.c_str() + (found->second.empty() ? 0 : 1));
+        gtk_widget_set_size_request(entry, width, -1);
+        GtkWidget* caption = gtk_label_new(label);
+        gtk_widget_set_halign(caption, GTK_ALIGN_START);
+        gtk_grid_attach(GTK_GRID(basic), caption, column, row, 1, 1);
+        gtk_grid_attach(GTK_GRID(basic), entry, column + 1, row, span, 1);
+        state->fields[key] = entry;
+    };
+    addBasicField("Level", "Level:", 0, 0, 280, 3);
+    const struct { const char* leftKey; const char* leftLabel; const char* rightKey; const char* rightLabel; } basicRows[] = {
+        {"X", "x:", "Y", "y:"}, {"Hearts", "Hearts:", "Full Hearts", "Fullhearts:"}, {"AP", "AP:", "MP", "MP:"}, {"Gralats", "Gralats:", "Glove", "Glove:"}, {"Bombs", "Bombs:", "Arrows", "Arrows:"}, {"Sword Power", "Sword:", "Sword Image", "-Image:"}, {"Shield Power", "Shield:", "Shield Image", "-Image:"}
+    };
+    for (int row = 0; row < static_cast<int>(std::size(basicRows)); ++row) {
+        addBasicField(basicRows[row].leftKey, basicRows[row].leftLabel, 0, row + 1, 92);
+        addBasicField(basicRows[row].rightKey, basicRows[row].rightLabel, 2, row + 1, 92);
+    }
     state->male = gtk_check_button_new_with_label("male");
     state->weapons = gtk_check_button_new_with_label("weapons enabled");
     state->spin = gtk_check_button_new_with_label("spin attack");
     gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(state->male), values.find("Male") != values.end() && values.at("Male").find("true") != std::string::npos);
     gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(state->weapons), values.find("Weapons Enabled") != values.end() && values.at("Weapons Enabled").find("true") != std::string::npos);
     gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(state->spin), values.find("Spin Attack") != values.end() && values.at("Spin Attack").find("true") != std::string::npos);
-    gtk_grid_attach(GTK_GRID(basic), state->male, 0, 15, 2, 1);
-    gtk_grid_attach(GTK_GRID(basic), state->weapons, 0, 16, 2, 1);
-    gtk_grid_attach(GTK_GRID(basic), state->spin, 0, 17, 2, 1);
+    GtkWidget* options = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
+    gtk_box_pack_start(GTK_BOX(options), state->male, false, false, 0);
+    gtk_box_pack_start(GTK_BOX(options), state->weapons, false, false, 0);
+    gtk_box_pack_start(GTK_BOX(options), state->spin, false, false, 0);
+    gtk_grid_attach(GTK_GRID(basic), options, 0, 8, 4, 1);
+    gtk_notebook_append_page(GTK_NOTEBOOK(notebook), basic, gtk_label_new("Basic Attributes"));
+    GtkWidget* chestsPage = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    gtk_container_set_border_width(GTK_CONTAINER(chestsPage), 5);
+    GtkWidget* chestHeader = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 3);
+    GtkWidget* chestLabel = gtk_label_new("Open chests:");
+    gtk_widget_set_halign(chestLabel, GTK_ALIGN_START);
+    gtk_widget_set_margin_start(chestLabel, 5);
+    GtkWidget* fillChests = gtk_button_new_with_label("'Fill' selected chests");
+    gtk_widget_set_size_request(fillChests, 128, 24);
+    gtk_box_pack_start(GTK_BOX(chestHeader), chestLabel, false, false, 0);
+    gtk_box_pack_end(GTK_BOX(chestHeader), fillChests, false, false, 0);
+    gtk_box_pack_start(GTK_BOX(chestsPage), chestHeader, false, false, 0);
+    GtkWidget* chestScroll = gtk_scrolled_window_new(nullptr, nullptr);
+    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(chestScroll), GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
+    state->chestStore = gtk_list_store_new(1, G_TYPE_STRING);
+    state->chests = gtk_tree_view_new_with_model(GTK_TREE_MODEL(state->chestStore));
+    GtkCellRenderer* chestRenderer = gtk_cell_renderer_text_new();
+    gtk_tree_view_append_column(GTK_TREE_VIEW(state->chests), gtk_tree_view_column_new_with_attributes("", chestRenderer, "text", 0, nullptr));
+    gtk_tree_view_set_headers_visible(GTK_TREE_VIEW(state->chests), false);
+    gtk_tree_selection_set_mode(gtk_tree_view_get_selection(GTK_TREE_VIEW(state->chests)), GTK_SELECTION_MULTIPLE);
+    gtk_container_add(GTK_CONTAINER(chestScroll), state->chests);
+    gtk_box_pack_start(GTK_BOX(chestsPage), chestScroll, true, true, 0);
+    gtk_notebook_append_page(GTK_NOTEBOOK(notebook), chestsPage, gtk_label_new("Chests"));
     auto addList = [&](const char* tab, GtkWidget** target) {
         GtkWidget* scrolled = gtk_scrolled_window_new(nullptr, nullptr);
         gtk_container_set_border_width(GTK_CONTAINER(scrolled), 5);
@@ -564,7 +659,6 @@ void TPlayerList::handlePlayerAttributes(const char* account, const char*, const
         gtk_container_add(GTK_CONTAINER(scrolled), *target);
         gtk_notebook_append_page(GTK_NOTEBOOK(notebook), scrolled, gtk_label_new(tab));
     };
-    addList("Chests", &state->chests);
     addList("Weapons", &state->weaponList);
     addList("Script Flags", &state->flags);
     std::string section;
@@ -575,19 +669,38 @@ void TPlayerList::handlePlayerAttributes(const char* account, const char*, const
         if (line == "[Script Flags]") { section = "Script Flags"; continue; }
         if (!line.empty() && line.front() == '[') { section.clear(); continue; }
         if (line.empty() || line.find(':') != std::string::npos) continue;
-        GtkWidget* target = section == "Chests" ? state->chests : section == "Weapons" ? state->weaponList : section == "Script Flags" ? state->flags : nullptr;
+        if (section == "Chests") { GtkTreeIter row; gtk_list_store_append(state->chestStore, &row); gtk_list_store_set(state->chestStore, &row, 0, line.c_str(), -1); continue; }
+        GtkWidget* target = section == "Weapons" ? state->weaponList : section == "Script Flags" ? state->flags : nullptr;
         if (target != nullptr) { GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(target)); GtkTextIter end; gtk_text_buffer_get_end_iter(buffer, &end); gtk_text_buffer_insert(buffer, &end, (line + "\n").c_str(), -1); }
     }
-    gtk_box_pack_start(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), notebook, true, true, 0);
-    auto onAttributeFormResponse = +[](GtkDialog* responseDialog, gint response, gpointer userData) {
+    gtk_box_pack_start(GTK_BOX(root), notebook, true, true, 0);
+    GtkWidget* footer = gtk_button_box_new(GTK_ORIENTATION_HORIZONTAL);
+    gtk_button_box_set_layout(GTK_BUTTON_BOX(footer), GTK_BUTTONBOX_END);
+    gtk_container_set_border_width(GTK_CONTAINER(footer), 5);
+    gtk_box_set_spacing(GTK_BOX(footer), 5);
+    GtkWidget* apply = gtk_button_new_with_label("Apply");
+    GtkWidget* cancel = gtk_button_new_with_label("Cancel");
+    gtk_widget_set_size_request(apply, 80, 24);
+    gtk_widget_set_size_request(cancel, 80, 24);
+    gtk_container_add(GTK_CONTAINER(footer), apply);
+    gtk_container_add(GTK_CONTAINER(footer), cancel);
+    gtk_box_pack_end(GTK_BOX(root), footer, false, false, 0);
+    auto onAttributeFormApply = +[](GtkButton* button, gpointer userData) {
         auto* state = static_cast<AttributeState*>(userData);
-        if (response == GTK_RESPONSE_ACCEPT) {
+        GtkWidget* responseDialog = GTK_WIDGET(button);
+        while (!GTK_IS_WINDOW(responseDialog)) responseDialog = gtk_widget_get_parent(responseDialog);
+        if (responseDialog == nullptr) return;
             std::ostringstream text;
             const char* sections[] = {"Stats", "Look", "Basic Attributes"};
             const char* labels[][15] = {{"Account", "Last IP", "Kills", "Deaths", "Online Seconds", "Rating", "Rating Deviation"}, {"Head Image", "Body Image", "Animation", "Skin Color", "Coat Color", "Sleeves Color", "Shoes Color", "Belt Color"}, {"Level", "X", "Y", "Hearts", "Full Hearts", "AP", "MP", "Gralats", "Glove", "Bombs", "Arrows", "Sword Power", "Sword Image", "Shield Power", "Shield Image"}};
             const int counts[] = {7, 8, 15};
             for (int section = 0; section < 3; ++section) { text << '[' << sections[section] << "]\n"; for (int index = 0; index < counts[section]; ++index) text << labels[section][index] << ": " << gtk_entry_get_text(GTK_ENTRY(state->fields[labels[section][index]])) << "\n"; if (section == 2) text << "Male: " << (gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(state->male)) ? "true" : "false") << "\nWeapons Enabled: " << (gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(state->weapons)) ? "true" : "false") << "\nSpin Attack: " << (gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(state->spin)) ? "true" : "false") << "\n"; text << '\n'; }
-            const struct { const char* title; GtkWidget* field; } lists[] = {{"Chests", state->chests}, {"Weapons", state->weaponList}, {"Script Flags", state->flags}};
+            text << "[Chests]\n";
+            GtkTreeIter chest;
+            gboolean hasChest = gtk_tree_model_get_iter_first(GTK_TREE_MODEL(state->chestStore), &chest);
+            while (hasChest) { gchar* chestName = nullptr; gtk_tree_model_get(GTK_TREE_MODEL(state->chestStore), &chest, 0, &chestName, -1); text << (chestName == nullptr ? "" : chestName) << '\n'; g_free(chestName); hasChest = gtk_tree_model_iter_next(GTK_TREE_MODEL(state->chestStore), &chest); }
+            text << '\n';
+            const struct { const char* title; GtkWidget* field; } lists[] = {{"Weapons", state->weaponList}, {"Script Flags", state->flags}};
             for (const auto& list : lists) { GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(list.field)); GtkTextIter start; GtkTextIter end; gtk_text_buffer_get_bounds(buffer, &start, &end); gchar* content = gtk_text_buffer_get_text(buffer, &start, &end, false); text << '[' << list.title << "]\n" << (content == nullptr ? "" : content) << '\n'; g_free(content); }
             char* properties = rc_parse_player_attributes_text(text.str().c_str());
             if (properties != nullptr) {
@@ -595,12 +708,14 @@ void TPlayerList::handlePlayerAttributes(const char* account, const char*, const
                 rc_set_player_attributes(state->list->connection, state->account.c_str(), properties);
                 free(properties);
             }
-        }
         gtk_widget_destroy(GTK_WIDGET(responseDialog));
     };
-    g_signal_connect(dialog, "response", G_CALLBACK(onAttributeFormResponse), state);
+    g_signal_connect(apply, "clicked", G_CALLBACK(onAttributeFormApply), state);
+    g_signal_connect(cancel, "clicked", G_CALLBACK(+[](GtkButton* button, gpointer) { GtkWidget* dialog = GTK_WIDGET(button); while (!GTK_IS_WINDOW(dialog)) dialog = gtk_widget_get_parent(dialog); if (dialog != nullptr) gtk_widget_destroy(dialog); }), nullptr);
     g_signal_connect(dialog, "destroy", G_CALLBACK(+[](GtkWidget*, gpointer userData) { delete static_cast<AttributeState*>(userData); }), state);
     gtk_widget_show_all(dialog);
+    gtk_window_resize(GTK_WINDOW(dialog), 400, 360);
+    g_idle_add_full(G_PRIORITY_DEFAULT_IDLE, +[](gpointer userData) -> gboolean { if (GTK_IS_WINDOW(userData)) gtk_window_resize(GTK_WINDOW(userData), 400, 360); return G_SOURCE_REMOVE; }, dialog, nullptr);
 }
 void TPlayerList::handlePlayerText(const char* type, const char* account, const char* content) {
     if (type == nullptr || account == nullptr) return;
@@ -613,7 +728,7 @@ void TPlayerList::handlePlayerText(const char* type, const char* account, const 
         std::istringstream input(content == nullptr ? "" : content);
         for (std::string value; std::getline(input, value);) values.push_back(value);
         while (values.size() < 11) values.emplace_back();
-        GtkWidget* dialog = gtk_dialog_new_with_buttons(("Profile of " + std::string(account)).c_str(), GTK_WINDOW(window), GTK_DIALOG_DESTROY_WITH_PARENT, "Close", GTK_RESPONSE_CANCEL, "Apply", GTK_RESPONSE_ACCEPT, nullptr);
+        GtkWidget* dialog = gtk_dialog_new_with_buttons(("Profile of " + std::string(account)).c_str(), GTK_WINDOW(window), GTK_DIALOG_DESTROY_WITH_PARENT, "Apply", GTK_RESPONSE_ACCEPT, "Close", GTK_RESPONSE_CANCEL, nullptr);
         gtk_widget_set_name(dialog, "ProfileWindow");
         gtk_window_set_default_size(GTK_WINDOW(dialog), 520, 400);
         GtkWidget* root = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
@@ -623,22 +738,28 @@ void TPlayerList::handlePlayerText(const char* type, const char* account, const 
         gtk_widget_set_margin_start(nick, 10);
         gtk_widget_set_margin_top(nick, 6);
         gtk_box_pack_start(GTK_BOX(root), nick, false, false, 0);
-        GtkWidget* split = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+        GtkWidget* split = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 20);
+        gtk_container_set_border_width(GTK_CONTAINER(split), 10);
         gtk_box_pack_start(GTK_BOX(root), split, true, true, 0);
-        GtkWidget* information = gtk_frame_new(" Player information ");
-        gtk_container_set_border_width(GTK_CONTAINER(information), 5);
+        GtkWidget* information = gtk_box_new(GTK_ORIENTATION_VERTICAL, 5);
+        GtkWidget* informationLabel = gtk_label_new("Player information");
+        gtk_widget_set_halign(informationLabel, GTK_ALIGN_START);
+        gtk_box_pack_start(GTK_BOX(information), informationLabel, false, false, 0);
         GtkWidget* form = gtk_grid_new();
-        gtk_container_set_border_width(GTK_CONTAINER(form), 5);
         gtk_grid_set_row_spacing(GTK_GRID(form), 3);
         gtk_grid_set_column_spacing(GTK_GRID(form), 6);
-        gtk_container_add(GTK_CONTAINER(information), form);
+        gtk_box_pack_start(GTK_BOX(information), form, false, false, 0);
         auto* state = new ProfileState{this, account};
         const char* labels[] = {"Real name", "Age", "Sex", "Country", "Messenger", "E-mail", "Homepage", "Fav. hangout"};
         for (int index = 0; index < 8; ++index) {
             GtkWidget* field = index == 2 ? gtk_combo_box_text_new_with_entry() : gtk_entry_new();
             if (index == 2) { gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(field), "unknown"); gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(field), "male"); gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(field), "female"); GtkWidget* entry = gtk_bin_get_child(GTK_BIN(field)); gtk_entry_set_text(GTK_ENTRY(entry), values[index + 1].c_str()); gtk_editable_set_editable(GTK_EDITABLE(entry), false); }
             else gtk_entry_set_text(GTK_ENTRY(field), values[index + 1].c_str());
-            gtk_grid_attach(GTK_GRID(form), gtk_label_new((std::string(labels[index]) + ":").c_str()), 0, index, 1, 1);
+            gtk_widget_set_size_request(field, 160, 24);
+            GtkWidget* caption = gtk_label_new((std::string(labels[index]) + ":").c_str());
+            gtk_widget_set_size_request(caption, 94, -1);
+            gtk_widget_set_halign(caption, GTK_ALIGN_START);
+            gtk_grid_attach(GTK_GRID(form), caption, 0, index, 1, 1);
             gtk_grid_attach(GTK_GRID(form), field, 1, index, 1, 1);
             state->fields[index] = field;
         }
@@ -646,42 +767,56 @@ void TPlayerList::handlePlayerText(const char* type, const char* account, const 
         gtk_widget_set_halign(quoteLabel, GTK_ALIGN_START);
         gtk_grid_attach(GTK_GRID(form), quoteLabel, 0, 8, 2, 1);
         GtkWidget* quoteScroll = gtk_scrolled_window_new(nullptr, nullptr);
-        gtk_widget_set_size_request(quoteScroll, -1, 80);
+        gtk_widget_set_size_request(quoteScroll, 260, 58);
         state->quote = gtk_text_view_new();
         gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(state->quote), GTK_WRAP_WORD_CHAR);
         gtk_text_buffer_set_text(gtk_text_view_get_buffer(GTK_TEXT_VIEW(state->quote)), values[9].c_str(), -1);
         gtk_container_add(GTK_CONTAINER(quoteScroll), state->quote);
         gtk_grid_attach(GTK_GRID(form), quoteScroll, 0, 9, 2, 1);
-        gtk_box_pack_start(GTK_BOX(split), information, true, true, 0);
-        GtkWidget* statsFrame = gtk_frame_new(" In-game stats ");
-        gtk_container_set_border_width(GTK_CONTAINER(statsFrame), 5);
+        gtk_box_pack_start(GTK_BOX(split), information, false, false, 0);
+        GtkWidget* statsFrame = gtk_box_new(GTK_ORIENTATION_VERTICAL, 5);
+        GtkWidget* statsLabel = gtk_label_new("In-game stats");
+        gtk_widget_set_halign(statsLabel, GTK_ALIGN_START);
+        gtk_box_pack_start(GTK_BOX(statsFrame), statsLabel, false, false, 0);
         GtkWidget* stats = gtk_box_new(GTK_ORIENTATION_VERTICAL, 3);
-        gtk_container_set_border_width(GTK_CONTAINER(stats), 5);
-        gtk_container_add(GTK_CONTAINER(statsFrame), stats);
+        gtk_box_pack_start(GTK_BOX(statsFrame), stats, true, true, 0);
         GtkWidget* level = gtk_entry_new();
         GtkWidget* online = gtk_entry_new();
         gtk_entry_set_text(GTK_ENTRY(level), values.size() > 11 ? values[11].c_str() : "");
         gtk_entry_set_text(GTK_ENTRY(online), values[10].c_str());
         gtk_editable_set_editable(GTK_EDITABLE(level), false);
         gtk_editable_set_editable(GTK_EDITABLE(online), false);
-        gtk_box_pack_start(GTK_BOX(stats), gtk_label_new("Level:"), false, false, 0);
-        gtk_box_pack_start(GTK_BOX(stats), level, false, false, 0);
-        gtk_box_pack_start(GTK_BOX(stats), gtk_label_new("Online time:"), false, false, 0);
-        gtk_box_pack_start(GTK_BOX(stats), online, false, false, 0);
-        if (values.size() > 12) {
-            GtkWidget* variables = gtk_frame_new(" Profile variables ");
-            GtkWidget* variableScroll = gtk_scrolled_window_new(nullptr, nullptr);
-            gtk_widget_set_size_request(variableScroll, 170, 110);
-            GtkWidget* variableText = gtk_text_view_new();
-            gtk_text_view_set_editable(GTK_TEXT_VIEW(variableText), false);
-            gtk_text_view_set_cursor_visible(GTK_TEXT_VIEW(variableText), false);
-            std::ostringstream profileVariables;
-            for (std::size_t index = 12; index < values.size(); ++index) profileVariables << values[index] << '\n';
-            gtk_text_buffer_set_text(gtk_text_view_get_buffer(GTK_TEXT_VIEW(variableText)), profileVariables.str().c_str(), -1);
-            gtk_container_add(GTK_CONTAINER(variableScroll), variableText);
-            gtk_container_add(GTK_CONTAINER(variables), variableScroll);
-            gtk_box_pack_start(GTK_BOX(stats), variables, false, false, 4);
-        }
+        gtk_widget_set_size_request(level, 134, 24);
+        gtk_widget_set_size_request(online, 134, 24);
+        GtkWidget* statForm = gtk_grid_new();
+        gtk_grid_set_row_spacing(GTK_GRID(statForm), 3);
+        gtk_grid_set_column_spacing(GTK_GRID(statForm), 5);
+        GtkWidget* levelLabel = gtk_label_new("Level:");
+        GtkWidget* onlineLabel = gtk_label_new("Online time:");
+        gtk_widget_set_halign(levelLabel, GTK_ALIGN_START);
+        gtk_widget_set_halign(onlineLabel, GTK_ALIGN_START);
+        gtk_grid_attach(GTK_GRID(statForm), levelLabel, 0, 0, 1, 1);
+        gtk_grid_attach(GTK_GRID(statForm), level, 1, 0, 1, 1);
+        gtk_grid_attach(GTK_GRID(statForm), onlineLabel, 0, 1, 1, 1);
+        gtk_grid_attach(GTK_GRID(statForm), online, 1, 1, 1, 1);
+        gtk_box_pack_start(GTK_BOX(stats), statForm, false, false, 0);
+        GtkWidget* variableScroll = gtk_scrolled_window_new(nullptr, nullptr);
+        gtk_widget_set_size_request(variableScroll, 200, 240);
+        GtkListStore* variableStore = gtk_list_store_new(2, G_TYPE_STRING, G_TYPE_STRING);
+        GtkWidget* variableText = gtk_tree_view_new_with_model(GTK_TREE_MODEL(variableStore));
+        g_object_unref(variableStore);
+        GtkCellRenderer* nameRenderer = gtk_cell_renderer_text_new();
+        GtkCellRenderer* valueRenderer = gtk_cell_renderer_text_new();
+        GtkTreeViewColumn* nameColumn = gtk_tree_view_column_new_with_attributes("", nameRenderer, "text", 0, nullptr);
+        gtk_tree_view_column_set_fixed_width(nameColumn, 100);
+        gtk_tree_view_column_set_sizing(nameColumn, GTK_TREE_VIEW_COLUMN_FIXED);
+        gtk_tree_view_append_column(GTK_TREE_VIEW(variableText), nameColumn);
+        gtk_tree_view_append_column(GTK_TREE_VIEW(variableText), gtk_tree_view_column_new_with_attributes("", valueRenderer, "text", 1, nullptr));
+        gtk_tree_view_set_headers_visible(GTK_TREE_VIEW(variableText), false);
+        const char* statNames[] = {"Kills", "Deaths", "Maxpower", "Rating", "Alignment", "Gralat", "Swordpower", "Spin"};
+        for (std::size_t index = 12; index < values.size() && index - 12 < std::size(statNames); ++index) { GtkTreeIter stat; gtk_list_store_append(variableStore, &stat); gtk_list_store_set(variableStore, &stat, 0, (std::string(statNames[index - 12]) + ":").c_str(), 1, values[index].c_str(), -1); }
+        gtk_container_add(GTK_CONTAINER(variableScroll), variableText);
+        gtk_box_pack_start(GTK_BOX(stats), variableScroll, true, true, 4);
         gtk_box_pack_start(GTK_BOX(split), statsFrame, false, false, 0);
         auto onProfileResponse = +[](GtkDialog* responseDialog, gint response, gpointer userData) {
             auto* state = static_cast<ProfileState*>(userData);
@@ -898,10 +1033,18 @@ GdkPixbuf* TPlayerList::pmIconFor(const std::string& type) const {
     return pmNormalIcon;
 }
 
-void TPlayerList::notePrivateMessage(int playerId, const char* account, const char* nick, const char* message, const char* type) {
-    if (playerId < 0) return;
-    appendHistory(account, "Opposite", message);
-    pmPlayers[playerId] = {account == nullptr ? "" : account, nick == nullptr ? "" : nick};
+std::string TPlayerList::notePrivateMessage(int playerId, const char* account, const char* nick, const char* message, const char* type) {
+    if (playerId < 0) return "";
+    std::string accountText = account == nullptr ? "" : account;
+    std::string nickText = nick == nullptr ? "" : nick;
+    if ((accountText.empty() || nickText.empty()) && serverStore != nullptr) {
+        PMPlayerIdentity identity{playerId, accountText, nickText};
+        gtk_tree_model_foreach(GTK_TREE_MODEL(serverStore), findServerPlayerById, &identity);
+        if (!identity.account.empty()) accountText = identity.account;
+        if (!identity.nick.empty()) nickText = identity.nick;
+    }
+    appendHistory(accountText.c_str(), "Opposite", message);
+    pmPlayers[playerId] = {accountText, nickText};
     if (!pmMessages[playerId].empty()) pmMessages[playerId] += '\n';
     pmMessages[playerId] += formatPMCommaText(message == nullptr ? "" : message);
     latestPMPlayerId = playerId;
@@ -909,6 +1052,7 @@ void TPlayerList::notePrivateMessage(int playerId, const char* account, const ch
     pmIconsVisible = true;
     if (pmBlinkSource == 0) pmBlinkSource = g_timeout_add(500, onPMBlink, this);
     updatePMIcons();
+    return nickText.empty() || nickText == accountText ? accountText : nickText + " (" + accountText + ")";
 }
 
 bool TPlayerList::openLatestPrivateMessage() {
@@ -963,18 +1107,14 @@ void TPlayerList::openPrivateMessage(int playerId, const char* account, const ch
     gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(data->reply), GTK_WRAP_WORD_CHAR);
     gtk_text_view_set_left_margin(GTK_TEXT_VIEW(data->reply), 5);
     gtk_text_view_set_right_margin(GTK_TEXT_VIEW(data->reply), 5);
-    GtkCssProvider* pmProvider = gtk_css_provider_new();
-    gtk_css_provider_load_from_data(pmProvider, "#PrivateMessage, #PrivateMessage box, #PrivateMessage scrolledwindow, #PrivateMessage viewport { background-color: #454545; color: #d4d4d4; } #PrivateMessageText, #PrivateMessageText text { background-color: #252525; color: #f0f0f0; caret-color: #00ff00; } #PrivateMessageReceived, #PrivateMessageReceived text { background-color: #252525; color: #f0f0f0; }", -1, nullptr);
-    gtk_style_context_add_provider(gtk_widget_get_style_context(data->window), GTK_STYLE_PROVIDER(pmProvider), GTK_STYLE_PROVIDER_PRIORITY_USER);
-    gtk_style_context_add_provider(gtk_widget_get_style_context(data->reply), GTK_STYLE_PROVIDER(pmProvider), GTK_STYLE_PROVIDER_PRIORITY_USER);
-    gtk_style_context_add_provider(gtk_widget_get_style_context(data->received), GTK_STYLE_PROVIDER(pmProvider), GTK_STYLE_PROVIDER_PRIORITY_USER);
-    g_object_unref(pmProvider);
     gtk_container_add(GTK_CONTAINER(replyScrolled), data->reply);
     gtk_paned_pack2(GTK_PANED(panes), replyScrolled, true, true);
     GtkWidget* buttons = gtk_button_box_new(GTK_ORIENTATION_HORIZONTAL);
     gtk_button_box_set_layout(GTK_BUTTON_BOX(buttons), GTK_BUTTONBOX_END);
     GtkWidget* history = gtk_button_new_with_label("History");
     GtkWidget* send = gtk_button_new_with_label("Send");
+    gtk_widget_set_size_request(history, 76, 28);
+    gtk_widget_set_size_request(send, 76, 28);
     gtk_container_add(GTK_CONTAINER(buttons), history);
     gtk_container_add(GTK_CONTAINER(buttons), send);
     gtk_box_pack_end(GTK_BOX(root), buttons, false, false, 0);

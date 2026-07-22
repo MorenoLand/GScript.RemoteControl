@@ -1,5 +1,6 @@
 #include "TServerList.h"
 #include "Debug.h"
+#include "ErrorWindow.h"
 
 #include <grclib.h>
 
@@ -149,10 +150,6 @@ TServerList::TServerList(std::function<void()> onClose, std::function<void(void*
     gtk_text_view_set_editable(GTK_TEXT_VIEW(descriptionField), false);
     gtk_text_view_set_cursor_visible(GTK_TEXT_VIEW(descriptionField), false);
     gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(descriptionField), GTK_WRAP_WORD);
-    GtkCssProvider* descriptionProvider = gtk_css_provider_new();
-    gtk_css_provider_load_from_data(descriptionProvider, "textview, textview text { background-color: #1e1e1e; color: #d4d4d4; }", -1, nullptr);
-    gtk_style_context_add_provider(gtk_widget_get_style_context(descriptionField), GTK_STYLE_PROVIDER(descriptionProvider), GTK_STYLE_PROVIDER_PRIORITY_USER);
-    g_object_unref(descriptionProvider);
     gtk_container_add(GTK_CONTAINER(descriptionScrolled), descriptionField);
     gtk_box_pack_start(GTK_BOX(details), descriptionScrolled, true, true, 0);
 
@@ -323,7 +320,14 @@ gboolean TServerList::finishLoad(gpointer data) {
         const GdkPixbuf* icon = entry.icon < 0 ? nullptr : result->serverList->serverIcons[entry.icon];
         gtk_list_store_set(result->serverList->store, &iter, 0, icon, 1, entry.name.c_str(), 2, players.c_str(), 3, entry.players, 4, static_cast<int>(index), -1);
     }
-    gtk_label_set_text(GTK_LABEL(result->serverList->statusField), result->error.c_str());
+    if (result->error.empty()) gtk_label_set_text(GTK_LABEL(result->serverList->statusField), "");
+    else {
+        gtk_label_set_text(GTK_LABEL(result->serverList->statusField), "");
+        result->serverList->disconnectCurrentConnection();
+        gtk_widget_hide(result->serverList->window);
+        result->serverList->onCloseCallback();
+        createErrorWindow("Error", result->error.c_str());
+    }
     gtk_widget_set_sensitive(result->serverList->refreshButton, true);
     result.release();
     return G_SOURCE_REMOVE;
@@ -376,8 +380,9 @@ void TServerList::connect() {
         onConnectedCallback(remoteConnection, entries[index].name, nickname, account);
     }
     else {
-        remoteControlDebugLog("server connection failed: %s", rc_last_error(connection));
-        gtk_label_set_text(GTK_LABEL(statusField), rc_last_error(connection));
+        const char* reason = rc_last_error(connection);
+        remoteControlDebugLog("server connection failed: %s", reason == nullptr ? "You have been disconnected!" : reason);
+        createErrorWindow("Connection Error", reason == nullptr ? "You have been disconnected!" : reason);
     }
 }
 

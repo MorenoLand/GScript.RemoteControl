@@ -21,6 +21,7 @@ private:
     static void onEditAsText(GtkMenuItem*, gpointer data);
     static void onDeleteItem(GtkMenuItem*, gpointer data);
     static void onRename(GtkMenuItem*, gpointer data);
+    static void onFileNameEdited(GtkCellRendererText*, gchar* path, gchar* value, gpointer data);
     static void onMove(GtkMenuItem*, gpointer data);
     static void onUpload(GtkMenuItem*, gpointer data);
     static gboolean onDelete(GtkWidget*, GdkEvent*, gpointer data);
@@ -28,6 +29,8 @@ private:
     static void onFiles(const char* folder, int count, void* data);
     static void onMessage(const char* message, void* data);
     static void onFileReceived(const char* path, const void* content, int length, void* data);
+    static gboolean watchExternalFile(gpointer data);
+    static gboolean beginInlineRename(gpointer data);
     void refresh();
     void refreshFolders();
     void refreshFiles(const char* folder, int count);
@@ -41,6 +44,7 @@ private:
     GtkListStore* files = nullptr;
     GtkWidget* folderView = nullptr;
     GtkWidget* fileView = nullptr;
+    GtkCellRenderer* fileNameRenderer = nullptr;
     GtkWidget* log = nullptr;
     GdkPixbuf* closedFolderIcon = nullptr;
     GdkPixbuf* openFolderIcon = nullptr;
@@ -51,5 +55,14 @@ private:
     void* connection = nullptr;
     std::string currentFolder;
     std::string pendingEditPath;
+    std::string pendingExternalPath;
+    std::string watchExternalPath;
+    std::string watchExternalFolder;
+    std::string watchExternalRemotePath;
+    gint64 watchExternalModified = 0;
+    bool watchExternalWritable = false;
+    guint externalWatchId = 0;
+    std::string pendingInlineRenamePath;
+    guint inlineRenameId = 0;
     std::string downloadFolder;
 };

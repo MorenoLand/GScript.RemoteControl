@@ -27,6 +27,7 @@ public:
 
     void open(void* connection, const std::string& serverName, const std::string& nickname, const std::string& accountName);
     void disconnect();
+    void signOut();
     void show();
     bool openLatestPrivateMessage();
     bool isNCAuthenticated() const;
