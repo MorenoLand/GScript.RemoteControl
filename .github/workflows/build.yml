@@ -38,7 +38,6 @@ jobs:
         run: |
           cmake --build remotecontrol/build --parallel
           strip remotecontrol/bin/RemoteControl
-          find remotecontrol/build/grclib -type f \( -name 'grclib.so' -o -name 'grclib*.dylib' \) -exec strip {} +
       - name: Test
         run: ctest --test-dir remotecontrol/build --output-on-failure
       - name: Stage Linux bundle
@@ -48,7 +47,6 @@ jobs:
           mkdir -p "$bundle/lib"
           grclib="$(find grclib/bin -type f -name 'grclib.so*' -print -quit)"
           test -n "$grclib"
-          strip "$grclib"
           cp remotecontrol/bin/RemoteControl "$bundle/"
           cp "$grclib" "$bundle/lib/"
           cp -a remotecontrol/bin/images remotecontrol/bin/language-specs remotecontrol/bin/sounds "$bundle/"
@@ -84,7 +82,6 @@ jobs:
           mkdir -p "$bundle/lib"
           grclib="$(find grclib/bin -type f -name 'grclib*.dylib' -print -quit)"
           test -n "$grclib"
-          strip "$grclib"
           cp remotecontrol/bin/RemoteControl "$bundle/"
           cp -a remotecontrol/bin/images remotecontrol/bin/language-specs remotecontrol/bin/sounds "$bundle/"
           cp remotecontrol/bin/control2config.txt "$bundle/"
@@ -124,7 +121,7 @@ jobs:
         run: |
           cmake -S remotecontrol -B remotecontrol/build -G Ninja -DCMAKE_BUILD_TYPE=Release -DGRCLIB_SOURCE_DIR="$PWD/grclib"
           cmake --build remotecontrol/build --parallel
-          strip remotecontrol/bin/RemoteControl.exe remotecontrol/bin/grclib.dll
+          strip remotecontrol/bin/RemoteControl.exe
           ctest --test-dir remotecontrol/build --output-on-failure
           cd remotecontrol/bin
           zip -r ../../RemoteControl-windows-x86_64.zip .
