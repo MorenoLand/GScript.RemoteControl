@@ -8,7 +8,12 @@ dependencies/
 research/
 tools/
 bin/PMs/
+bin/control2config.txt
 bin/grclib.dll
+bin/*.dll
+bin/images/
+bin/language-specs/
+bin/sounds/
 bin/cache/
 bin/certs/
 bin/libssl-3-x64.dll

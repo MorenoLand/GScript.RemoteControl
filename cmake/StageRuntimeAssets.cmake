@@ -1,0 +1,8 @@
+foreach(assetDirectory images language-specs sounds)
+    if(EXISTS "${REMOTE_CONTROL_RUNTIME_SOURCE_DIRECTORY}/${assetDirectory}")
+        execute_process(COMMAND "${CMAKE_COMMAND}" -E copy_directory "${REMOTE_CONTROL_RUNTIME_SOURCE_DIRECTORY}/${assetDirectory}" "${REMOTE_CONTROL_OUTPUT_DIRECTORY}/${assetDirectory}")
+    endif()
+endforeach()
+if(NOT EXISTS "${REMOTE_CONTROL_OUTPUT_DIRECTORY}/control2config.txt" AND EXISTS "${REMOTE_CONTROL_RUNTIME_SOURCE_DIRECTORY}/control2config.txt")
+    execute_process(COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${REMOTE_CONTROL_RUNTIME_SOURCE_DIRECTORY}/control2config.txt" "${REMOTE_CONTROL_OUTPUT_DIRECTORY}/control2config.txt")
+endif()
