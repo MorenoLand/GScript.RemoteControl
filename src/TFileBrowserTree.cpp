@@ -7,6 +7,11 @@
 #include <gtksourceview/gtksource.h>
 #include <glib/gstdio.h>
 
+#ifdef _WIN32
+#include <windows.h>
+#include <shellapi.h>
+#endif
+
 #include <string>
 #include <ctime>
 #include <iomanip>
@@ -489,11 +494,18 @@ void TFileBrowserTree::onFileReceived(const char* path, const void* content, int
         g_free(absoluteDestination);
         const std::string extension = localPath.substr(localPath.find_last_of('.') == std::string::npos ? localPath.size() : localPath.find_last_of('.'));
         if (g_ascii_strcasecmp(extension.c_str(), ".exe") == 0 || g_ascii_strcasecmp(extension.c_str(), ".bat") == 0 || g_ascii_strcasecmp(extension.c_str(), ".sh") == 0) { browser->showTextEditor(path, content, length); return; }
+#ifdef _WIN32
+        gunichar2* widePath = g_utf8_to_utf16(localPath.c_str(), -1, nullptr, nullptr, nullptr);
+        const HINSTANCE result = widePath == nullptr ? nullptr : ShellExecuteW(nullptr, L"open", reinterpret_cast<LPCWSTR>(widePath), nullptr, nullptr, SW_SHOWNORMAL);
+        g_free(widePath);
+        if (reinterpret_cast<INT_PTR>(result) <= 32) browser->appendLog("Could not open downloaded file.");
+#else
         GError* error = nullptr;
         gchar* uri = g_filename_to_uri(localPath.c_str(), nullptr, &error);
         if (uri == nullptr || !g_app_info_launch_default_for_uri(uri, nullptr, &error)) browser->appendLog(error == nullptr ? "Could not open downloaded file." : error->message);
         if (error != nullptr) g_error_free(error);
         g_free(uri);
+#endif
         GStatBuf status{};
         if (g_stat(localPath.c_str(), &status) == 0) {
             browser->watchExternalPath = localPath;
