@@ -194,6 +194,9 @@ void TFileBrowserTree::onFolderSelected(GtkTreeSelection* selection, gpointer da
     if (folder != nullptr) {
         std::string folderPath(folder);
         if (!folderPath.empty() && folderPath.back() != '/') folderPath += '/';
+        browser->currentFolder = folderPath;
+        gtk_list_store_clear(browser->files);
+        gtk_label_set_text(GTK_LABEL(browser->folderPath), (std::string("Current Folder: ") + folderPath).c_str());
         if (!rc_filebrowser_cd(browser->connection, folderPath.c_str())) browser->appendLog(rc_last_error(browser->connection));
         g_free(folder);
     }
@@ -475,6 +478,7 @@ void TFileBrowserTree::showTextEditor(const char* path, const void* content, int
     gtk_box_set_spacing(GTK_BOX(contentArea), 0);
     gtk_widget_set_margin_top(scrolled, 0);
     gtk_box_pack_start(GTK_BOX(contentArea), scrolled, true, true, 0);
+    gtk_box_pack_start(GTK_BOX(gtk_dialog_get_action_area(GTK_DIALOG(dialog))), createGScriptEditorLineStatus(editor), true, true, 0);
     auto* state = new EditorState{connection, path, editor};
     g_signal_connect(editor, "key-press-event", G_CALLBACK(+[](GtkWidget*, GdkEventKey* event, gpointer responseDialog) {
         if ((event->state & GDK_CONTROL_MASK) == 0 || (event->keyval != GDK_KEY_s && event->keyval != GDK_KEY_S)) return static_cast<gboolean>(FALSE);
@@ -509,11 +513,13 @@ void TFileBrowserTree::refreshFolders() {
 }
 
 void TFileBrowserTree::refreshFiles(const char* folder, int count) {
+    const std::string responseFolder = folder == nullptr ? "" : folder;
+    if (!currentFolder.empty() && responseFolder != currentFolder) return;
     RCFileBrowserEntry* entries = nullptr;
     const int entryCount = count > 0 ? rc_copy_filebrowser_files(connection, &entries) : 0;
     gtk_list_store_clear(files);
-    currentFolder = folder == nullptr ? "" : folder;
-    gtk_label_set_text(GTK_LABEL(folderPath), (std::string("Current Folder: ") + (folder == nullptr ? "" : folder)).c_str());
+    currentFolder = responseFolder;
+    gtk_label_set_text(GTK_LABEL(folderPath), (std::string("Current Folder: ") + responseFolder).c_str());
     for (int index = 0; index < entryCount; ++index) {
         GtkTreeIter row;
         gtk_list_store_append(files, &row);

@@ -50,6 +50,7 @@ namespace RC {
             if (key == "nickname") options.nickname = value;
             else if (key == "dontsavepassword") options.dontsavepassword = isTrue(value);
             else if (key == "graphicalmenu") options.graphicalmenu = isTrue(value);
+            else if (key == "darkmode") options.darkmode = isTrue(value);
             else if (key == "nomassmessages") options.nomassmessages = isTrue(value);
             else if (key == "nomassifclienton") options.nomassifclienton = isTrue(value);
             else if (key == "nohtmlinpms") options.nohtmlinpms = isTrue(value);
@@ -111,6 +112,7 @@ namespace RC {
         writeString(stream, "downloadfolder", options.downloadfolder);
         writeBool(stream, "dontsavepassword", options.dontsavepassword);
         writeBool(stream, "graphicalmenu", options.graphicalmenu);
+        writeBool(stream, "darkmode", options.darkmode);
         stream << "chatfontsize=" << options.chatfontsize << '\n';
         writeBool(stream, "globalpms", options.globalpms);
         writeBool(stream, "buddytracking", options.buddytracking);

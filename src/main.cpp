@@ -41,6 +41,19 @@ namespace {
     TStartFrame* trayStartFrame = nullptr;
     TRemoteFrame* trayRemoteFrame = nullptr;
 
+    gboolean onTopLevelSizeAllocate(GSignalInvocationHint*, guint, const GValue* values, gpointer) {
+        GtkWidget* widget = GTK_WIDGET(g_value_get_object(&values[0]));
+        if (!GTK_IS_WINDOW(widget)) return TRUE;
+        gtk_widget_queue_draw(widget);
+        if (GdkWindow* surface = gtk_widget_get_window(widget)) gdk_window_process_updates(surface, true);
+        return TRUE;
+    }
+
+    void enableLiveResizePainting() {
+        const guint signal = g_signal_lookup("size-allocate", GTK_TYPE_WIDGET);
+        if (signal != 0) g_signal_add_emission_hook(signal, 0, onTopLevelSizeAllocate, nullptr, nullptr);
+    }
+
 #ifdef _WIN32
     constexpr int ServerListHotkeyId = 0x5243;
     constexpr UINT TrayMenuOpenId = 1;
@@ -64,7 +77,7 @@ namespace {
             GetTextExtentPoint32W(dc, trayMenuText(measure->itemID), -1, &size);
             SelectObject(dc, oldFont);
             ReleaseDC(window, dc);
-            measure->itemWidth = static_cast<UINT>(size.cx + 42);
+            measure->itemWidth = 132;
             measure->itemHeight = static_cast<UINT>(std::max(24L, size.cy + 10));
             return TRUE;
         }
@@ -130,6 +143,12 @@ namespace {
     void onTrayPopup(GtkStatusIcon* icon, guint button, guint32 activateTime, gpointer) {
 #ifdef _WIN32
         HMENU menu = CreatePopupMenu();
+        MENUINFO menuInfo = {};
+        menuInfo.cbSize = sizeof(menuInfo);
+        menuInfo.fMask = MIM_BACKGROUND;
+        HBRUSH menuBackground = CreateSolidBrush(RGB(59, 59, 59));
+        menuInfo.hbrBack = menuBackground;
+        SetMenuInfo(menu, &menuInfo);
         AppendMenuW(menu, MF_OWNERDRAW, TrayMenuOpenId, L"Open");
         const bool canOpenServerList = trayRemoteFrame != nullptr && trayRemoteFrame->isNCAuthenticated();
         if (canOpenServerList) AppendMenuW(menu, MF_OWNERDRAW, TrayMenuServerListId, L"Server List");
@@ -141,6 +160,7 @@ namespace {
         SetForegroundWindow(owner);
         const UINT command = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON | TPM_LEFTALIGN | TPM_BOTTOMALIGN, cursor.x, cursor.y, 0, owner, nullptr);
         DestroyMenu(menu);
+        DeleteObject(menuBackground);
         DestroyWindow(owner);
         if (command == TrayMenuOpenId) onTrayOpen(nullptr, nullptr);
         else if (command == TrayMenuServerListId) onTrayServerList(nullptr, nullptr);
@@ -200,12 +220,20 @@ namespace {
 #endif
     }
 
-    void applyDarkTheme() {
+    GtkCssProvider* darkThemeProvider = nullptr;
+
+    void applyDarkTheme(bool enabled) {
+        if (darkThemeProvider != nullptr) {
+            gtk_style_context_remove_provider_for_screen(gdk_screen_get_default(), GTK_STYLE_PROVIDER(darkThemeProvider));
+            g_object_unref(darkThemeProvider);
+            darkThemeProvider = nullptr;
+        }
+        if (!enabled) return;
         GtkCssProvider* provider = gtk_css_provider_new();
         constexpr const char* css = "window, dialog, .background { background-color: #454545; color: #dddddd; } label, checkbutton label, button label { color: #dddddd; } entry { background-color: #1e1e1e; color: #dddddd; caret-color: #00ff00; border-color: #555555; } entry:disabled { background-color: #383838; color: #c1c1c1; } textview, textview text { background-color: #1e1e1e; color: #dddddd; } combobox button, button { background-image: none; background-color: #383838; color: #cbcbcb; border-color: #555555; } button:hover, combobox button:hover { background-image: none; background-color: #3b3b3b; } button:active, combobox button:active { background-image: none; background-color: #303030; } button:disabled { background-image: none; background-color: #383838; color: #828282; } checkbutton { color: #dddddd; } treeview.view { background-color: #272822; color: #dddddd; } filechooser box, filechooser .path-bar, filechooser .path-bar button, filechooser .pathbar, filechooser .pathbar button { background-image: none; background-color: #454545; color: #dddddd; } filechooser placessidebar, filechooser placessidebar viewport, filechooser placessidebar list, filechooser placessidebar row, filechooser .sidebar, filechooser .sidebar viewport, filechooser .sidebar list, filechooser .sidebar row { background-color: #272822; color: #dddddd; } filechooser placessidebar row:selected, filechooser .sidebar row:selected { background-color: #555555; color: #ffffff; } menubar, menu { background-color: #484848; color: #cbcbcb; } menuitem { color: #cbcbcb; } notebook, notebook > header, notebook > stack, scrolledwindow, viewport { background-color: transparent; border: none; box-shadow: none; padding: 0; } notebook > header, notebook > header > tabs { min-height: 0; } notebook > header > tabs > tab { background-image: none; background-color: #3d3d3d; border: 1px solid #707070; border-bottom: none; border-radius: 4px 4px 0 0; margin-right: 2px; padding: 2px 5px; } notebook > header > tabs > tab:checked { background-color: #454545; border-color: #909090; } treeview.view:selected { background-color: #555555; color: #ffffff; }";
         gtk_css_provider_load_from_data(provider, css, -1, nullptr);
         gtk_style_context_add_provider_for_screen(gdk_screen_get_default(), GTK_STYLE_PROVIDER(provider), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
-        g_object_unref(provider);
+        darkThemeProvider = provider;
     }
 
 }
@@ -243,12 +271,13 @@ int main(int argc, char** argv) {
     if (std::filesystem::is_regular_file(certificateBundle)) g_setenv("SSL_CERT_FILE", certificateBundle.string().c_str(), true);
     configureGtkRuntime(applicationDirectory);
     gtk_init(&argc, &argv);
+    enableLiveResizePainting();
     gtk_icon_theme_append_search_path(gtk_icon_theme_get_default(), (applicationDirectory / "share" / "icons").string().c_str());
     RC::RCOptions options;
     copySyntaxFiles(applicationDirectory);
     RC::loadRCOptions(options, applicationDirectory);
     setGScriptEditorOptions(options);
-    applyDarkTheme();
+    applyDarkTheme(options.darkmode);
     GtkStatusIcon* trayIcon = gtk_status_icon_new_from_file((applicationDirectory / "images" / "rcicon.png").string().c_str());
     pmTrayIcon = trayIcon;
     pmTrayNormalIcon = (applicationDirectory / "images" / "rcicon.png").string();
@@ -280,6 +309,10 @@ int main(int argc, char** argv) {
         trayRemoteFrame = nullptr;
         remoteFrame->disconnect();
         remoteFrame.reset();
+    }, options.darkmode, [&](bool darkMode) {
+        options.darkmode = darkMode;
+        RC::saveRCOptions(options, applicationDirectory);
+        applyDarkTheme(darkMode);
     });
     switchServer = [&] {
         serverList.reopen();

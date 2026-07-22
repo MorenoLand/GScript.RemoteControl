@@ -19,6 +19,7 @@ namespace RC {
         std::string downloadfolder = ".\\Downloads\\";
         bool dontsavepassword = false;
         bool graphicalmenu = true;
+        bool darkmode = true;
         int chatfontsize = 9;
         bool globalpms = true;
         bool buddytracking = true;

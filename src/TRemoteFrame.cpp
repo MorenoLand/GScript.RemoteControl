@@ -87,7 +87,7 @@ TRemoteFrame::TRemoteFrame(const RC::RCOptions& nextOptions, const std::filesyst
         backgroundPixbuf = gdk_pixbuf_new_from_file(background.string().c_str(), &imageError);
         backgroundImage = gtk_image_new_from_pixbuf(backgroundPixbuf);
         if (imageError != nullptr) g_error_free(imageError);
-        gtk_widget_set_size_request(backgroundImage, 500, 180);
+        gtk_widget_set_size_request(backgroundImage, 1, 180);
         gtk_fixed_put(GTK_FIXED(fixed), backgroundImage, 0, 0);
         const int positions[12][2] = {{5, 15}, {5, 48}, {38, 15}, {71, 15}, {394, 15}, {427, 15}, {460, 15}, {460, 48}, {460, 81}, {460, 114}, {427, 114}, {394, 114}};
         for (int index = 0; index < 12; ++index) {
@@ -155,15 +155,15 @@ TRemoteFrame::TRemoteFrame(const RC::RCOptions& nextOptions, const std::filesyst
     gtk_widget_set_size_request(chatTab, -1, 16);
     gtk_notebook_append_page(GTK_NOTEBOOK(notebook), chatScrolled, chatTab);
     gtk_notebook_set_tab_detachable(GTK_NOTEBOOK(notebook), chatScrolled, false);
-    gtk_notebook_set_tab_reorderable(GTK_NOTEBOOK(notebook), chatScrolled, false);
+    gtk_notebook_set_tab_reorderable(GTK_NOTEBOOK(notebook), chatScrolled, true);
     GtkCssProvider* tabProvider = gtk_css_provider_new();
     const std::string notebookCss = "#RemoteFrame notebook, #RemoteFrame notebook > header, #RemoteFrame notebook > header.top, #RemoteFrame notebook > header.top > tabs { margin: 0; padding: 0; border: 0; background-color: transparent; background-image: none; box-shadow: none; } #RemoteFrame notebook > header, #RemoteFrame notebook > header.top, #RemoteFrame notebook > header.top > tabs { min-height: 0; } #RemoteFrame notebook > stack, #RemoteFrame notebook > stack > scrolledwindow, #RemoteFrame notebook > stack > scrolledwindow > viewport { margin: 0; padding: 0; border: 0; background-color: " + options.colorchatback + "; } #RemoteFrame notebook > header.top > tabs > tab { min-height: 0; min-width: 0; margin: 0 1px 0 0; padding: 3px 7px; background-image: none; background-color: #3d3d3d; border: 1px solid #707070; border-bottom: none; border-radius: 3px 3px 0 0; } #RemoteFrame notebook > header.top > tabs > tab:checked { background-color: #454545; border-color: #909090; } #RemoteFrame notebook > header.top > tabs > tab label { min-width: 0; margin: 0; padding: 0; font-size: 12px; }";
     gtk_css_provider_load_from_data(tabProvider, notebookCss.c_str(), -1, nullptr);
     gtk_style_context_add_provider_for_screen(gdk_screen_get_default(), GTK_STYLE_PROVIDER(tabProvider), GTK_STYLE_PROVIDER_PRIORITY_USER + 1);
     g_object_unref(tabProvider);
     if (graphicalFixed != nullptr) {
-        gtk_widget_set_size_request(notebook, 500, 194);
-        gtk_fixed_put(GTK_FIXED(graphicalFixed), notebook, 0, 146);
+        gtk_widget_set_size_request(notebook, 1, 1);
+        gtk_fixed_put(GTK_FIXED(graphicalFixed), notebook, 0, 156);
     } else gtk_box_pack_start(GTK_BOX(root), notebook, true, true, 0);
 
     editField = gtk_entry_new();
@@ -266,7 +266,7 @@ void TRemoteFrame::onToalls(GtkMenuItem*, gpointer data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
     if (frame->connection == nullptr) return;
     if (frame->toallsWindow == nullptr) frame->toallsWindow = new TToallsWindow();
-    frame->toallsWindow->open(frame->connection);
+    frame->toallsWindow->open(frame->connection, frame->nickname);
 }
 
 void TRemoteFrame::onAccounts(GtkMenuItem*, gpointer data) {
@@ -497,8 +497,10 @@ void TRemoteFrame::onGraphicalAllocate(GtkWidget*, GdkRectangle* allocation, gpo
         gtk_image_set_from_pixbuf(GTK_IMAGE(frame->backgroundImage), scaled);
         if (scaled != nullptr) g_object_unref(scaled);
     }
-    gtk_widget_set_size_request(frame->backgroundImage, allocation->width, 180);
-    gtk_widget_set_size_request(frame->notebook, allocation->width, allocation->height > 146 ? allocation->height - 146 : 1);
+    GtkAllocation backgroundAllocation = {0, 0, allocation->width, 180};
+    GtkAllocation notebookAllocation = {0, 156, allocation->width, std::max(1, allocation->height - 156)};
+    gtk_widget_size_allocate(frame->backgroundImage, &backgroundAllocation);
+    gtk_widget_size_allocate(frame->notebook, &notebookAllocation);
     const int positions[12][2] = {{5, 15}, {5, 48}, {38, 15}, {71, 15}, {394, 15}, {427, 15}, {460, 15}, {460, 48}, {460, 81}, {460, 114}, {427, 114}, {394, 114}};
     for (int index = 4; index < 12; ++index) gtk_fixed_move(GTK_FIXED(frame->graphicalFixed), frame->graphicalButtons[index], allocation->width - (500 - positions[index][0]), positions[index][1]);
 }
@@ -718,6 +720,7 @@ void TRemoteFrame::setNCChannelVisible(bool visible) {
     gtk_container_add(GTK_CONTAINER(scrolled), field);
     channelFields.emplace("NC", field);
     gtk_notebook_append_page(GTK_NOTEBOOK(notebook), scrolled, gtk_label_new("NC"));
+    gtk_notebook_set_tab_reorderable(GTK_NOTEBOOK(notebook), scrolled, true);
     gtk_widget_show_all(scrolled);
 }
 
@@ -781,7 +784,7 @@ void TRemoteFrame::appendChannelMessage(const std::string& channel, const std::s
         gtk_container_add(GTK_CONTAINER(scrolled), field);
         gtk_notebook_append_page(GTK_NOTEBOOK(notebook), scrolled, gtk_label_new(channel.c_str()));
         gtk_notebook_set_tab_detachable(GTK_NOTEBOOK(notebook), scrolled, false);
-        gtk_notebook_set_tab_reorderable(GTK_NOTEBOOK(notebook), scrolled, false);
+        gtk_notebook_set_tab_reorderable(GTK_NOTEBOOK(notebook), scrolled, true);
         gtk_widget_show_all(scrolled);
     }
     GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(field));

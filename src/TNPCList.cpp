@@ -212,7 +212,7 @@ void TNPCList::onDeleteNPC(GtkMenuItem*, gpointer data) {
     if (response == GTK_RESPONSE_OK) rc_delete_npc(list->connection, list->selectedNPCId);
 }
 void TNPCList::showScriptEditor(const char* name, int id, const char* script) {
-    struct EditorState { void* connection; int id; GtkWidget* editor; };
+    struct EditorState { void* connection; int id; std::string backupName; GtkWidget* editor; };
     GtkWidget* dialog = gtk_dialog_new_with_buttons(name, GTK_WINDOW(window), static_cast<GtkDialogFlags>(0), "Apply", GTK_RESPONSE_ACCEPT, "Close", GTK_RESPONSE_CANCEL, nullptr);
     gtk_window_set_destroy_with_parent(GTK_WINDOW(dialog), false);
     gtk_window_set_transient_for(GTK_WINDOW(dialog), nullptr);
@@ -228,7 +228,8 @@ void TNPCList::showScriptEditor(const char* name, int id, const char* script) {
     addEditorFindButton(dialog, editor);
     gtk_text_view_set_monospace(GTK_TEXT_VIEW(editor), true);
     gtk_text_buffer_set_text(GTK_TEXT_BUFFER(sourceBuffer), script, -1);
-    backupEditorText("npcscript", std::to_string(id), script, false);
+    const std::string backupName = name != nullptr && *name != '\0' ? "npc" + std::string(name) : std::to_string(id);
+    backupEditorText("npcscript", backupName, script, false);
     g_object_unref(sourceBuffer);
     GtkWidget* scrolled = gtk_scrolled_window_new(nullptr, nullptr);
     gtk_container_add(GTK_CONTAINER(scrolled), editor);
@@ -237,6 +238,7 @@ void TNPCList::showScriptEditor(const char* name, int id, const char* script) {
     gtk_box_set_spacing(GTK_BOX(content), 0);
     gtk_widget_set_margin_top(scrolled, 0);
     gtk_box_pack_start(GTK_BOX(content), scrolled, true, true, 0);
+    gtk_box_pack_start(GTK_BOX(gtk_dialog_get_action_area(GTK_DIALOG(dialog))), createGScriptEditorLineStatus(editor), true, true, 0);
     g_signal_connect(editor, "key-press-event", G_CALLBACK(+[](GtkWidget*, GdkEventKey* event, gpointer dialog) {
         if ((event->state & GDK_CONTROL_MASK) != 0 && (event->keyval == GDK_KEY_s || event->keyval == GDK_KEY_S)) {
             gtk_dialog_response(GTK_DIALOG(dialog), GTK_RESPONSE_ACCEPT);
@@ -244,7 +246,7 @@ void TNPCList::showScriptEditor(const char* name, int id, const char* script) {
         }
         return static_cast<gboolean>(FALSE);
     }), dialog);
-    auto* state = new EditorState{connection, id, editor};
+    auto* state = new EditorState{connection, id, backupName, editor};
     g_signal_connect(dialog, "response", G_CALLBACK(+[](GtkDialog* responseDialog, gint response, gpointer data) {
         auto* editorState = static_cast<EditorState*>(data);
         if (response == GTK_RESPONSE_ACCEPT) {
@@ -253,7 +255,7 @@ void TNPCList::showScriptEditor(const char* name, int id, const char* script) {
             GtkTextIter end;
             gtk_text_buffer_get_bounds(buffer, &start, &end);
             gchar* updated = gtk_text_buffer_get_text(buffer, &start, &end, false);
-            backupEditorText("npcscript", std::to_string(editorState->id), updated == nullptr ? "" : updated, true);
+            backupEditorText("npcscript", editorState->backupName, updated == nullptr ? "" : updated, true);
             rc_update_npc(editorState->connection, editorState->id, updated);
             g_free(updated);
         } else gtk_widget_destroy(GTK_WIDGET(responseDialog));
@@ -278,6 +280,7 @@ void TNPCList::showFlagsEditor(int id, const char* flags) {
     g_object_unref(sourceBuffer);
     gtk_container_add(GTK_CONTAINER(scrolled), text);
     gtk_box_pack_start(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), scrolled, true, true, 0);
+    gtk_box_pack_start(GTK_BOX(gtk_dialog_get_action_area(GTK_DIALOG(dialog))), createGScriptEditorLineStatus(text), true, true, 0);
     auto* state = new FlagState{connection, id, text};
     g_signal_connect(dialog, "response", G_CALLBACK(+[](GtkDialog* responseDialog, gint response, gpointer data) {
         auto* state = static_cast<FlagState*>(data);

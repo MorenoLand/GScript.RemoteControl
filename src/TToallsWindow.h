@@ -2,12 +2,13 @@
 
 #include <gtk/gtk.h>
 #include <string>
+#include <vector>
 
 class TToallsWindow {
 public:
     TToallsWindow();
     ~TToallsWindow();
-    void open(void* connection);
+    void open(void* connection, const std::string& sender);
     void append(const char* message);
 private:
     static void onSend(GtkEntry*, gpointer data);
@@ -17,4 +18,6 @@ private:
     GtkWidget* chat = nullptr;
     GtkWidget* entry = nullptr;
     void* connection = nullptr;
+    std::string sender;
+    std::vector<std::string> pendingMessages;
 };
