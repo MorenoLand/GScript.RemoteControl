@@ -271,7 +271,7 @@ int main(int argc, char** argv) {
     TStartFrame* startFrame = nullptr;
     std::unique_ptr<TRemoteFrame> remoteFrame;
     std::function<void()> switchServer;
-    TServerList serverList([&] { startFrame->show(); }, [&](void* connection, const std::string& serverName, const std::string& nickname, const std::string& accountName) {
+    TServerList serverList([&] { if (remoteFrame == nullptr) startFrame->show(); }, [&](void* connection, const std::string& serverName, const std::string& nickname, const std::string& accountName) {
         remoteFrame = std::make_unique<TRemoteFrame>(options, applicationDirectory, [&] { serverList.reopen(); }, [&] { switchServer(); }, [&] { serverList.openListServerSettings(); });
         trayRemoteFrame = remoteFrame.get();
         remoteFrame->open(connection, serverName, nickname, accountName);

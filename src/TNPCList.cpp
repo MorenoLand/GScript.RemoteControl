@@ -23,6 +23,7 @@ TNPCList::TNPCList(std::string accountName) : accountName(std::move(accountName)
     gtk_scrolled_window_set_shadow_type(GTK_SCROLLED_WINDOW(scrolled), GTK_SHADOW_IN);
     store = gtk_list_store_new(4, G_TYPE_INT, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING);
     tree = gtk_tree_view_new_with_model(GTK_TREE_MODEL(store));
+    gtk_tree_view_set_search_column(GTK_TREE_VIEW(tree), 1);
     const struct { const char* title; int column; int width; } columns[] = {{"ID", 0, 60}, {"Name", 1, 180}, {"Type", 2, 120}, {"Image", 3, 120}};
     for (const auto& column : columns) {
         GtkCellRenderer* renderer = gtk_cell_renderer_text_new();

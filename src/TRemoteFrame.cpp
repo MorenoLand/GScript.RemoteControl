@@ -541,7 +541,7 @@ void TRemoteFrame::onDisconnected(const char* reason, void* data) {
     if (frame->disconnectHandled) return;
     remoteControlDebugLog("connection disconnected: %s", reason == nullptr ? "Disconnected." : reason);
     frame->disconnectHandled = true;
-    GtkWidget* dialog = gtk_dialog_new_with_buttons("Connection Error", GTK_WINDOW(frame->window), GTK_DIALOG_MODAL, "OK", GTK_RESPONSE_OK, nullptr);
+    GtkWidget* dialog = gtk_dialog_new_with_buttons("Connection Error", GTK_WINDOW(frame->window), static_cast<GtkDialogFlags>(0), "OK", GTK_RESPONSE_OK, nullptr);
     gtk_window_set_default_size(GTK_WINDOW(dialog), 400, 150);
     GtkWidget* message = gtk_label_new(reason == nullptr ? "Disconnected." : reason);
     gtk_label_set_line_wrap(GTK_LABEL(message), true);
@@ -549,11 +549,13 @@ void TRemoteFrame::onDisconnected(const char* reason, void* data) {
     gtk_label_set_yalign(GTK_LABEL(message), 0.5F);
     gtk_widget_set_size_request(message, 360, -1);
     gtk_box_pack_start(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), message, true, true, 12);
+    g_signal_connect(dialog, "response", G_CALLBACK(+[](GtkDialog* errorDialog, gint, gpointer data) {
+        TRemoteFrame* remoteFrame = static_cast<TRemoteFrame*>(data);
+        gtk_widget_destroy(GTK_WIDGET(errorDialog));
+        gtk_widget_hide(remoteFrame->window);
+        remoteFrame->onCloseCallback();
+    }), frame);
     gtk_widget_show_all(dialog);
-    gtk_dialog_run(GTK_DIALOG(dialog));
-    gtk_widget_destroy(dialog);
-    gtk_widget_hide(frame->window);
-    frame->onCloseCallback();
 }
 
 void TRemoteFrame::onMessage(const char* message, void* data) { static_cast<TRemoteFrame*>(data)->appendChat(message == nullptr ? "" : message); }

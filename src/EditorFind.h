@@ -6,56 +6,65 @@
 #include <string>
 
 inline void openEditorFind(GtkWidget* editor) {
-    GtkWidget* dialog = gtk_dialog_new_with_buttons("Find", GTK_WINDOW(gtk_widget_get_toplevel(editor)), GTK_DIALOG_MODAL, "Cancel", GTK_RESPONSE_CANCEL, "Find", GTK_RESPONSE_ACCEPT, nullptr);
+    GtkWidget* dialog = gtk_dialog_new_with_buttons("Find", GTK_WINDOW(gtk_widget_get_toplevel(editor)), static_cast<GtkDialogFlags>(0), "Cancel", GTK_RESPONSE_CANCEL, "Find", GTK_RESPONSE_ACCEPT, nullptr);
     GtkWidget* entry = gtk_entry_new();
     gtk_widget_set_size_request(entry, 260, -1);
     gtk_box_pack_start(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), entry, false, false, 8);
-    gtk_widget_show_all(dialog);
-    if (gtk_dialog_run(GTK_DIALOG(dialog)) == GTK_RESPONSE_ACCEPT) {
-        const char* query = gtk_entry_get_text(GTK_ENTRY(entry));
-        if (query != nullptr && *query != '\0') {
-            GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(editor));
-            GtkTextIter start;
-            GtkTextIter matchStart;
-            GtkTextIter matchEnd;
-            gtk_text_buffer_get_iter_at_mark(buffer, &start, gtk_text_buffer_get_insert(buffer));
-            gboolean found = gtk_text_iter_forward_search(&start, query, GTK_TEXT_SEARCH_CASE_INSENSITIVE, &matchStart, &matchEnd, nullptr);
-            if (!found) {
-                gtk_text_buffer_get_start_iter(buffer, &start);
-                found = gtk_text_iter_forward_search(&start, query, GTK_TEXT_SEARCH_CASE_INSENSITIVE, &matchStart, &matchEnd, nullptr);
-            }
-            if (found) {
-                gtk_text_buffer_select_range(buffer, &matchStart, &matchEnd);
-                gtk_text_view_scroll_to_iter(GTK_TEXT_VIEW(editor), &matchStart, 0.2, false, 0.0, 0.0);
+    g_object_set_data(G_OBJECT(dialog), "find-entry", entry);
+    g_signal_connect(dialog, "response", G_CALLBACK(+[](GtkDialog* responseDialog, gint response, gpointer userData) {
+        if (response == GTK_RESPONSE_ACCEPT) {
+            GtkWidget* findEntry = static_cast<GtkWidget*>(g_object_get_data(G_OBJECT(responseDialog), "find-entry"));
+            const char* query = gtk_entry_get_text(GTK_ENTRY(findEntry));
+            if (query != nullptr && *query != '\0') {
+                GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(userData));
+                GtkTextIter start;
+                GtkTextIter matchStart;
+                GtkTextIter matchEnd;
+                gtk_text_buffer_get_iter_at_mark(buffer, &start, gtk_text_buffer_get_insert(buffer));
+                gboolean found = gtk_text_iter_forward_search(&start, query, GTK_TEXT_SEARCH_CASE_INSENSITIVE, &matchStart, &matchEnd, nullptr);
+                if (!found) {
+                    gtk_text_buffer_get_start_iter(buffer, &start);
+                    found = gtk_text_iter_forward_search(&start, query, GTK_TEXT_SEARCH_CASE_INSENSITIVE, &matchStart, &matchEnd, nullptr);
+                }
+                if (found) {
+                    gtk_text_buffer_select_range(buffer, &matchStart, &matchEnd);
+                    gtk_text_view_scroll_to_iter(GTK_TEXT_VIEW(userData), &matchStart, 0.2, false, 0.0, 0.0);
+                }
             }
         }
-    }
-    gtk_widget_destroy(dialog);
+        gtk_widget_destroy(GTK_WIDGET(responseDialog));
+    }), editor);
+    gtk_widget_show_all(dialog);
 }
 
 inline void editorFind(GtkButton*, gpointer data) { openEditorFind(GTK_WIDGET(data)); }
 
 inline void openEditorGoToLine(GtkWidget* editor) {
-    GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(editor));
     GtkTextIter current;
+    GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(editor));
     gtk_text_buffer_get_iter_at_mark(buffer, &current, gtk_text_buffer_get_insert(buffer));
-    GtkWidget* dialog = gtk_dialog_new_with_buttons("Go to line", GTK_WINDOW(gtk_widget_get_toplevel(editor)), GTK_DIALOG_MODAL, "Cancel", GTK_RESPONSE_CANCEL, "Go", GTK_RESPONSE_ACCEPT, nullptr);
+    GtkWidget* dialog = gtk_dialog_new_with_buttons("Go to line", GTK_WINDOW(gtk_widget_get_toplevel(editor)), static_cast<GtkDialogFlags>(0), "Cancel", GTK_RESPONSE_CANCEL, "Go", GTK_RESPONSE_ACCEPT, nullptr);
     GtkWidget* entry = gtk_entry_new();
     gtk_entry_set_input_purpose(GTK_ENTRY(entry), GTK_INPUT_PURPOSE_DIGITS);
     gtk_entry_set_text(GTK_ENTRY(entry), std::to_string(gtk_text_iter_get_line(&current) + 1).c_str());
     gtk_widget_set_size_request(entry, 120, -1);
     gtk_box_pack_start(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), entry, false, false, 8);
+    g_object_set_data(G_OBJECT(dialog), "line-entry", entry);
+    g_signal_connect(dialog, "response", G_CALLBACK(+[](GtkDialog* responseDialog, gint response, gpointer userData) {
+        if (response == GTK_RESPONSE_ACCEPT) {
+            GtkWidget* lineEntry = static_cast<GtkWidget*>(g_object_get_data(G_OBJECT(responseDialog), "line-entry"));
+            GtkTextBuffer* textBuffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(userData));
+            const long requested = std::strtol(gtk_entry_get_text(GTK_ENTRY(lineEntry)), nullptr, 10);
+            const int lineCount = gtk_text_buffer_get_line_count(textBuffer);
+            const int line = std::clamp(static_cast<int>(requested) - 1, 0, std::max(0, lineCount - 1));
+            GtkTextIter target;
+            gtk_text_buffer_get_iter_at_line(textBuffer, &target, line);
+            gtk_text_buffer_place_cursor(textBuffer, &target);
+            gtk_text_view_scroll_to_iter(GTK_TEXT_VIEW(userData), &target, 0.2, false, 0.0, 0.0);
+        }
+        gtk_widget_destroy(GTK_WIDGET(responseDialog));
+    }), editor);
     gtk_widget_show_all(dialog);
-    if (gtk_dialog_run(GTK_DIALOG(dialog)) == GTK_RESPONSE_ACCEPT) {
-        const long requested = std::strtol(gtk_entry_get_text(GTK_ENTRY(entry)), nullptr, 10);
-        const int lineCount = gtk_text_buffer_get_line_count(buffer);
-        const int line = std::clamp(static_cast<int>(requested) - 1, 0, std::max(0, lineCount - 1));
-        GtkTextIter target;
-        gtk_text_buffer_get_iter_at_line(buffer, &target, line);
-        gtk_text_buffer_place_cursor(buffer, &target);
-        gtk_text_view_scroll_to_iter(GTK_TEXT_VIEW(editor), &target, 0.2, false, 0.0, 0.0);
-    }
-    gtk_widget_destroy(dialog);
 }
 
 inline void editorGoToLine(GtkButton*, gpointer data) { openEditorGoToLine(GTK_WIDGET(data)); }
