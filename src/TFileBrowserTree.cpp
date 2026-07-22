@@ -423,7 +423,9 @@ void TFileBrowserTree::onUpload(GtkMenuItem*, gpointer data) {
 void TFileBrowserTree::onFileReceived(const char* path, const void* content, int length, void* data) {
     TFileBrowserTree* browser = static_cast<TFileBrowserTree*>(data);
     if (path == nullptr || content == nullptr || length < 0) return;
-    if (browser->pendingEditPath == path) {
+    const std::string receivedPath(path);
+    const bool editPathMatches = browser->pendingEditPath == receivedPath || receivedPath.ends_with("/" + browser->pendingEditPath) || browser->pendingEditPath.ends_with("/" + receivedPath);
+    if (!browser->pendingEditPath.empty() && editPathMatches) {
         browser->pendingEditPath.clear();
         browser->showTextEditor(path, content, length);
         return;

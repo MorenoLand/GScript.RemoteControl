@@ -6,6 +6,7 @@
 #include "TServerList.h"
 #include "TStartFrame.h"
 
+#include <algorithm>
 #include <array>
 #include <cstdio>
 #include <filesystem>
@@ -27,6 +28,7 @@
 
 GtkStatusIcon* pmTrayIcon = nullptr;
 GtkWidget* trayMenu = nullptr;
+GtkWidget* trayServerListItem = nullptr;
 std::string pmTrayNormalIcon;
 std::string pmTrayAlertIcon;
 guint pmTrayBlinkSource = 0;
@@ -41,7 +43,47 @@ namespace {
 
 #ifdef _WIN32
     constexpr int ServerListHotkeyId = 0x5243;
+    constexpr UINT TrayMenuOpenId = 1;
+    constexpr UINT TrayMenuServerListId = 2;
+    constexpr UINT TrayMenuQuitId = 3;
     HWND serverListHotkeyWindow = nullptr;
+    const wchar_t* trayMenuText(UINT itemId) {
+        if (itemId == TrayMenuOpenId) return L"Open";
+        if (itemId == TrayMenuServerListId) return L"Server List";
+        if (itemId == TrayMenuQuitId) return L"Quit";
+        return L"";
+    }
+    LRESULT CALLBACK trayMenuWindowProcedure(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
+        if (message == WM_MEASUREITEM) {
+            auto* measure = reinterpret_cast<MEASUREITEMSTRUCT*>(lParam);
+            if (measure->CtlType != ODT_MENU) return FALSE;
+            HDC dc = GetDC(window);
+            HFONT font = static_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT));
+            HGDIOBJ oldFont = SelectObject(dc, font);
+            SIZE size = {};
+            GetTextExtentPoint32W(dc, trayMenuText(measure->itemID), -1, &size);
+            SelectObject(dc, oldFont);
+            ReleaseDC(window, dc);
+            measure->itemWidth = static_cast<UINT>(size.cx + 42);
+            measure->itemHeight = static_cast<UINT>(std::max(24L, size.cy + 10));
+            return TRUE;
+        }
+        if (message == WM_DRAWITEM) {
+            auto* draw = reinterpret_cast<DRAWITEMSTRUCT*>(lParam);
+            if (draw->CtlType != ODT_MENU) return FALSE;
+            const bool selected = (draw->itemState & ODS_SELECTED) != 0;
+            HBRUSH background = CreateSolidBrush(selected ? RGB(53, 115, 220) : RGB(59, 59, 59));
+            FillRect(draw->hDC, &draw->rcItem, background);
+            DeleteObject(background);
+            SetBkMode(draw->hDC, TRANSPARENT);
+            SetTextColor(draw->hDC, RGB(255, 255, 255));
+            RECT textBounds = draw->rcItem;
+            textBounds.left += 18;
+            DrawTextW(draw->hDC, trayMenuText(draw->itemID), -1, &textBounds, DT_SINGLELINE | DT_VCENTER | DT_LEFT);
+            return TRUE;
+        }
+        return DefWindowProcW(window, message, wParam, lParam);
+    }
     GdkFilterReturn onWindowsMessage(GdkXEvent* event, GdkEvent*, gpointer) {
         MSG* message = static_cast<MSG*>(event);
         if (message->message == WM_HOTKEY && message->wParam == ServerListHotkeyId) {
@@ -86,7 +128,27 @@ namespace {
     }
 
     void onTrayPopup(GtkStatusIcon* icon, guint button, guint32 activateTime, gpointer) {
+#ifdef _WIN32
+        HMENU menu = CreatePopupMenu();
+        AppendMenuW(menu, MF_OWNERDRAW, TrayMenuOpenId, L"Open");
+        const bool canOpenServerList = trayRemoteFrame != nullptr && trayRemoteFrame->isNCAuthenticated();
+        if (canOpenServerList) AppendMenuW(menu, MF_OWNERDRAW, TrayMenuServerListId, L"Server List");
+        AppendMenuW(menu, MF_OWNERDRAW, TrayMenuQuitId, L"Quit");
+        POINT cursor;
+        GetCursorPos(&cursor);
+        HWND owner = CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE, L"STATIC", L"", WS_POPUP, 0, 0, 0, 0, nullptr, nullptr, GetModuleHandleW(nullptr), nullptr);
+        SetWindowLongPtrW(owner, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(trayMenuWindowProcedure));
+        SetForegroundWindow(owner);
+        const UINT command = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON | TPM_LEFTALIGN | TPM_BOTTOMALIGN, cursor.x, cursor.y, 0, owner, nullptr);
+        DestroyMenu(menu);
+        DestroyWindow(owner);
+        if (command == TrayMenuOpenId) onTrayOpen(nullptr, nullptr);
+        else if (command == TrayMenuServerListId) onTrayServerList(nullptr, nullptr);
+        else if (command == TrayMenuQuitId) onTrayQuit(nullptr, nullptr);
+#else
+        gtk_widget_set_visible(trayServerListItem, trayRemoteFrame != nullptr && trayRemoteFrame->isNCAuthenticated());
         gtk_menu_popup(GTK_MENU(trayMenu), nullptr, nullptr, gtk_status_icon_position_menu, icon, button, activateTime);
+#endif
     }
 
     void copySyntaxFiles(const std::filesystem::path& applicationDirectory) {
@@ -195,13 +257,13 @@ int main(int argc, char** argv) {
     gtk_status_icon_set_visible(trayIcon, true);
     trayMenu = gtk_menu_new();
     GtkWidget* openTrayItem = gtk_menu_item_new_with_label("Open");
-    GtkWidget* serverListTrayItem = gtk_menu_item_new_with_label("Server List");
+    trayServerListItem = gtk_menu_item_new_with_label("Server List");
     GtkWidget* quitTrayItem = gtk_menu_item_new_with_label("Quit");
     gtk_menu_shell_append(GTK_MENU_SHELL(trayMenu), openTrayItem);
-    gtk_menu_shell_append(GTK_MENU_SHELL(trayMenu), serverListTrayItem);
+    gtk_menu_shell_append(GTK_MENU_SHELL(trayMenu), trayServerListItem);
     gtk_menu_shell_append(GTK_MENU_SHELL(trayMenu), quitTrayItem);
     g_signal_connect(openTrayItem, "activate", G_CALLBACK(onTrayOpen), nullptr);
-    g_signal_connect(serverListTrayItem, "activate", G_CALLBACK(onTrayServerList), nullptr);
+    g_signal_connect(trayServerListItem, "activate", G_CALLBACK(onTrayServerList), nullptr);
     g_signal_connect(quitTrayItem, "activate", G_CALLBACK(onTrayQuit), nullptr);
     gtk_widget_show_all(trayMenu);
     g_signal_connect(trayIcon, "activate", G_CALLBACK(onTrayActivate), nullptr);

@@ -28,6 +28,7 @@ public:
     void disconnect();
     void show();
     bool openLatestPrivateMessage();
+    bool isNCAuthenticated() const;
 
 private:
     static void onSend(GtkButton*, gpointer data);

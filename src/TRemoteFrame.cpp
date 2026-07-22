@@ -1,6 +1,7 @@
 #include "TRemoteFrame.h"
 #include "Backup.h"
 #include "Debug.h"
+#include "GScriptEditor.h"
 #include "RCOptions.h"
 #include "TFileBrowserTree.h"
 #include "TPlayerList.h"
@@ -13,6 +14,7 @@
 
 #include <grclib.h>
 #include <IEnums.h>
+#include <gtksourceview/gtksource.h>
 
 #include <ctime>
 #include <fstream>
@@ -240,6 +242,8 @@ void TRemoteFrame::disconnect() {
     connection = nullptr;
 }
 
+bool TRemoteFrame::isNCAuthenticated() const { return connection != nullptr && rc_is_nc_authenticated(connection) != 0; }
+
 void TRemoteFrame::show() {
     gtk_widget_show_all(window);
     gtk_window_present(GTK_WINDOW(window));
@@ -384,7 +388,27 @@ void TRemoteFrame::onLocalNPCSubmit(GtkDialog* dialog, gint response, gpointer d
 
 void TRemoteFrame::onLocalNPCData(const char*, const char* content, void* data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
-    if (content != nullptr && content[0] != '\0') frame->appendChat(content);
+    if (content == nullptr || content[0] == '\0') return;
+    GtkWidget* dialog = gtk_dialog_new_with_buttons("Local NPCs", GTK_WINDOW(frame->window), GTK_DIALOG_DESTROY_WITH_PARENT, "Close", GTK_RESPONSE_CLOSE, nullptr);
+    gtk_window_set_default_size(GTK_WINDOW(dialog), 520, 380);
+    GtkWidget* scrolled = gtk_scrolled_window_new(nullptr, nullptr);
+    GtkSourceLanguage* language = gtk_source_language_manager_get_language(gtk_source_language_manager_get_default(), "ini");
+    GtkSourceBuffer* buffer = language != nullptr ? gtk_source_buffer_new_with_language(language) : gtk_source_buffer_new(nullptr);
+    GtkSourceStyleScheme* scheme = gtk_source_style_scheme_manager_get_scheme(gtk_source_style_scheme_manager_get_default(), "graalcolors");
+    if (scheme != nullptr) gtk_source_buffer_set_style_scheme(buffer, scheme);
+    GtkWidget* text = gtk_source_view_new_with_buffer(buffer);
+    configureGScriptEditor(text);
+    gtk_text_view_set_editable(GTK_TEXT_VIEW(text), false);
+    gtk_text_view_set_cursor_visible(GTK_TEXT_VIEW(text), false);
+    gtk_text_view_set_monospace(GTK_TEXT_VIEW(text), true);
+    gchar* validContent = g_utf8_make_valid(content, -1);
+    gtk_text_buffer_set_text(GTK_TEXT_BUFFER(buffer), validContent, -1);
+    g_free(validContent);
+    g_object_unref(buffer);
+    gtk_container_add(GTK_CONTAINER(scrolled), text);
+    gtk_box_pack_start(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), scrolled, true, true, 0);
+    g_signal_connect(dialog, "response", G_CALLBACK(+[](GtkDialog* responseDialog, gint, gpointer) { gtk_widget_destroy(GTK_WIDGET(responseDialog)); }), nullptr);
+    gtk_widget_show_all(dialog);
 }
 
 void TRemoteFrame::onServerOptions(GtkMenuItem*, gpointer data) {
@@ -557,6 +581,10 @@ void TRemoteFrame::onServerData(const char* type, const char* content, void* dat
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
     const std::string value = content == nullptr ? "" : content;
     if (type != nullptr && std::string(type) == "toall" && frame->toallsWindow != nullptr) frame->toallsWindow->append(value.c_str());
+    else if (type != nullptr && std::string(type) == "nc_message") {
+        if (frame->options.separatenc) frame->appendChannelMessage("NC", value);
+        else frame->appendChat(value);
+    }
     else if (type != nullptr && std::string(type) == "options" && frame->serverOptionsEditor != nullptr) frame->serverOptionsEditor->setContent(value.c_str());
     else if (type != nullptr && std::string(type) == "flags" && frame->serverFlagsEditor != nullptr) frame->serverFlagsEditor->setContent(value.c_str());
     else if (type != nullptr && std::string(type) == "folder_config" && frame->folderConfigEditor != nullptr) frame->folderConfigEditor->setContent(value.c_str());
