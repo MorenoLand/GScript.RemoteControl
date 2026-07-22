@@ -28,13 +28,17 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: MorenoLand/GScript.GRClib
+          token: ${{ secrets.RC_RELEASES_TOKEN }}
           path: grclib
       - name: Install dependencies
         run: ${{ matrix.setup }}
       - name: Configure
-        run: cmake -S remotecontrol -B remotecontrol/build -G Ninja -DGRCLIB_SOURCE_DIR=${{ github.workspace }}/grclib
+        run: cmake -S remotecontrol -B remotecontrol/build -G Ninja -DCMAKE_BUILD_TYPE=Release -DGRCLIB_SOURCE_DIR=${{ github.workspace }}/grclib
       - name: Build
-        run: cmake --build remotecontrol/build --parallel
+        run: |
+          cmake --build remotecontrol/build --parallel
+          strip remotecontrol/bin/RemoteControl
+          find remotecontrol/build/grclib -type f \( -name 'grclib.so' -o -name 'grclib*.dylib' \) -exec strip {} +
       - name: Test
         run: ctest --test-dir remotecontrol/build --output-on-failure
       - name: Stage Linux bundle
@@ -44,6 +48,7 @@ jobs:
           mkdir -p "$bundle/lib"
           grclib="$(find grclib/bin -type f -name 'grclib.so*' -print -quit)"
           test -n "$grclib"
+          strip "$grclib"
           cp remotecontrol/bin/RemoteControl "$bundle/"
           cp "$grclib" "$bundle/lib/"
           cp -a remotecontrol/bin/images remotecontrol/bin/language-specs remotecontrol/bin/sounds "$bundle/"
@@ -79,6 +84,7 @@ jobs:
           mkdir -p "$bundle/lib"
           grclib="$(find grclib/bin -type f -name 'grclib*.dylib' -print -quit)"
           test -n "$grclib"
+          strip "$grclib"
           cp remotecontrol/bin/RemoteControl "$bundle/"
           cp -a remotecontrol/bin/images remotecontrol/bin/language-specs remotecontrol/bin/sounds "$bundle/"
           cp remotecontrol/bin/control2config.txt "$bundle/"
@@ -103,6 +109,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: MorenoLand/GScript.GRClib
+          token: ${{ secrets.RC_RELEASES_TOKEN }}
           path: grclib
       - uses: msys2/setup-msys2@v2
         with:
@@ -115,8 +122,9 @@ jobs:
       - name: Configure, build, and test
         shell: msys2 {0}
         run: |
-          cmake -S remotecontrol -B remotecontrol/build -G Ninja -DGRCLIB_SOURCE_DIR="$PWD/grclib"
+          cmake -S remotecontrol -B remotecontrol/build -G Ninja -DCMAKE_BUILD_TYPE=Release -DGRCLIB_SOURCE_DIR="$PWD/grclib"
           cmake --build remotecontrol/build --parallel
+          strip remotecontrol/bin/RemoteControl.exe remotecontrol/bin/grclib.dll
           ctest --test-dir remotecontrol/build --output-on-failure
           cd remotecontrol/bin
           zip -r ../../RemoteControl-windows-x86_64.zip .
@@ -148,10 +156,22 @@ jobs:
           cd releases-repo
           mkdir -p "releases/$build_id"
           cp ../artifacts/* "releases/$build_id/"
-          (
-            cd "releases/$build_id"
-            sha256sum * > SHA256SUMS.txt
-          )
+          cat > "releases/$build_id/RELEASE_INFO.md" <<EOF
+          # Remote Control Production Build
+
+          ## Build Information
+
+          - Build date: $(date -u '+%Y-%m-%d %H:%M:%S UTC')
+          - Source commit: ${GITHUB_SHA}
+          - Build type: Release (optimized, stripped)
+
+          ## Packages
+
+          Each package has a matching `.sha256` file for verification.
+          EOF
+          for bundle in "releases/$build_id"/*.zip "releases/$build_id"/*.AppImage "releases/$build_id"/*.dmg; do
+            [ -f "$bundle" ] && sha256sum "$bundle" > "$bundle.sha256"
+          done
           git rm -r --ignore-unmatch releases/latest
           mkdir -p releases/latest
           cp "releases/$build_id"/* releases/latest/
@@ -162,29 +182,15 @@ jobs:
             echo
             echo "Automated builds of an independent GTK3 Remote Control project. It is not affiliated with Toonslab or an official client release."
             echo
-            echo "## Latest SHA-256"
-            echo
-            echo '```text'
-            cat releases/latest/SHA256SUMS.txt
-            echo '```'
+            echo "Each package has a neighboring `.sha256` checksum file."
             echo
             echo "## License"
             echo
             echo "The reconstructed source code is MIT licensed. Original Graal artwork, logos, and other supplied runtime assets remain the property of their respective owners."
           } > README.md
-          {
-            echo "# SHA-256 checksums"
-            for manifest in $(find releases -mindepth 2 -maxdepth 2 -name SHA256SUMS.txt -not -path 'releases/latest/*' | sort); do
-              echo
-              echo "## $(basename "$(dirname "$manifest")")"
-              echo
-              echo '```text'
-              cat "$manifest"
-              echo '```'
-            done
-          } > hashes.md
+          git rm --ignore-unmatch hashes.md
           git config user.name "GScript RemoteControl CI"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add LICENSE README.md hashes.md releases
+          git add LICENSE README.md releases
           git diff --cached --quiet || git commit -m "Publish Remote Control build $build_id"
           git push origin main
