@@ -382,8 +382,9 @@ TRemoteFrame::~TRemoteFrame() {
     delete npcList;
 }
 
-void TRemoteFrame::open(void* nextConnection, const std::string& serverName, const std::string& nickname, const std::string& accountName) {
+void TRemoteFrame::open(void* nextConnection, int serverIndex, const std::string& serverName, const std::string& nickname, const std::string& accountName) {
     connection = nextConnection;
+    currentServerIndex = serverIndex;
     this->serverName = serverName;
     trayPlayerCount = -1;
     setBackupServerName(serverName);
@@ -729,6 +730,10 @@ void TRemoteFrame::onConnected(void* data) {
 void TRemoteFrame::onDisconnected(const char* reason, void* data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
     remote_control_set_tray_label(nullptr, 0);
+    if (frame->suppressReconnectDisconnect) {
+        frame->suppressReconnectDisconnect = false;
+        return;
+    }
     if (frame->disconnectHandled) return;
     remoteControlDebugLog("connection disconnected: %s", reason == nullptr ? "You have been disconnected!" : reason);
     frame->disconnectHandled = true;
@@ -1033,6 +1038,21 @@ void TRemoteFrame::send() {
     if (chatHistory.empty() || chatHistory.front() != message) chatHistory.insert(chatHistory.begin(), message);
     if (chatHistory.size() > 30) chatHistory.pop_back();
     chatHistoryIndex = -1;
+    if (message == "/rnc") {
+        reconnectNPCServer();
+        gtk_entry_set_text(GTK_ENTRY(editField), "");
+        return;
+    }
+    if (message == "/dnc") {
+        disconnectNPCServer();
+        gtk_entry_set_text(GTK_ENTRY(editField), "");
+        return;
+    }
+    if (message == "/reconnect" || message == "/rc") {
+        reconnectServer();
+        gtk_entry_set_text(GTK_ENTRY(editField), "");
+        return;
+    }
     if (message.rfind("/scripthelp2", 0) == 0 && (message.size() == 12 || std::isspace(static_cast<unsigned char>(message[12])) != 0)) {
         std::string query = message.substr(12);
         const std::size_t first = query.find_first_not_of(" \t");
@@ -1044,4 +1064,27 @@ void TRemoteFrame::send() {
     }
     if (!rc_execute(connection, message.c_str())) appendChat(rc_last_error(connection));
     gtk_entry_set_text(GTK_ENTRY(editField), "");
+}
+
+void TRemoteFrame::reconnectNPCServer() {
+    if (connection == nullptr) return;
+    if (rc_is_nc_connected(connection) != 0) rc_disconnect_nc(connection);
+    ncConnectionAttempted = true;
+    if (!rc_connect_to_nc_server(connection)) appendChat(rc_last_error(connection));
+}
+
+void TRemoteFrame::disconnectNPCServer() {
+    if (connection == nullptr) return;
+    if (!rc_disconnect_nc(connection)) appendChat(rc_last_error(connection));
+    ncConnectionAttempted = true;
+}
+
+void TRemoteFrame::reconnectServer() {
+    if (connection == nullptr || currentServerIndex < 0) return;
+    suppressReconnectDisconnect = rc_is_connected(connection) != 0;
+    ncConnectionAttempted = false;
+    if (!rc_connect_to_server(connection, currentServerIndex)) {
+        suppressReconnectDisconnect = false;
+        appendChat(rc_last_error(connection));
+    }
 }

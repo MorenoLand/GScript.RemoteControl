@@ -37,7 +37,7 @@ namespace {
 
 }
 
-TServerList::TServerList(std::function<void()> onClose, std::function<void(void*, const std::string&, const std::string&, const std::string&)> onConnected, std::function<void()> onServerSelected, bool nextDarkMode, std::function<void(bool)> onDarkModeChanged) : onCloseCallback(std::move(onClose)), onConnectedCallback(std::move(onConnected)), onServerSelectedCallback(std::move(onServerSelected)), onDarkModeChangedCallback(std::move(onDarkModeChanged)), darkMode(nextDarkMode) {
+TServerList::TServerList(std::function<void()> onClose, std::function<void(void*, int, const std::string&, const std::string&, const std::string&)> onConnected, std::function<void()> onServerSelected, bool nextDarkMode, std::function<void(bool)> onDarkModeChanged) : onCloseCallback(std::move(onClose)), onConnectedCallback(std::move(onConnected)), onServerSelectedCallback(std::move(onServerSelected)), onDarkModeChangedCallback(std::move(onDarkModeChanged)), darkMode(nextDarkMode) {
     listserverHost = defaultListserverHost;
 #ifdef _WIN32
     HKEY key = nullptr;
@@ -377,7 +377,7 @@ void TServerList::connect() {
         void* remoteConnection = connection;
         connection = nullptr;
         gtk_widget_hide(window);
-        onConnectedCallback(remoteConnection, entries[index].name, nickname, account);
+        onConnectedCallback(remoteConnection, index, entries[index].name, nickname, account);
     }
     else {
         const char* reason = rc_last_error(connection);

@@ -25,7 +25,7 @@ public:
     TRemoteFrame(const RC::RCOptions& options, const std::filesystem::path& applicationDirectory, std::function<void()> onClose, std::function<void()> onListServer, std::function<void()> onListServerSettings);
     ~TRemoteFrame();
 
-    void open(void* connection, const std::string& serverName, const std::string& nickname, const std::string& accountName);
+    void open(void* connection, int serverIndex, const std::string& serverName, const std::string& nickname, const std::string& accountName);
     void disconnect();
     void signOut();
     void show();
@@ -85,6 +85,9 @@ private:
     void applyEmotes(GtkTextBuffer* buffer, gint startOffset, const std::string& message);
     bool applyAlertTag(std::string& message, bool allowUrgency);
     void send();
+    void reconnectNPCServer();
+    void disconnectNPCServer();
+    void reconnectServer();
     void addMenuItem(GtkWidget* menu, const char* label, GCallback callback = nullptr);
     void graphicalAction(int index);
 
@@ -117,6 +120,7 @@ private:
     gint64 backgroundWebPNextFrame = 0;
     int graphicalBackgroundWidth = 500;
     void* connection = nullptr;
+    int currentServerIndex = -1;
     std::string serverName;
     std::string nickname;
     std::string accountName;
@@ -133,6 +137,7 @@ private:
     gint64 nextNcConnectAttempt = 0;
     bool ncConnectionAttempted = false;
     bool disconnectHandled = false;
+    bool suppressReconnectDisconnect = false;
     TPlayerList* playerList = nullptr;
     TFileBrowserTree* fileBrowser = nullptr;
     TScriptList* classList = nullptr;

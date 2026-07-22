@@ -268,11 +268,18 @@ TPlayerList::TPlayerList(const std::filesystem::path& nextApplicationDirectory, 
     GtkCellRenderer* imageRenderer = gtk_cell_renderer_pixbuf_new();
     GtkTreeViewColumn* imageColumn = gtk_tree_view_column_new_with_attributes("", imageRenderer, "pixbuf", PlayerIconColumn, nullptr);
     gtk_tree_view_column_set_sizing(imageColumn, GTK_TREE_VIEW_COLUMN_FIXED);
-    gtk_tree_view_column_set_fixed_width(imageColumn, 20);
+    gtk_tree_view_column_set_fixed_width(imageColumn, 24);
+    gtk_tree_view_column_set_alignment(imageColumn, 0.0F);
     gtk_tree_view_column_set_sort_column_id(imageColumn, PlayerIconColumn);
     gtk_tree_view_append_column(GTK_TREE_VIEW(tree), imageColumn);
     gtk_tree_sortable_set_sort_func(GTK_TREE_SORTABLE(store), PlayerIconColumn, comparePlayerIconColumn, nullptr, nullptr);
     gtk_tree_sortable_set_sort_column_id(GTK_TREE_SORTABLE(store), PlayerIconColumn, GTK_SORT_ASCENDING);
+    g_signal_connect(store, "sort-column-changed", G_CALLBACK(+[](GtkTreeSortable* sortable, gpointer) {
+        gint column = GTK_TREE_SORTABLE_DEFAULT_SORT_COLUMN_ID;
+        GtkSortType order = GTK_SORT_ASCENDING;
+        if (gtk_tree_sortable_get_sort_column_id(sortable, &column, &order) && column == PlayerIconColumn && order != GTK_SORT_ASCENDING)
+            gtk_tree_sortable_set_sort_column_id(sortable, PlayerIconColumn, GTK_SORT_ASCENDING);
+    }), nullptr);
     const struct { const char* title; int column; } columns[] = {{"Nick", PlayerNickColumn}, {"Account", PlayerAccountColumn}, {"Level", PlayerLevelColumn}, {"ID", PlayerIdColumn}};
     for (const auto& column : columns) {
         GtkCellRenderer* renderer = gtk_cell_renderer_text_new();

@@ -12,7 +12,7 @@ struct RCConnection;
 
 class TServerList {
 public:
-    TServerList(std::function<void()> onClose, std::function<void(void*, const std::string&, const std::string&, const std::string&)> onConnected, std::function<void()> onServerSelected, bool darkMode, std::function<void(bool)> onDarkModeChanged);
+    TServerList(std::function<void()> onClose, std::function<void(void*, int, const std::string&, const std::string&, const std::string&)> onConnected, std::function<void()> onServerSelected, bool darkMode, std::function<void(bool)> onDarkModeChanged);
     ~TServerList();
 
     void open(const std::string& account, const std::string& password, const std::string& nickname);
@@ -52,7 +52,7 @@ private:
     void setListServer(const std::string& host, int port);
 
     std::function<void()> onCloseCallback;
-    std::function<void(void*, const std::string&, const std::string&, const std::string&)> onConnectedCallback;
+    std::function<void(void*, int, const std::string&, const std::string&, const std::string&)> onConnectedCallback;
     std::function<void()> onServerSelectedCallback;
     std::function<void(bool)> onDarkModeChangedCallback;
     GtkWidget* window = nullptr;
