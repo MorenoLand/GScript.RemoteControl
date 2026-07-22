@@ -341,7 +341,14 @@ gboolean TPlayerList::onButtonPress(GtkWidget* widget, GdkEventButton* event, gp
     g_signal_connect(warp, "activate", G_CALLBACK(+[](GtkMenuItem*, gpointer userData) { static_cast<TPlayerList*>(userData)->warpSelectedPlayer(); }), data);
     g_signal_connect(updateLevel, "activate", G_CALLBACK(+[](GtkMenuItem*, gpointer userData) { static_cast<TPlayerList*>(userData)->updateSelectedPlayerLevel(); }), data);
     g_signal_connect(adminMessage, "activate", G_CALLBACK(+[](GtkMenuItem*, gpointer userData) { static_cast<TPlayerList*>(userData)->adminMessageSelectedPlayer(); }), data);
-    g_signal_connect(menu, "deactivate", G_CALLBACK(+[](GtkWidget* menuWidget, gpointer) { gtk_widget_destroy(menuWidget); }), nullptr);
+    g_signal_connect(menu, "deactivate", G_CALLBACK(+[](GtkWidget* menuWidget, gpointer) {
+        g_object_ref(menuWidget);
+        g_idle_add_full(G_PRIORITY_DEFAULT_IDLE, +[](gpointer menuData) {
+            gtk_widget_destroy(GTK_WIDGET(menuData));
+            g_object_unref(menuData);
+            return G_SOURCE_REMOVE;
+        }, menuWidget, nullptr);
+    }), nullptr);
     gtk_widget_show_all(menu);
     gtk_menu_popup_at_pointer(GTK_MENU(menu), reinterpret_cast<GdkEvent*>(event));
     return true;
@@ -768,7 +775,14 @@ gboolean TPlayerList::onServerButtonPress(GtkWidget* widget, GdkEventButton* eve
             g_free(account);
             g_free(nick);
         })), list);
-        g_signal_connect(menu, "deactivate", G_CALLBACK(+[](GtkWidget* menuWidget, gpointer) { gtk_widget_destroy(menuWidget); }), nullptr);
+        g_signal_connect(menu, "deactivate", G_CALLBACK(+[](GtkWidget* menuWidget, gpointer) {
+            g_object_ref(menuWidget);
+            g_idle_add_full(G_PRIORITY_DEFAULT_IDLE, +[](gpointer menuData) {
+                gtk_widget_destroy(GTK_WIDGET(menuData));
+                g_object_unref(menuData);
+                return G_SOURCE_REMOVE;
+            }, menuWidget, nullptr);
+        }), nullptr);
         gtk_widget_show_all(menu);
         gtk_menu_popup_at_pointer(GTK_MENU(menu), reinterpret_cast<GdkEvent*>(event));
     }
