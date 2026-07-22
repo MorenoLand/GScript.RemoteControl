@@ -6,7 +6,7 @@ TStartFrame::TStartFrame(RC::RCOptions& options, const std::filesystem::path& ap
     : options(options), applicationDirectory(applicationDirectory), onConnectCallback(std::move(onConnect)), onListServerSettingsCallback(std::move(onListServerSettings)) {
     window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
     gtk_widget_set_name(window, "StartFrame");
-    gtk_window_set_title(GTK_WINDOW(window), "Graal RemoteControl");
+    gtk_window_set_title(GTK_WINDOW(window), "Remote Control");
     gtk_window_set_position(GTK_WINDOW(window), GTK_WIN_POS_CENTER);
     gtk_window_set_default_size(GTK_WINDOW(window), 280, 220);
     gtk_window_set_resizable(GTK_WINDOW(window), true);

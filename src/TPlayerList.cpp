@@ -22,18 +22,67 @@ namespace {
     constexpr int PlayerAccountColumn = 2;
     constexpr int PlayerLevelColumn = 3;
     constexpr int PlayerIdColumn = 4;
+    constexpr int PlayerOrderColumn = 5;
+
+    gint comparePlayerIconColumn(GtkTreeModel* model, GtkTreeIter* left, GtkTreeIter* right, gpointer) {
+        gchar* leftNick = nullptr;
+        gchar* rightNick = nullptr;
+        gint leftOrder = 0;
+        gint rightOrder = 0;
+        gtk_tree_model_get(model, left, PlayerNickColumn, &leftNick, PlayerOrderColumn, &leftOrder, -1);
+        gtk_tree_model_get(model, right, PlayerNickColumn, &rightNick, PlayerOrderColumn, &rightOrder, -1);
+        const std::string leftValue = leftNick == nullptr ? "" : leftNick;
+        const std::string rightValue = rightNick == nullptr ? "" : rightNick;
+        g_free(leftNick);
+        g_free(rightNick);
+        if (leftValue == "Admins" || rightValue == "Admins") return leftValue == rightValue ? 0 : (leftValue == "Admins" ? -1 : 1);
+        if (leftValue == "Players" || rightValue == "Players") return leftValue == rightValue ? 0 : (leftValue == "Players" ? 1 : -1);
+        return leftOrder == rightOrder ? 0 : (leftOrder < rightOrder ? -1 : 1);
+    }
 
     struct PMWindowData {
         void* connection;
         std::filesystem::path historyDirectory;
         GtkWidget* window;
+        GtkWidget* received;
         GtkWidget* reply;
         int playerId;
         std::string account;
         std::string nick;
+        std::string message;
     };
 
-    gboolean onPMWindowDelete(GtkWidget*, GdkEvent*, gpointer data) { delete static_cast<PMWindowData*>(data); return false; }
+    gboolean onPMWindowDelete(GtkWidget*, GdkEvent*, gpointer) { return false; }
+    void onPMWindowDestroy(GtkWidget*, gpointer data) { delete static_cast<PMWindowData*>(data); }
+
+    std::string formatPMCommaText(const std::string& value) {
+        if (value.find(',') == std::string::npos) return value;
+        std::vector<std::string> fields;
+        std::string field;
+        bool quoted = false;
+        for (size_t index = 0; index < value.size(); ++index) {
+            const char character = value[index];
+            if (character == '"') {
+                if (quoted && index + 1 < value.size() && value[index + 1] == '"') { field += character; ++index; }
+                else quoted = !quoted;
+            } else if (character == ',' && !quoted) {
+                while (!field.empty() && field.front() == ' ') field.erase(field.begin());
+                while (!field.empty() && field.back() == ' ') field.pop_back();
+                fields.push_back(field);
+                field.clear();
+            } else field += character;
+        }
+        while (!field.empty() && field.front() == ' ') field.erase(field.begin());
+        while (!field.empty() && field.back() == ' ') field.pop_back();
+        fields.push_back(field);
+        if (fields.size() < 2) return value;
+        std::ostringstream output;
+        for (size_t index = 0; index < fields.size(); ++index) {
+            if (index != 0) output << '\n';
+            output << fields[index];
+        }
+        return output.str();
+    }
 
     void onPMSend(GtkButton*, gpointer data) {
         PMWindowData* windowData = static_cast<PMWindowData*>(data);
@@ -48,7 +97,7 @@ namespace {
         std::ofstream output(windowData->historyDirectory / (windowData->account + ".txt"), std::ios::app | std::ios::binary);
         output << "You:\n" << text << "\n";
         g_free(text);
-        gtk_text_buffer_set_text(buffer, "", -1);
+        gtk_widget_destroy(windowData->window);
     }
 
     void onPMHistory(GtkButton*, gpointer data) {
@@ -122,6 +171,7 @@ TPlayerList::TPlayerList(const std::filesystem::path& nextApplicationDirectory) 
     gtk_widget_set_name(window, "PlayerList");
     gtk_window_set_title(GTK_WINDOW(window), "Players");
     gtk_window_set_default_size(GTK_WINDOW(window), 580, 420);
+    g_signal_connect(window, "focus-in-event", G_CALLBACK(+[](GtkWidget*, GdkEventFocus*, gpointer data) -> gboolean { static_cast<TPlayerList*>(data)->clearPrivateMessageAlert(); return false; }), this);
     GtkWidget* root = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
     gtk_container_add(GTK_CONTAINER(window), root);
     GtkWidget* notebook = gtk_notebook_new();
@@ -129,7 +179,7 @@ TPlayerList::TPlayerList(const std::filesystem::path& nextApplicationDirectory) 
     GtkWidget* scrolled = gtk_scrolled_window_new(nullptr, nullptr);
     gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scrolled), GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
     gtk_container_set_border_width(GTK_CONTAINER(scrolled), 5);
-    store = gtk_tree_store_new(5, GDK_TYPE_PIXBUF, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_INT);
+    store = gtk_tree_store_new(6, GDK_TYPE_PIXBUF, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_INT, G_TYPE_INT);
     tree = gtk_tree_view_new_with_model(GTK_TREE_MODEL(store));
     gtk_widget_set_name(tree, "PlayerListField");
     gtk_tree_view_set_fixed_height_mode(GTK_TREE_VIEW(tree), true);
@@ -149,7 +199,10 @@ TPlayerList::TPlayerList(const std::filesystem::path& nextApplicationDirectory) 
     GtkTreeViewColumn* imageColumn = gtk_tree_view_column_new_with_attributes("", imageRenderer, "pixbuf", PlayerIconColumn, nullptr);
     gtk_tree_view_column_set_sizing(imageColumn, GTK_TREE_VIEW_COLUMN_FIXED);
     gtk_tree_view_column_set_fixed_width(imageColumn, 20);
+    gtk_tree_view_column_set_sort_column_id(imageColumn, PlayerIconColumn);
     gtk_tree_view_append_column(GTK_TREE_VIEW(tree), imageColumn);
+    gtk_tree_sortable_set_sort_func(GTK_TREE_SORTABLE(store), PlayerIconColumn, comparePlayerIconColumn, nullptr, nullptr);
+    gtk_tree_sortable_set_sort_column_id(GTK_TREE_SORTABLE(store), PlayerIconColumn, GTK_SORT_ASCENDING);
     const struct { const char* title; int column; } columns[] = {{"Nick", PlayerNickColumn}, {"Account", PlayerAccountColumn}, {"Level", PlayerLevelColumn}, {"ID", PlayerIdColumn}};
     for (const auto& column : columns) {
         GtkCellRenderer* renderer = gtk_cell_renderer_text_new();
@@ -769,7 +822,7 @@ gboolean TPlayerList::onServerButtonPress(GtkWidget* widget, GdkEventButton* eve
             gchar* nick = nullptr;
             gtk_tree_model_get(model, &row, 2, &account, 1, &nick, -1);
             if (account != nullptr && *account != '\0') {
-                PMWindowData historyData{remoteList->connection, remoteList->applicationDirectory / "PMs", nullptr, nullptr, 0, account, nick == nullptr ? "" : nick};
+                PMWindowData historyData{remoteList->connection, remoteList->applicationDirectory / "PMs", nullptr, nullptr, nullptr, 0, account, nick == nullptr ? "" : nick, ""};
                 onPMHistory(nullptr, &historyData);
             }
             g_free(account);
@@ -822,15 +875,15 @@ void TPlayerList::refresh() {
     GtkTreeIter admins;
     GtkTreeIter playersGroup;
     gtk_tree_store_append(store, &admins, nullptr);
-    gtk_tree_store_set(store, &admins, PlayerIconColumn, channelIcon, PlayerNickColumn, "Admins", PlayerIdColumn, 0, -1);
+    gtk_tree_store_set(store, &admins, PlayerIconColumn, channelIcon, PlayerNickColumn, "Admins", PlayerIdColumn, 0, PlayerOrderColumn, 0, -1);
     gtk_tree_store_append(store, &playersGroup, nullptr);
-    gtk_tree_store_set(store, &playersGroup, PlayerIconColumn, channelIcon, PlayerNickColumn, "Players", PlayerIdColumn, 0, -1);
+    gtk_tree_store_set(store, &playersGroup, PlayerIconColumn, channelIcon, PlayerNickColumn, "Players", PlayerIdColumn, 0, PlayerOrderColumn, 1, -1);
     for (int index = 0; index < count; ++index) {
         GtkTreeIter row;
         const bool admin = players[index].level == nullptr || *players[index].level == '\0';
         gtk_tree_store_append(store, &row, admin ? &admins : &playersGroup);
         const auto pm = pmTypes.find(players[index].id);
-        gtk_tree_store_set(store, &row, PlayerIconColumn, pm != pmTypes.end() && pmIconsVisible ? pmIconFor(pm->second) : onlineIcon, PlayerNickColumn, players[index].nick == nullptr ? "" : players[index].nick, PlayerAccountColumn, players[index].account == nullptr ? "" : players[index].account, PlayerLevelColumn, players[index].level == nullptr ? "" : players[index].level, PlayerIdColumn, players[index].id, -1);
+        gtk_tree_store_set(store, &row, PlayerIconColumn, pm != pmTypes.end() && pmIconsVisible ? pmIconFor(pm->second) : onlineIcon, PlayerNickColumn, players[index].nick == nullptr ? "" : players[index].nick, PlayerAccountColumn, players[index].account == nullptr ? "" : players[index].account, PlayerLevelColumn, players[index].level == nullptr ? "" : players[index].level, PlayerIdColumn, players[index].id, PlayerOrderColumn, static_cast<int>(index) + 2, -1);
     }
     rc_request_pm_server_list(connection);
     rc_request_pm_guild_list(connection);
@@ -849,6 +902,8 @@ void TPlayerList::notePrivateMessage(int playerId, const char* account, const ch
     if (playerId < 0) return;
     appendHistory(account, "Opposite", message);
     pmPlayers[playerId] = {account == nullptr ? "" : account, nick == nullptr ? "" : nick};
+    if (!pmMessages[playerId].empty()) pmMessages[playerId] += '\n';
+    pmMessages[playerId] += formatPMCommaText(message == nullptr ? "" : message);
     latestPMPlayerId = playerId;
     pmTypes[playerId] = type == nullptr ? "normal" : type;
     pmIconsVisible = true;
@@ -859,8 +914,7 @@ void TPlayerList::notePrivateMessage(int playerId, const char* account, const ch
 bool TPlayerList::openLatestPrivateMessage() {
     const auto player = pmPlayers.find(latestPMPlayerId);
     if (player == pmPlayers.end() || player->second.first.empty()) return false;
-    openPrivateMessageHistory(player->second.first.c_str(), player->second.second.c_str());
-    markPrivateMessageRead(latestPMPlayerId);
+    openPrivateMessage(latestPMPlayerId, player->second.first.c_str(), player->second.second.c_str());
     return true;
 }
 
@@ -874,12 +928,8 @@ void TPlayerList::appendHistory(const char* account, const char* direction, cons
 
 void TPlayerList::openPrivateMessage(int playerId, const char* account, const char* nick) {
     if (playerId == 0 || account == nullptr || *account == '\0') return;
-    if (pmPlayers.find(playerId) != pmPlayers.end()) {
-        openPrivateMessageHistory(account, nick);
-        markPrivateMessageRead(playerId);
-        return;
-    }
-    PMWindowData* data = new PMWindowData{connection, applicationDirectory / "PMs", nullptr, nullptr, playerId, account, nick == nullptr ? "" : nick};
+    const auto unread = pmMessages.find(playerId);
+    PMWindowData* data = new PMWindowData{connection, applicationDirectory / "PMs", nullptr, nullptr, nullptr, playerId, account, nick == nullptr ? "" : nick, unread == pmMessages.end() ? "" : unread->second};
     data->window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
     gtk_widget_set_name(data->window, "PrivateMessage");
     gtk_window_set_title(GTK_WINDOW(data->window), "PM");
@@ -888,19 +938,39 @@ void TPlayerList::openPrivateMessage(int playerId, const char* account, const ch
     gtk_container_add(GTK_CONTAINER(data->window), root);
     GtkWidget* label = gtk_label_new((data->account + ": " + data->nick).c_str());
     gtk_label_set_xalign(GTK_LABEL(label), 0.0F);
+    gtk_widget_set_margin_start(label, 5);
+    gtk_widget_set_margin_end(label, 5);
     gtk_box_pack_start(GTK_BOX(root), label, false, false, 5);
-    GtkWidget* scrolled = gtk_scrolled_window_new(nullptr, nullptr);
-    gtk_scrolled_window_set_shadow_type(GTK_SCROLLED_WINDOW(scrolled), GTK_SHADOW_IN);
+    GtkWidget* panes = gtk_paned_new(GTK_ORIENTATION_VERTICAL);
+    gtk_paned_set_position(GTK_PANED(panes), 120);
+    gtk_box_pack_start(GTK_BOX(root), panes, true, true, 0);
+    GtkWidget* receivedScrolled = gtk_scrolled_window_new(nullptr, nullptr);
+    gtk_scrolled_window_set_shadow_type(GTK_SCROLLED_WINDOW(receivedScrolled), GTK_SHADOW_IN);
+    data->received = gtk_text_view_new();
+    gtk_widget_set_name(data->received, "PrivateMessageReceived");
+    gtk_text_view_set_editable(GTK_TEXT_VIEW(data->received), false);
+    gtk_text_view_set_cursor_visible(GTK_TEXT_VIEW(data->received), false);
+    gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(data->received), GTK_WRAP_WORD_CHAR);
+    gtk_text_view_set_left_margin(GTK_TEXT_VIEW(data->received), 5);
+    gtk_text_view_set_right_margin(GTK_TEXT_VIEW(data->received), 5);
+    gtk_text_buffer_set_text(gtk_text_view_get_buffer(GTK_TEXT_VIEW(data->received)), data->message.c_str(), -1);
+    gtk_container_add(GTK_CONTAINER(receivedScrolled), data->received);
+    gtk_paned_pack1(GTK_PANED(panes), receivedScrolled, false, true);
+    GtkWidget* replyScrolled = gtk_scrolled_window_new(nullptr, nullptr);
+    gtk_scrolled_window_set_shadow_type(GTK_SCROLLED_WINDOW(replyScrolled), GTK_SHADOW_IN);
     data->reply = gtk_text_view_new();
     gtk_widget_set_name(data->reply, "PrivateMessageText");
     gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(data->reply), GTK_WRAP_WORD_CHAR);
+    gtk_text_view_set_left_margin(GTK_TEXT_VIEW(data->reply), 5);
+    gtk_text_view_set_right_margin(GTK_TEXT_VIEW(data->reply), 5);
     GtkCssProvider* pmProvider = gtk_css_provider_new();
-    gtk_css_provider_load_from_data(pmProvider, "#PrivateMessage, #PrivateMessage box, #PrivateMessage scrolledwindow, #PrivateMessage viewport { background-color: #454545; color: #d4d4d4; } #PrivateMessageText, #PrivateMessageText text { background-color: #252525; color: #f0f0f0; caret-color: #00ff00; }", -1, nullptr);
+    gtk_css_provider_load_from_data(pmProvider, "#PrivateMessage, #PrivateMessage box, #PrivateMessage scrolledwindow, #PrivateMessage viewport { background-color: #454545; color: #d4d4d4; } #PrivateMessageText, #PrivateMessageText text { background-color: #252525; color: #f0f0f0; caret-color: #00ff00; } #PrivateMessageReceived, #PrivateMessageReceived text { background-color: #252525; color: #f0f0f0; }", -1, nullptr);
     gtk_style_context_add_provider(gtk_widget_get_style_context(data->window), GTK_STYLE_PROVIDER(pmProvider), GTK_STYLE_PROVIDER_PRIORITY_USER);
     gtk_style_context_add_provider(gtk_widget_get_style_context(data->reply), GTK_STYLE_PROVIDER(pmProvider), GTK_STYLE_PROVIDER_PRIORITY_USER);
+    gtk_style_context_add_provider(gtk_widget_get_style_context(data->received), GTK_STYLE_PROVIDER(pmProvider), GTK_STYLE_PROVIDER_PRIORITY_USER);
     g_object_unref(pmProvider);
-    gtk_container_add(GTK_CONTAINER(scrolled), data->reply);
-    gtk_box_pack_start(GTK_BOX(root), scrolled, true, true, 0);
+    gtk_container_add(GTK_CONTAINER(replyScrolled), data->reply);
+    gtk_paned_pack2(GTK_PANED(panes), replyScrolled, true, true);
     GtkWidget* buttons = gtk_button_box_new(GTK_ORIENTATION_HORIZONTAL);
     gtk_button_box_set_layout(GTK_BUTTON_BOX(buttons), GTK_BUTTONBOX_END);
     GtkWidget* history = gtk_button_new_with_label("History");
@@ -911,26 +981,37 @@ void TPlayerList::openPrivateMessage(int playerId, const char* account, const ch
     g_signal_connect(send, "clicked", G_CALLBACK(onPMSend), data);
     g_signal_connect(history, "clicked", G_CALLBACK(onPMHistory), data);
     g_signal_connect(data->window, "delete-event", G_CALLBACK(onPMWindowDelete), data);
+    g_signal_connect(data->window, "destroy", G_CALLBACK(onPMWindowDestroy), data);
+    if (unread != pmMessages.end()) markPrivateMessageRead(playerId);
     gtk_widget_show_all(data->window);
     gtk_window_present(GTK_WINDOW(data->window));
     gtk_widget_grab_focus(data->reply);
 }
 
 void TPlayerList::openPrivateMessageHistory(const char* account, const char* nick) {
-    PMWindowData data{connection, applicationDirectory / "PMs", nullptr, nullptr, 0, account == nullptr ? "" : account, nick == nullptr ? "" : nick};
+    PMWindowData data{connection, applicationDirectory / "PMs", nullptr, nullptr, nullptr, 0, account == nullptr ? "" : account, nick == nullptr ? "" : nick, ""};
     onPMHistory(nullptr, &data);
 }
 
 void TPlayerList::markPrivateMessageRead(int playerId) {
     pmTypes.erase(playerId);
     pmPlayers.erase(playerId);
+    pmMessages.erase(playerId);
     if (latestPMPlayerId == playerId) latestPMPlayerId = pmPlayers.empty() ? 0 : pmPlayers.rbegin()->first;
     if (pmPlayers.empty() && pmBlinkSource != 0) {
         g_source_remove(pmBlinkSource);
         pmBlinkSource = 0;
         pmIconsVisible = true;
-        remote_control_clear_pm_tray_alert();
     }
+    clearPrivateMessageAlert();
+    updatePMIcons();
+}
+
+void TPlayerList::clearPrivateMessageAlert() {
+    remote_control_clear_pm_tray_alert();
+    GList* windows = gtk_window_list_toplevels();
+    for (GList* current = windows; current != nullptr; current = current->next) if (GTK_IS_WINDOW(current->data)) gtk_window_set_urgency_hint(GTK_WINDOW(current->data), false);
+    g_list_free(windows);
     updatePMIcons();
 }
 
@@ -944,7 +1025,7 @@ void TPlayerList::updatePMIcons() {
             int playerId = 0;
             gtk_tree_model_get(GTK_TREE_MODEL(store), &row, PlayerIdColumn, &playerId, -1);
             const auto pm = pmTypes.find(playerId);
-            if (pm != pmTypes.end()) gtk_tree_store_set(store, &row, PlayerIconColumn, pmIconsVisible ? pmIconFor(pm->second) : onlineIcon, -1);
+            gtk_tree_store_set(store, &row, PlayerIconColumn, pm != pmTypes.end() && pmIconsVisible ? pmIconFor(pm->second) : onlineIcon, -1);
             valid = gtk_tree_model_iter_next(GTK_TREE_MODEL(store), &row);
         }
         validGroup = gtk_tree_model_iter_next(GTK_TREE_MODEL(store), &group);
@@ -1094,7 +1175,7 @@ void TPlayerList::openSelectedHistory() {
     gchar* nick = nullptr;
     gtk_tree_model_get(model, &row, PlayerAccountColumn, &account, PlayerNickColumn, &nick, -1);
     if (account != nullptr && *account != '\0') {
-        PMWindowData data{connection, applicationDirectory / "PMs", nullptr, nullptr, 0, account, nick == nullptr ? "" : nick};
+        PMWindowData data{connection, applicationDirectory / "PMs", nullptr, nullptr, nullptr, 0, account, nick == nullptr ? "" : nick, ""};
         onPMHistory(nullptr, &data);
     }
     g_free(account);

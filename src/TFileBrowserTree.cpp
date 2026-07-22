@@ -42,11 +42,11 @@ namespace {
 
     GdkPixbuf* loadImage(const char* name) { return gdk_pixbuf_new_from_file((std::string("images/") + name).c_str(), nullptr); }
 
-    GdkPixbuf* fileIcon(const RCFileBrowserEntry& entry, GdkPixbuf* text, GdkPixbuf* nw, GdkPixbuf* graal, GdkPixbuf* gmap) {
+    GdkPixbuf* fileIcon(const RCFileBrowserEntry& entry, GdkPixbuf* text, GdkPixbuf* nw, GdkPixbuf* script, GdkPixbuf* gmap) {
         const std::string path = entry.path == nullptr ? "" : entry.path;
         if (path.ends_with(".nw")) return nw;
         if (path.ends_with(".gmap")) return gmap;
-        if (path.ends_with(".graal")) return graal;
+        if (path.ends_with(".graal")) return script;
         return text;
     }
 }
@@ -137,7 +137,7 @@ TFileBrowserTree::TFileBrowserTree() {
     openFolderIcon = loadImage("rcfiles_folderopen.png");
     textFileIcon = loadImage("rcfiles_text.png");
     nwFileIcon = loadImage("rcfiles_nw.png");
-    graalFileIcon = loadImage("rcfiles_graal.png");
+    scriptFileIcon = loadImage("rcfiles_graal.png");
     gmapFileIcon = loadImage("rcfiles_gmap.png");
     g_signal_connect(gtk_tree_view_get_selection(GTK_TREE_VIEW(folderView)), "changed", G_CALLBACK(onFolderSelected), this);
     g_signal_connect(folderView, "button-press-event", G_CALLBACK(onFolderButtonPress), this);
@@ -159,7 +159,7 @@ TFileBrowserTree::~TFileBrowserTree() {
     if (openFolderIcon != nullptr) g_object_unref(openFolderIcon);
     if (textFileIcon != nullptr) g_object_unref(textFileIcon);
     if (nwFileIcon != nullptr) g_object_unref(nwFileIcon);
-    if (graalFileIcon != nullptr) g_object_unref(graalFileIcon);
+    if (scriptFileIcon != nullptr) g_object_unref(scriptFileIcon);
     if (gmapFileIcon != nullptr) g_object_unref(gmapFileIcon);
     if (window != nullptr) gtk_widget_destroy(window);
     if (folders != nullptr) g_object_unref(folders);
@@ -478,7 +478,7 @@ void TFileBrowserTree::showTextEditor(const char* path, const void* content, int
     gtk_box_set_spacing(GTK_BOX(contentArea), 0);
     gtk_widget_set_margin_top(scrolled, 0);
     gtk_box_pack_start(GTK_BOX(contentArea), scrolled, true, true, 0);
-    gtk_box_pack_start(GTK_BOX(gtk_dialog_get_action_area(GTK_DIALOG(dialog))), createGScriptEditorLineStatus(editor), true, true, 0);
+    addGScriptEditorLineStatus(GTK_DIALOG(dialog), editor);
     auto* state = new EditorState{connection, path, editor};
     g_signal_connect(editor, "key-press-event", G_CALLBACK(+[](GtkWidget*, GdkEventKey* event, gpointer responseDialog) {
         if ((event->state & GDK_CONTROL_MASK) == 0 || (event->keyval != GDK_KEY_s && event->keyval != GDK_KEY_S)) return static_cast<gboolean>(FALSE);
@@ -525,7 +525,7 @@ void TFileBrowserTree::refreshFiles(const char* folder, int count) {
         gtk_list_store_append(files, &row);
         const std::string modified = formatModified(entries[index].modified);
         const std::string size = entries[index].size == 0 ? "" : std::to_string(entries[index].size);
-        gtk_list_store_set(files, &row, FileIconColumn, fileIcon(entries[index], textFileIcon, nwFileIcon, graalFileIcon, gmapFileIcon), FilePathColumn, entries[index].path == nullptr ? "" : entries[index].path, FileRightsColumn, entries[index].rights == nullptr ? "" : entries[index].rights, FileSizeColumn, size.c_str(), FileModifiedColumn, modified.c_str(), FileSizeSortColumn, entries[index].size, FileModifiedSortColumn, entries[index].modified, -1);
+        gtk_list_store_set(files, &row, FileIconColumn, fileIcon(entries[index], textFileIcon, nwFileIcon, scriptFileIcon, gmapFileIcon), FilePathColumn, entries[index].path == nullptr ? "" : entries[index].path, FileRightsColumn, entries[index].rights == nullptr ? "" : entries[index].rights, FileSizeColumn, size.c_str(), FileModifiedColumn, modified.c_str(), FileSizeSortColumn, entries[index].size, FileModifiedSortColumn, entries[index].modified, -1);
     }
     rc_free_filebrowser_files(entries, entryCount);
 }

@@ -120,6 +120,14 @@ namespace {
         gtk_status_icon_set_from_file(pmTrayIcon, pmTrayNormalIcon.c_str());
     }
 
+    void setTrayTooltip(const char* serverName, int playerCount) {
+        if (pmTrayIcon == nullptr) return;
+        std::string tooltip = "Remote Control";
+        if (serverName != nullptr && *serverName != '\0') tooltip = std::string(serverName) + ": " + std::to_string(playerCount) + (playerCount == 1 ? " player" : " players");
+        if (tooltip.size() > 64) tooltip.resize(64);
+        gtk_status_icon_set_tooltip_text(pmTrayIcon, tooltip.c_str());
+    }
+
     void onTrayOpen(GtkMenuItem*, gpointer) {
         clearTrayPMAlert();
         if (trayRemoteFrame != nullptr) trayRemoteFrame->show();
@@ -246,6 +254,7 @@ void remote_control_begin_pm_tray_alert() {
 }
 
 void remote_control_clear_pm_tray_alert() { clearTrayPMAlert(); }
+void remote_control_set_tray_label(const char* serverName, int playerCount) { setTrayTooltip(serverName, playerCount); }
 
 int main(int argc, char** argv) {
 #ifdef _WIN32
@@ -276,13 +285,14 @@ int main(int argc, char** argv) {
     RC::RCOptions options;
     copySyntaxFiles(applicationDirectory);
     RC::loadRCOptions(options, applicationDirectory);
+    setGScriptEditorCacheDirectory(applicationDirectory / "cache");
     setGScriptEditorOptions(options);
     applyDarkTheme(options.darkmode);
     GtkStatusIcon* trayIcon = gtk_status_icon_new_from_file((applicationDirectory / "images" / "rcicon.png").string().c_str());
     pmTrayIcon = trayIcon;
     pmTrayNormalIcon = (applicationDirectory / "images" / "rcicon.png").string();
     pmTrayAlertIcon = (applicationDirectory / "images" / "pmicon_tray.png").string();
-    gtk_status_icon_set_tooltip_text(trayIcon, "Graal RemoteControl");
+    gtk_status_icon_set_tooltip_text(trayIcon, "Remote Control");
     gtk_status_icon_set_visible(trayIcon, true);
     trayMenu = gtk_menu_new();
     GtkWidget* openTrayItem = gtk_menu_item_new_with_label("Open");

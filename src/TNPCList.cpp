@@ -238,7 +238,7 @@ void TNPCList::showScriptEditor(const char* name, int id, const char* script) {
     gtk_box_set_spacing(GTK_BOX(content), 0);
     gtk_widget_set_margin_top(scrolled, 0);
     gtk_box_pack_start(GTK_BOX(content), scrolled, true, true, 0);
-    gtk_box_pack_start(GTK_BOX(gtk_dialog_get_action_area(GTK_DIALOG(dialog))), createGScriptEditorLineStatus(editor), true, true, 0);
+    addGScriptEditorLineStatus(GTK_DIALOG(dialog), editor);
     g_signal_connect(editor, "key-press-event", G_CALLBACK(+[](GtkWidget*, GdkEventKey* event, gpointer dialog) {
         if ((event->state & GDK_CONTROL_MASK) != 0 && (event->keyval == GDK_KEY_s || event->keyval == GDK_KEY_S)) {
             gtk_dialog_response(GTK_DIALOG(dialog), GTK_RESPONSE_ACCEPT);
@@ -280,7 +280,7 @@ void TNPCList::showFlagsEditor(int id, const char* flags) {
     g_object_unref(sourceBuffer);
     gtk_container_add(GTK_CONTAINER(scrolled), text);
     gtk_box_pack_start(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), scrolled, true, true, 0);
-    gtk_box_pack_start(GTK_BOX(gtk_dialog_get_action_area(GTK_DIALOG(dialog))), createGScriptEditorLineStatus(text), true, true, 0);
+    addGScriptEditorLineStatus(GTK_DIALOG(dialog), text);
     auto* state = new FlagState{connection, id, text};
     g_signal_connect(dialog, "response", G_CALLBACK(+[](GtkDialog* responseDialog, gint response, gpointer data) {
         auto* state = static_cast<FlagState*>(data);

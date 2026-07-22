@@ -6,6 +6,8 @@
 
 #include <algorithm>
 #include <cctype>
+#include <filesystem>
+#include <fstream>
 #include <memory>
 #include <set>
 #include <string>
@@ -24,6 +26,7 @@ namespace {
     bool showBrackets = true;
     bool lspEnabled = true;
     std::string completionSource = "https://api.gscript.dev/";
+    std::filesystem::path completionCacheFile;
     unsigned int completionRequest = 0;
     std::vector<GtkWidget*> completionEditors;
     struct ApiDefinition { std::string name; std::string type; std::vector<std::string> params; std::string returns; std::string scope; std::string description; std::string example; };
@@ -152,6 +155,22 @@ namespace {
         return definitions;
     }
 
+    void cacheCompletionDefinitions(const std::string& json) {
+        if (completionCacheFile.empty()) return;
+        std::error_code error;
+        std::filesystem::create_directories(completionCacheFile.parent_path(), error);
+        std::ofstream stream(completionCacheFile, std::ios::binary | std::ios::trunc);
+        if (stream) stream.write(json.data(), static_cast<std::streamsize>(json.size()));
+    }
+
+    std::vector<ApiDefinition> cachedCompletionDefinitions() {
+        if (completionCacheFile.empty()) return {};
+        std::ifstream stream(completionCacheFile, std::ios::binary);
+        if (!stream) return {};
+        const std::string json((std::istreambuf_iterator<char>(stream)), std::istreambuf_iterator<char>());
+        return completionDefinitions(json);
+    }
+
     std::string decodeChunkedBody(const std::string& body) {
         std::string result;
         std::size_t position = 0;
@@ -175,7 +194,7 @@ namespace {
         return "";
     }
 
-    std::vector<ApiDefinition> fetchCompletionDefinitions(const std::string& source) {
+    std::vector<ApiDefinition> fetchCompletionDefinitionsFromSource(const std::string& source) {
         if (source.rfind("http://", 0) != 0 && source.rfind("https://", 0) != 0) {
             gchar* contents = nullptr;
             gsize length = 0;
@@ -188,8 +207,10 @@ namespace {
                 g_free(localPath);
             }
             if (!g_file_get_contents(path.c_str(), &contents, &length, &error)) { if (error != nullptr) g_error_free(error); return {}; }
-            const auto result = completionDefinitions(std::string(contents, length));
+            const std::string json(contents, length);
+            const auto result = completionDefinitions(json);
             g_free(contents);
+            if (!result.empty()) cacheCompletionDefinitions(json);
             return result;
         }
         GError* error = nullptr;
@@ -230,7 +251,15 @@ namespace {
         const std::string payload = response.substr(body + 4);
         std::string headers = response.substr(0, body);
         std::transform(headers.begin(), headers.end(), headers.begin(), [](unsigned char character) { return static_cast<char>(std::tolower(character)); });
-        return completionDefinitions(headers.find("transfer-encoding: chunked") == std::string::npos ? payload : decodeChunkedBody(payload));
+        const std::string json = headers.find("transfer-encoding: chunked") == std::string::npos ? payload : decodeChunkedBody(payload);
+        const auto result = completionDefinitions(json);
+        if (!result.empty()) cacheCompletionDefinitions(json);
+        return result;
+    }
+
+    std::vector<ApiDefinition> fetchCompletionDefinitions(const std::string& source) {
+        const auto definitions = fetchCompletionDefinitionsFromSource(source);
+        return definitions.empty() ? cachedCompletionDefinitions() : definitions;
     }
 
     gboolean applyCompletionText(gpointer data) {
@@ -326,6 +355,36 @@ namespace {
         if (!definition.returns.empty()) result += (result.empty() ? "" : "\n") + std::string("Returns: ") + definition.returns;
         if (!definition.description.empty()) result += (result.empty() ? "" : "\n") + definition.description;
         if (!definition.example.empty()) result += "\n\nExample:\n" + definition.example;
+        return result;
+    }
+
+    std::string definitionSignature(const ApiDefinition& definition) {
+        std::string result = definition.name + "(";
+        for (std::size_t index = 0; index < definition.params.size(); ++index) { if (index != 0) result += ", "; result += definition.params[index]; }
+        return result + ')';
+    }
+
+    std::vector<std::string> formatScriptHelp(const std::vector<ApiDefinition>& definitions, const std::string& query) {
+        const std::string needle = lowerText(query);
+        std::vector<const ApiDefinition*> matches;
+        for (const ApiDefinition& definition : definitions) if (needle.empty() || lowerText(definition.name).find(needle) != std::string::npos) matches.push_back(&definition);
+        if (matches.empty()) return {"[Script Help] No API entries match '" + query + "'."};
+        const auto exact = std::find_if(matches.begin(), matches.end(), [&needle](const ApiDefinition* definition) { return lowerText(definition->name) == needle; });
+        if (exact != matches.end()) {
+            const ApiDefinition& definition = **exact;
+            std::vector<std::string> result = {"[Script Help] " + definitionSignature(definition) + (definition.scope.empty() ? "" : " [" + upperCase(definition.scope) + "]")};
+            if (!definition.returns.empty()) result.push_back("Returns: " + definition.returns);
+            if (!definition.description.empty()) result.push_back(definition.description);
+            if (!definition.example.empty()) result.push_back("Example: " + definition.example);
+            return result;
+        }
+        std::vector<std::string> result = {"[Script Help] " + std::to_string(matches.size()) + " entries matching '" + query + "':"};
+        const std::size_t count = std::min<std::size_t>(matches.size(), 30);
+        for (std::size_t index = 0; index < count; ++index) {
+            const ApiDefinition& definition = *matches[index];
+            result.push_back(definitionSignature(definition) + (definition.scope.empty() ? "" : " [" + upperCase(definition.scope) + "]") + (definition.description.empty() ? "" : " - " + definition.description));
+        }
+        if (matches.size() > count) result.push_back("Use a longer /scripthelp2 query to narrow the result.");
         return result;
     }
 
@@ -449,6 +508,22 @@ namespace {
 
 }
 
+void setGScriptEditorCacheDirectory(const std::filesystem::path& directory) { completionCacheFile = directory / "scriptapi.json"; }
+
+void requestGScriptHelp(const std::string& query, std::function<void(std::vector<std::string>)> callback) {
+    if (!apiDefinitions.empty()) { callback(formatScriptHelp(apiDefinitions, query)); return; }
+    const std::string source = completionSource;
+    std::thread([query, source, callback = std::move(callback)] {
+        auto* payload = new std::pair<std::function<void(std::vector<std::string>)>, std::vector<std::string>>{std::move(callback), formatScriptHelp(fetchCompletionDefinitions(source), query)};
+        g_idle_add(+[](gpointer data) {
+            auto* payload = static_cast<std::pair<std::function<void(std::vector<std::string>)>, std::vector<std::string>>*>(data);
+            payload->first(std::move(payload->second));
+            delete payload;
+            return G_SOURCE_REMOVE;
+        }, payload);
+    }).detach();
+}
+
 void setGScriptEditorOptions(const RC::RCOptions& options) {
     const bool wasLspEnabled = lspEnabled;
     const bool sourceChanged = completionSource != options.autocompletesource;
@@ -465,6 +540,7 @@ void setGScriptEditorOptions(const RC::RCOptions& options) {
     if (wasLspEnabled != lspEnabled) for (GtkWidget* editor : completionEditors) setCompletionProvider(editor, lspEnabled);
     completionSource = options.autocompletesource.empty() ? "https://api.gscript.dev/" : options.autocompletesource;
     if (sourceChanged || (!wasLspEnabled && lspEnabled)) { apiDefinitions.clear(); if (lspEnabled) startCompletionLoad(); }
+    else if (lspEnabled && apiDefinitions.empty()) startCompletionLoad();
 }
 
 void configureGScriptEditor(GtkWidget* editor) {
@@ -536,4 +612,27 @@ GtkWidget* createGScriptEditorLineStatus(GtkWidget* editor) {
         g_free(value);
     }), label);
     return status;
+}
+
+void addGScriptEditorLineStatus(GtkDialog* dialog, GtkWidget* editor) {
+    GtkWidget* actionArea = gtk_dialog_get_action_area(dialog);
+    GtkWidget* status = createGScriptEditorLineStatus(editor);
+    GtkWidget* controls = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 5);
+    GList* children = gtk_container_get_children(GTK_CONTAINER(actionArea));
+    for (GList* child = children; child != nullptr; child = child->next) {
+        GtkWidget* button = GTK_WIDGET(child->data);
+        g_object_ref(button);
+        gtk_container_remove(GTK_CONTAINER(actionArea), button);
+        gtk_box_pack_start(GTK_BOX(controls), button, false, false, 0);
+        g_object_unref(button);
+    }
+    g_list_free(children);
+    gtk_widget_set_margin_start(status, 5);
+    gtk_widget_set_margin_end(status, 5);
+    gtk_widget_set_margin_top(controls, 3);
+    gtk_widget_set_margin_bottom(controls, 3);
+    gtk_widget_set_margin_end(controls, 5);
+    gtk_box_pack_start(GTK_BOX(actionArea), status, false, false, 0);
+    gtk_box_pack_start(GTK_BOX(actionArea), controls, false, false, 0);
+    gtk_button_box_set_layout(GTK_BUTTON_BOX(actionArea), GTK_BUTTONBOX_EDGE);
 }

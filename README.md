@@ -20,4 +20,4 @@ The runtime assets and Windows DLLs required by the checked-in build layout live
 
 ## License
 
-The reconstructed source code is MIT licensed. Original Graal artwork, logos, and other supplied runtime assets remain the property of their respective owners.
+The reconstructed source code is MIT licensed. Original artwork, logos, and other supplied runtime assets remain the property of their respective owners.

@@ -31,7 +31,7 @@ TServerTextEditor::TServerTextEditor(Kind nextKind, const char* title) : kind(ne
     }), this);
     gtk_container_add(GTK_CONTAINER(scrolled), text);
     gtk_box_pack_start(GTK_BOX(root), scrolled, true, true, 0);
-    GtkWidget* bottom = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+    GtkWidget* bottom = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 5);
     gtk_box_pack_start(GTK_BOX(bottom), createGScriptEditorLineStatus(text), true, true, 0);
     GtkWidget* buttons = gtk_button_box_new(GTK_ORIENTATION_HORIZONTAL);
     gtk_button_box_set_layout(GTK_BUTTON_BOX(buttons), GTK_BUTTONBOX_END);
@@ -46,6 +46,9 @@ TServerTextEditor::TServerTextEditor(Kind nextKind, const char* title) : kind(ne
     gtk_container_add(GTK_CONTAINER(buttons), saveButton);
     gtk_container_add(GTK_CONTAINER(buttons), closeButton);
     gtk_box_pack_end(GTK_BOX(bottom), buttons, false, false, 5);
+    gtk_widget_set_margin_top(buttons, 3);
+    gtk_widget_set_margin_bottom(buttons, 3);
+    gtk_widget_set_margin_end(buttons, 3);
     gtk_box_pack_start(GTK_BOX(root), bottom, false, false, 0);
     g_signal_connect(goToLineButton, "clicked", G_CALLBACK(editorGoToLine), text);
     g_signal_connect(findButton, "clicked", G_CALLBACK(editorFind), text);

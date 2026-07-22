@@ -51,7 +51,7 @@ TServerList::TServerList(std::function<void()> onClose, std::function<void(void*
 #endif
     window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
     gtk_widget_set_name(window, "ServerList");
-    gtk_window_set_title(GTK_WINDOW(window), "Graal Servers");
+    gtk_window_set_title(GTK_WINDOW(window), "Servers");
     gtk_window_set_position(GTK_WINDOW(window), GTK_WIN_POS_CENTER);
     gtk_window_set_default_size(GTK_WINDOW(window), 520, 350);
 

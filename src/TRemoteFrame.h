@@ -4,6 +4,7 @@
 #include <array>
 #include <filesystem>
 #include <functional>
+#include <memory>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -67,7 +68,7 @@ private:
     static void onServerData(const char* type, const char* content, void* data);
     static gboolean scrollChatToBottom(gpointer data);
 
-    void appendChat(const std::string& message);
+    void appendChat(const std::string& message, bool suppressUrgency = false);
     void appendChatLog(const std::string& message) const;
     void applyOptions(const RC::RCOptions& previous);
     void sendServerListOptions();
@@ -77,7 +78,7 @@ private:
     void removeChannel(const std::string& channel);
     void configureChatField(GtkWidget* field);
     void applyEmotes(GtkTextBuffer* buffer, gint startOffset, const std::string& message);
-    bool applyAlertTag(std::string& message);
+    bool applyAlertTag(std::string& message, bool allowUrgency);
     void send();
     void addMenuItem(GtkWidget* menu, const char* label, GCallback callback = nullptr);
     void graphicalAction(int index);
@@ -85,6 +86,7 @@ private:
     std::function<void()> onCloseCallback;
     std::function<void()> onListServerCallback;
     std::function<void()> onListServerSettingsCallback;
+    std::shared_ptr<bool> callbackAlive = std::make_shared<bool>(true);
     GtkWidget* window = nullptr;
     GtkWidget* chatField = nullptr;
     GtkWidget* chatScrolled = nullptr;
@@ -102,8 +104,10 @@ private:
     GdkPixbuf* pacmanEmote = nullptr;
     GdkPixbuf* backgroundPixbuf = nullptr;
     void* connection = nullptr;
+    std::string serverName;
     std::string nickname;
     std::string accountName;
+    int trayPlayerCount = -1;
     std::vector<std::string> chatHistory;
     int chatHistoryIndex = -1;
     guint eventSource = 0;

@@ -16,14 +16,33 @@
 #include <IEnums.h>
 #include <gtksourceview/gtksource.h>
 
+#include <cctype>
 #include <ctime>
 #include <fstream>
 #include <iomanip>
 #include <sstream>
 
 extern void remote_control_begin_pm_tray_alert();
+extern void remote_control_clear_pm_tray_alert();
+extern void remote_control_set_tray_label(const char* serverName, int playerCount);
 
 namespace {
+    bool hasActiveRemoteControlWindow() {
+        GList* windows = gtk_window_list_toplevels();
+        bool active = false;
+        for (GList* current = windows; current != nullptr; current = current->next) {
+            if (GTK_IS_WINDOW(current->data) && gtk_window_is_active(GTK_WINDOW(current->data))) { active = true; break; }
+        }
+        g_list_free(windows);
+        return active;
+    }
+
+    void clearRemoteControlUrgency() {
+        GList* windows = gtk_window_list_toplevels();
+        for (GList* current = windows; current != nullptr; current = current->next) if (GTK_IS_WINDOW(current->data)) gtk_window_set_urgency_hint(GTK_WINDOW(current->data), false);
+        g_list_free(windows);
+    }
+
     std::string chatTimestamp(const RC::RCOptions& options) {
         if (!options.rctimestamps) return "";
         const std::time_t now = std::time(nullptr);
@@ -157,7 +176,7 @@ TRemoteFrame::TRemoteFrame(const RC::RCOptions& nextOptions, const std::filesyst
     gtk_notebook_set_tab_detachable(GTK_NOTEBOOK(notebook), chatScrolled, false);
     gtk_notebook_set_tab_reorderable(GTK_NOTEBOOK(notebook), chatScrolled, true);
     GtkCssProvider* tabProvider = gtk_css_provider_new();
-    const std::string notebookCss = "#RemoteFrame notebook, #RemoteFrame notebook > header, #RemoteFrame notebook > header.top, #RemoteFrame notebook > header.top > tabs { margin: 0; padding: 0; border: 0; background-color: transparent; background-image: none; box-shadow: none; } #RemoteFrame notebook > header, #RemoteFrame notebook > header.top, #RemoteFrame notebook > header.top > tabs { min-height: 0; } #RemoteFrame notebook > stack, #RemoteFrame notebook > stack > scrolledwindow, #RemoteFrame notebook > stack > scrolledwindow > viewport { margin: 0; padding: 0; border: 0; background-color: " + options.colorchatback + "; } #RemoteFrame notebook > header.top > tabs > tab { min-height: 0; min-width: 0; margin: 0 1px 0 0; padding: 3px 7px; background-image: none; background-color: #3d3d3d; border: 1px solid #707070; border-bottom: none; border-radius: 3px 3px 0 0; } #RemoteFrame notebook > header.top > tabs > tab:checked { background-color: #454545; border-color: #909090; } #RemoteFrame notebook > header.top > tabs > tab label { min-width: 0; margin: 0; padding: 0; font-size: 12px; }";
+    const std::string notebookCss = "#RemoteFrame notebook, #RemoteFrame notebook > header, #RemoteFrame notebook > header.top, #RemoteFrame notebook > header.top > tabs { margin: 0; padding: 0; border: 0; background-color: transparent; background-image: none; box-shadow: none; } #RemoteFrame notebook > header.top > tabs { padding-left: 6px; } #RemoteFrame notebook > header, #RemoteFrame notebook > header.top, #RemoteFrame notebook > header.top > tabs { min-height: 0; } #RemoteFrame notebook > stack, #RemoteFrame notebook > stack > scrolledwindow, #RemoteFrame notebook > stack > scrolledwindow > viewport { margin: 0; padding: 0; border: 0; background-color: " + options.colorchatback + "; } #RemoteFrame notebook > header.top > tabs > tab { min-height: 0; min-width: 0; margin: 0 1px 0 0; padding: 3px 7px; background-image: none; background-color: #3d3d3d; border: 1px solid #707070; border-bottom: none; border-radius: 3px 3px 0 0; } #RemoteFrame notebook > header.top > tabs > tab:checked { background-color: #454545; border-color: #909090; } #RemoteFrame notebook > header.top > tabs > tab label { min-width: 0; margin: 0; padding: 0; font-size: 12px; }";
     gtk_css_provider_load_from_data(tabProvider, notebookCss.c_str(), -1, nullptr);
     gtk_style_context_add_provider_for_screen(gdk_screen_get_default(), GTK_STYLE_PROVIDER(tabProvider), GTK_STYLE_PROVIDER_PRIORITY_USER + 1);
     g_object_unref(tabProvider);
@@ -180,10 +199,12 @@ TRemoteFrame::TRemoteFrame(const RC::RCOptions& nextOptions, const std::filesyst
 
     g_signal_connect(editField, "key-press-event", G_CALLBACK(onEditKey), this);
     g_signal_connect(window, "key-press-event", G_CALLBACK(onWindowKey), this);
+    g_signal_connect(window, "focus-in-event", G_CALLBACK(+[](GtkWidget*, GdkEventFocus*, gpointer data) -> gboolean { TRemoteFrame* frame = static_cast<TRemoteFrame*>(data); clearRemoteControlUrgency(); remote_control_clear_pm_tray_alert(); if (frame->playerList != nullptr) frame->playerList->clearPrivateMessageAlert(); return false; }), this);
     g_signal_connect(window, "delete-event", G_CALLBACK(onDelete), this);
 }
 
 TRemoteFrame::~TRemoteFrame() {
+    *callbackAlive = false;
     if (eventSource != 0) g_source_remove(eventSource);
     if (window != nullptr) gtk_widget_destroy(window);
     if (backgroundPixbuf != nullptr) g_object_unref(backgroundPixbuf);
@@ -205,6 +226,8 @@ TRemoteFrame::~TRemoteFrame() {
 
 void TRemoteFrame::open(void* nextConnection, const std::string& serverName, const std::string& nickname, const std::string& accountName) {
     connection = nextConnection;
+    this->serverName = serverName;
+    trayPlayerCount = -1;
     setBackupServerName(serverName);
     disconnectHandled = false;
     this->nickname = nickname;
@@ -525,6 +548,10 @@ gboolean TRemoteFrame::processEvents(gpointer data) {
             const std::string playerText = frame->options.labelplayers + " " + std::to_string(count);
             gtk_label_set_text(GTK_LABEL(frame->playersLabel), playerText.c_str());
             for (GtkWidget* shadow : frame->playersLabelShadows) if (shadow != nullptr) gtk_label_set_text(GTK_LABEL(shadow), playerText.c_str());
+            if (count != frame->trayPlayerCount) {
+                frame->trayPlayerCount = count;
+                remote_control_set_tray_label(frame->serverName.c_str(), count);
+            }
         }
     }
     return G_SOURCE_CONTINUE;
@@ -540,6 +567,7 @@ void TRemoteFrame::onConnected(void* data) {
 
 void TRemoteFrame::onDisconnected(const char* reason, void* data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
+    remote_control_set_tray_label(nullptr, 0);
     if (frame->disconnectHandled) return;
     remoteControlDebugLog("connection disconnected: %s", reason == nullptr ? "Disconnected." : reason);
     frame->disconnectHandled = true;
@@ -571,14 +599,15 @@ void TRemoteFrame::onPrivateMessage(int playerId, const char* account, const cha
     const std::string messageType = type == nullptr ? "normal" : type;
     if (messageType == "mass" && frame->options.nomassmessages) return;
     if (frame->playerList == nullptr) frame->playerList = new TPlayerList(frame->applicationDirectory);
+    const bool alert = !hasActiveRemoteControlWindow() && !gtk_widget_has_focus(frame->editField);
     frame->playerList->notePrivateMessage(playerId, account, nick, message, type);
     if (frame->options.newpmalerts) {
         const std::string accountText = account == nullptr ? "" : account;
         const std::string nickText = nick == nullptr ? "" : nick;
         const std::string display = nickText.empty() || nickText == accountText ? accountText : nickText + " (" + accountText + ")";
-        frame->appendChat("#ALERT New PM from " + display);
+        frame->appendChat("#ALERT New PM from " + display, true);
     }
-    if (frame->options.newpmalerts) remote_control_begin_pm_tray_alert();
+    if (frame->options.newpmalerts && alert) remote_control_begin_pm_tray_alert();
 }
 
 void TRemoteFrame::onServerData(const char* type, const char* content, void* data) {
@@ -622,10 +651,10 @@ void TRemoteFrame::graphicalAction(int index) {
     else if (index == 7) onServerOptions(nullptr, this);
 }
 
-void TRemoteFrame::appendChat(const std::string& message) {
+void TRemoteFrame::appendChat(const std::string& message, bool suppressUrgency) {
     const bool colorAlert = message.rfind("#ALERT", 0) == 0;
     std::string display = message;
-    const bool alert = applyAlertTag(display);
+    const bool alert = applyAlertTag(display, !suppressUrgency);
     GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(chatField));
     GtkTextIter end;
     gtk_text_buffer_get_end_iter(buffer, &end);
@@ -655,7 +684,7 @@ void TRemoteFrame::appendChat(const std::string& message) {
             applyEmotes(buffer, startOffset, display);
         }
     }
-    if (alert) {
+    if (alert && !hasActiveRemoteControlWindow()) {
         gtk_window_set_urgency_hint(GTK_WINDOW(window), true);
         gdk_beep();
     }
@@ -772,7 +801,7 @@ void TRemoteFrame::appendChannelMessage(const std::string& channel, const std::s
     }
     const bool colorAlert = message.rfind("#ALERT", 0) == 0;
     std::string display = message;
-    const bool alert = applyAlertTag(display);
+    const bool alert = applyAlertTag(display, true);
     GtkWidget*& field = channelFields[channel];
     if (field == nullptr) {
         GtkWidget* scrolled = gtk_scrolled_window_new(nullptr, nullptr);
@@ -816,8 +845,8 @@ void TRemoteFrame::appendChannelMessage(const std::string& channel, const std::s
             applyEmotes(buffer, startOffset, display);
         }
     }
-    if (alert) {
-        gtk_window_set_urgency_hint(GTK_WINDOW(window), true);
+    if (alert && !hasActiveRemoteControlWindow()) {
+        if (!hasActiveRemoteControlWindow()) gtk_window_set_urgency_hint(GTK_WINDOW(window), true);
         gdk_beep();
     }
     GtkTextIter scrollEnd;
@@ -839,14 +868,14 @@ void TRemoteFrame::removeChannel(const std::string& channel) {
     channelFields.erase(found);
 }
 
-bool TRemoteFrame::applyAlertTag(std::string& message) {
+bool TRemoteFrame::applyAlertTag(std::string& message, bool allowUrgency) {
     static const std::pair<const char*, bool> tags[] = {{"#ALERTSF", false}, {"#ALERTFS", false}, {"#ALERTSP", true}, {"#ALERTPS", true}, {"#ALERTF", true}, {"#ALERTP", true}, {"#ALERT", false}};
     for (const auto& [tag, sound] : tags) {
         const std::size_t length = std::char_traits<char>::length(tag);
         if (message.rfind(tag, 0) != 0) continue;
         message.erase(0, length);
         if (sound) return true;
-        gtk_window_set_urgency_hint(GTK_WINDOW(window), true);
+        if (allowUrgency && !hasActiveRemoteControlWindow()) gtk_window_set_urgency_hint(GTK_WINDOW(window), true);
         return false;
     }
     return false;
@@ -859,6 +888,15 @@ void TRemoteFrame::send() {
     if (chatHistory.empty() || chatHistory.front() != message) chatHistory.insert(chatHistory.begin(), message);
     if (chatHistory.size() > 30) chatHistory.pop_back();
     chatHistoryIndex = -1;
+    if (message.rfind("/scripthelp2", 0) == 0 && (message.size() == 12 || std::isspace(static_cast<unsigned char>(message[12])) != 0)) {
+        std::string query = message.substr(12);
+        const std::size_t first = query.find_first_not_of(" \t");
+        query = first == std::string::npos ? "" : query.substr(first);
+        std::weak_ptr<bool> alive = callbackAlive;
+        requestGScriptHelp(query, [this, alive](std::vector<std::string> lines) { const std::shared_ptr<bool> state = alive.lock(); if (!state || !*state) return; for (const std::string& line : lines) appendChat(line); });
+        gtk_entry_set_text(GTK_ENTRY(editField), "");
+        return;
+    }
     if (!rc_execute(connection, message.c_str())) appendChat(rc_last_error(connection));
     gtk_entry_set_text(GTK_ENTRY(editField), "");
 }

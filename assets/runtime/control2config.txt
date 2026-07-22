@@ -9,6 +9,7 @@ chatlogfile=.\logs\log.txt
 downloadfolder=.\Downloads\
 dontsavepassword=false
 graphicalmenu=true
+darkmode=true
 chatfontsize=9
 globalpms=true
 buddytracking=true

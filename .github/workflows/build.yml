@@ -173,7 +173,7 @@ jobs:
           mkdir -p releases/latest
           cp "releases/$build_id"/* releases/latest/
           cp ../source/LICENSE LICENSE
-          printf '\n%s\n' 'The reconstructed source code is MIT licensed. Original Graal artwork, logos, and other supplied runtime assets remain the property of their respective owners.' >> LICENSE
+          printf '\n%s\n' 'The reconstructed source code is MIT licensed. Original artwork, logos, and other supplied runtime assets remain the property of their respective owners.' >> LICENSE
           {
             echo "# Remote Control - GTK3 Edition"
             echo
@@ -183,7 +183,7 @@ jobs:
             echo
             echo "## License"
             echo
-            echo "The reconstructed source code is MIT licensed. Original Graal artwork, logos, and other supplied runtime assets remain the property of their respective owners."
+            echo "The reconstructed source code is MIT licensed. Original artwork, logos, and other supplied runtime assets remain the property of their respective owners."
           } > README.md
           git rm --ignore-unmatch hashes.md
           git config user.name "GScript RemoteControl CI"

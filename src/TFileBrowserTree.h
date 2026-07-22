@@ -46,7 +46,7 @@ private:
     GdkPixbuf* openFolderIcon = nullptr;
     GdkPixbuf* textFileIcon = nullptr;
     GdkPixbuf* nwFileIcon = nullptr;
-    GdkPixbuf* graalFileIcon = nullptr;
+    GdkPixbuf* scriptFileIcon = nullptr;
     GdkPixbuf* gmapFileIcon = nullptr;
     void* connection = nullptr;
     std::string currentFolder;
