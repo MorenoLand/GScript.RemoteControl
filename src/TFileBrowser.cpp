@@ -69,6 +69,8 @@ TFileBrowser::TFileBrowser() {
 
 TFileBrowser::~TFileBrowser() {
     if (window != nullptr) gtk_widget_destroy(window);
+    if (folders != nullptr) g_object_unref(folders);
+    if (files != nullptr) g_object_unref(files);
 }
 
 void TFileBrowser::open(void* nextConnection) {

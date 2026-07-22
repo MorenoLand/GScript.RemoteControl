@@ -162,6 +162,8 @@ TFileBrowserTree::~TFileBrowserTree() {
     if (graalFileIcon != nullptr) g_object_unref(graalFileIcon);
     if (gmapFileIcon != nullptr) g_object_unref(gmapFileIcon);
     if (window != nullptr) gtk_widget_destroy(window);
+    if (folders != nullptr) g_object_unref(folders);
+    if (files != nullptr) g_object_unref(files);
 }
 
 void TFileBrowserTree::open(void* nextConnection) {
@@ -174,6 +176,8 @@ void TFileBrowserTree::open(void* nextConnection) {
     gtk_window_present(GTK_WINDOW(window));
     refresh();
 }
+
+void TFileBrowserTree::setDownloadFolder(const std::string& folder) { downloadFolder = folder; }
 
 void TFileBrowserTree::onRefresh(GtkButton*, gpointer data) { gtk_widget_hide(static_cast<TFileBrowserTree*>(data)->window); }
 void TFileBrowserTree::onFolders(int, void* data) { static_cast<TFileBrowserTree*>(data)->refreshFolders(); }
@@ -339,6 +343,7 @@ void TFileBrowserTree::showItemMenu(GtkWidget* view, GdkEventButton* event, bool
     g_signal_connect_data(rename, "activate", G_CALLBACK(onRename), renameItem, destroyFileMenuItem, G_CONNECT_AFTER);
     g_signal_connect_data(remove, "activate", G_CALLBACK(onDeleteItem), deleteItem, destroyFileMenuItem, G_CONNECT_AFTER);
     g_free(itemPath);
+    g_signal_connect(menu, "deactivate", G_CALLBACK(+[](GtkWidget* menuWidget, gpointer) { gtk_widget_destroy(menuWidget); }), nullptr);
     gtk_widget_show_all(menu);
     gtk_menu_popup_at_pointer(GTK_MENU(menu), reinterpret_cast<GdkEvent*>(event));
 }
@@ -417,9 +422,30 @@ void TFileBrowserTree::onUpload(GtkMenuItem*, gpointer data) {
 
 void TFileBrowserTree::onFileReceived(const char* path, const void* content, int length, void* data) {
     TFileBrowserTree* browser = static_cast<TFileBrowserTree*>(data);
-    if (path == nullptr || browser->pendingEditPath != path) return;
-    browser->pendingEditPath.clear();
-    browser->showTextEditor(path, content, length);
+    if (path == nullptr || content == nullptr || length < 0) return;
+    if (browser->pendingEditPath == path) {
+        browser->pendingEditPath.clear();
+        browser->showTextEditor(path, content, length);
+        return;
+    }
+    if (browser->downloadFolder.empty()) {
+        browser->appendLog("Specify a download folder in RC Options first.");
+        return;
+    }
+    if (g_mkdir_with_parents(browser->downloadFolder.c_str(), 0755) != 0) {
+        browser->appendLog("Could not create the download folder.");
+        return;
+    }
+    gchar* basename = g_path_get_basename(path);
+    gchar* destination = g_build_filename(browser->downloadFolder.c_str(), basename, nullptr);
+    g_free(basename);
+    if (!g_file_set_contents(destination, static_cast<const gchar*>(content), length, nullptr)) {
+        g_free(destination);
+        browser->appendLog("Could not save downloaded file.");
+        return;
+    }
+    browser->appendLog((std::string("Downloaded file ") + destination).c_str());
+    g_free(destination);
 }
 
 void TFileBrowserTree::showTextEditor(const char* path, const void* content, int length) {

@@ -4,16 +4,18 @@
 
 #include <gtk/gtk.h>
 #include <filesystem>
+#include <functional>
 
 class TOptionsWindow {
 public:
-    TOptionsWindow(RC::RCOptions& options, const std::filesystem::path& applicationDirectory);
+    TOptionsWindow(RC::RCOptions& options, const std::filesystem::path& applicationDirectory, std::function<void(const RC::RCOptions&)> onSaved);
     ~TOptionsWindow();
     void open();
 private:
     static void onClose(GtkButton*, gpointer data);
     static void onBrowseDownload(GtkButton*, gpointer data);
     static void onBrowseLog(GtkButton*, gpointer data);
+    static void onBrowseAutocompleteSource(GtkButton*, gpointer data);
     static gboolean onDelete(GtkWidget*, GdkEvent*, gpointer data);
     void save();
     GtkWidget* window = nullptr;
@@ -36,9 +38,11 @@ private:
     GtkWidget* brackets = nullptr;
     GtkWidget* lineNumbers = nullptr;
     GtkWidget* lsp = nullptr;
+    GtkWidget* autocompleteSource = nullptr;
     GtkWidget* scriptTabWidth = nullptr;
     GtkWidget* scriptUseTabs = nullptr;
     GtkWidget* scriptFontSize = nullptr;
     RC::RCOptions& options;
     std::filesystem::path applicationDirectory;
+    std::function<void(const RC::RCOptions&)> onSaved;
 };

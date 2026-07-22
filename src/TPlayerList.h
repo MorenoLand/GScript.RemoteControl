@@ -12,6 +12,7 @@ public:
     ~TPlayerList();
     void open(void* connection);
     void setConnection(void* connection);
+    void setAttachAway(bool enabled);
     void handleBanData(const char* account, const char* computerId, const char* details);
     void handleBanListData(const char* type, const char* account, const char* content);
     void handlePlayerRights(const char* account, int rights, const char* ipRange, const char* folderAccess);
@@ -23,6 +24,7 @@ private:
     static void onRefresh(GtkButton*, gpointer data);
     static void onMassPM(GtkButton*, gpointer data);
     static void onAdminMessage(GtkButton*, gpointer data);
+    static void onStatusChanged(GtkComboBox*, gpointer data);
     static void onClose(GtkButton*, gpointer data);
     static gboolean onButtonPress(GtkWidget*, GdkEventButton*, gpointer data);
     static void onEditAccess(GtkMenuItem*, gpointer data);
@@ -40,6 +42,7 @@ private:
     static void onGroupCollapsed(GtkTreeView*, GtkTreeIter*, GtkTreePath*, gpointer data);
     static gboolean onDelete(GtkWidget*, GdkEvent*, gpointer data);
     void refresh();
+    void sendAttachAway();
     void refreshRemoteLists();
     void sendMassPM();
     void sendAdminMessage();
@@ -58,11 +61,14 @@ private:
     void adminMessageSelectedPlayer();
     void updatePMIcons();
     void openPrivateMessage(int playerId, const char* account, const char* nick);
+    void openPrivateMessageHistory(const char* account, const char* nick);
+    void markPrivateMessageRead(int playerId);
     void appendHistory(const char* account, const char* direction, const char* message) const;
     GdkPixbuf* pmIconFor(const std::string& type) const;
     std::vector<int> playerIds() const;
     GtkWidget* window = nullptr;
     GtkWidget* tree = nullptr;
+    GtkWidget* statusCombo = nullptr;
     GtkTreeStore* store = nullptr;
     GtkListStore* guildStore = nullptr;
     GtkTreeStore* serverStore = nullptr;

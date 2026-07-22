@@ -35,19 +35,22 @@ TScriptList::TScriptList(std::string nextType) : type(std::move(nextType)) {
     gtk_button_box_set_layout(GTK_BUTTON_BOX(buttons), GTK_BUTTONBOX_END);
     GtkWidget* editButton = gtk_button_new_with_label("Edit");
     GtkWidget* addButton = type == "weapons" ? gtk_button_new_with_label("Add") : nullptr;
+    GtkWidget* deleteButton = gtk_button_new_with_label("Delete");
     GtkWidget* closeButton = gtk_button_new_with_label("Close");
     gtk_container_add(GTK_CONTAINER(buttons), editButton);
     if (addButton != nullptr) gtk_container_add(GTK_CONTAINER(buttons), addButton);
+    gtk_container_add(GTK_CONTAINER(buttons), deleteButton);
     gtk_container_add(GTK_CONTAINER(buttons), closeButton);
     gtk_box_pack_start(GTK_BOX(root), buttons, false, false, 5);
     g_signal_connect(editButton, "clicked", G_CALLBACK(onEdit), this);
     if (addButton != nullptr) g_signal_connect(addButton, "clicked", G_CALLBACK(onAdd), this);
+    g_signal_connect(deleteButton, "clicked", G_CALLBACK(onDeleteScript), this);
     g_signal_connect(closeButton, "clicked", G_CALLBACK(onClose), this);
     g_signal_connect(tree, "row-activated", G_CALLBACK(onTreeActivated), this);
     g_signal_connect(window, "delete-event", G_CALLBACK(onDelete), this);
 }
 
-TScriptList::~TScriptList() { if (classList == this) classList = nullptr; if (weaponList == this) weaponList = nullptr; if (window != nullptr) gtk_widget_destroy(window); }
+TScriptList::~TScriptList() { if (classList == this) classList = nullptr; if (weaponList == this) weaponList = nullptr; if (window != nullptr) gtk_widget_destroy(window); if (store != nullptr) g_object_unref(store); }
 
 void TScriptList::open(void* nextConnection) {
     connection = nextConnection;
@@ -61,6 +64,7 @@ void TScriptList::open(void* nextConnection) {
 void TScriptList::restoreScriptReceiver(void* connection) { rc_on_script_received(connection, onScript, nullptr); }
 
 void TScriptList::onEdit(GtkButton*, gpointer data) { static_cast<TScriptList*>(data)->edit(); }
+void TScriptList::onDeleteScript(GtkButton*, gpointer data) { static_cast<TScriptList*>(data)->deleteSelected(); }
 void TScriptList::onAdd(GtkButton*, gpointer data) {
     struct AddState { TScriptList* list; GtkWidget* name; GtkWidget* image; };
     TScriptList* list = static_cast<TScriptList*>(data);
@@ -113,6 +117,24 @@ void TScriptList::edit() {
     if (name == nullptr) return;
     if (type == "weapons") rc_request_weapon_script(connection, name);
     else rc_request_class_script(connection, name);
+    g_free(name);
+}
+
+void TScriptList::deleteSelected() {
+    GtkTreeModel* model = nullptr;
+    GtkTreeIter row;
+    if (!gtk_tree_selection_get_selected(gtk_tree_view_get_selection(GTK_TREE_VIEW(tree)), &model, &row)) return;
+    gchar* name = nullptr;
+    gtk_tree_model_get(model, &row, 0, &name, -1);
+    if (name == nullptr || *name == '\0') { g_free(name); return; }
+    const std::string noun = type == "weapons" ? "Weapon/GUI Script" : "Class";
+    GtkWidget* dialog = gtk_message_dialog_new(GTK_WINDOW(window), GTK_DIALOG_MODAL, GTK_MESSAGE_WARNING, GTK_BUTTONS_OK_CANCEL, "Delete %s %s?", noun.c_str(), name);
+    const gint response = gtk_dialog_run(GTK_DIALOG(dialog));
+    gtk_widget_destroy(dialog);
+    if (response == GTK_RESPONSE_OK) {
+        if (type == "weapons") rc_delete_weapon(connection, name);
+        else rc_delete_class(connection, name);
+    }
     g_free(name);
 }
 

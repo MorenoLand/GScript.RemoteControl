@@ -1,4 +1,5 @@
 #include "TServerList.h"
+#include "Debug.h"
 
 #include <grclib.h>
 
@@ -35,7 +36,7 @@ namespace {
 
 }
 
-TServerList::TServerList(std::function<void()> onClose, std::function<void(void*, const std::string&, const std::string&)> onConnected) : onCloseCallback(std::move(onClose)), onConnectedCallback(std::move(onConnected)) {
+TServerList::TServerList(std::function<void()> onClose, std::function<void(void*, const std::string&, const std::string&, const std::string&)> onConnected, std::function<void()> onServerSelected) : onCloseCallback(std::move(onClose)), onConnectedCallback(std::move(onConnected)), onServerSelectedCallback(std::move(onServerSelected)) {
     listserverHost = defaultListserverHost;
 #ifdef _WIN32
     HKEY key = nullptr;
@@ -97,7 +98,7 @@ TServerList::TServerList(std::function<void()> onClose, std::function<void(void*
     gtk_tree_view_append_column(GTK_TREE_VIEW(tree), serverColumn);
 
     GtkCellRenderer* playerRenderer = gtk_cell_renderer_text_new();
-    g_object_set(playerRenderer, "xalign", 1.0F, nullptr);
+    g_object_set(playerRenderer, "xalign", 1.0F, "xpad", 6, nullptr);
     GtkTreeViewColumn* playerColumn = gtk_tree_view_column_new_with_attributes("Players", playerRenderer, "text", 2, nullptr);
     gtk_tree_view_column_set_resizable(playerColumn, true);
     gtk_tree_view_column_set_fixed_width(playerColumn, 70);
@@ -192,6 +193,7 @@ TServerList::~TServerList() {
     if (connection != nullptr) rc_disconnect(connection);
     for (GdkPixbuf* icon : serverIcons) if (icon != nullptr) g_object_unref(icon);
     if (window != nullptr) gtk_widget_destroy(window);
+    if (store != nullptr) g_object_unref(store);
 }
 
 void TServerList::open(const std::string& account, const std::string& password, const std::string& nickname) {
@@ -205,7 +207,11 @@ void TServerList::open(const std::string& account, const std::string& password, 
 
 void TServerList::reopen() {
     if (account.empty()) return;
-    open(account, password, nickname);
+    if (worker.joinable()) return;
+    disconnectCurrentConnection();
+    remoteControlDebugLog("opening a fresh listserver connection");
+    show();
+    refresh();
 }
 
 void TServerList::show() {
@@ -216,7 +222,8 @@ void TServerList::show() {
 void TServerList::openListServerSettings() {
     struct SettingsState { TServerList* serverList; GtkWidget* host; GtkWidget* port; GtkWidget* error; };
     GtkWidget* dialog = gtk_dialog_new_with_buttons("List server settings", GTK_WINDOW(window), GTK_DIALOG_MODAL, "Cancel", GTK_RESPONSE_CANCEL, "Apply", GTK_RESPONSE_OK, nullptr);
-    gtk_window_set_default_size(GTK_WINDOW(dialog), 350, -1);
+    gtk_window_set_default_size(GTK_WINDOW(dialog), 250, -1);
+    gtk_window_set_resizable(GTK_WINDOW(dialog), false);
     GtkWidget* frame = gtk_frame_new(" List server ");
     gtk_container_set_border_width(GTK_CONTAINER(frame), 8);
     gtk_box_pack_start(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), frame, true, true, 0);
@@ -313,6 +320,7 @@ gboolean TServerList::finishLoad(gpointer data) {
     }
     gtk_label_set_text(GTK_LABEL(result->serverList->statusField), result->error.c_str());
     gtk_widget_set_sensitive(result->serverList->refreshButton, true);
+    result.release();
     return G_SOURCE_REMOVE;
 }
 
@@ -321,6 +329,7 @@ void TServerList::refresh() {
     gtk_label_set_text(GTK_LABEL(statusField), "Loading server list...");
     gtk_widget_set_sensitive(refreshButton, false);
     worker = std::jthread([this] {
+        remoteControlDebugLog("connecting to listserver %s:%d", listserverHost.c_str(), listserverPort);
         void* nextConnection = rc_connect(listserverHost.c_str(), listserverPort, account.c_str(), password.c_str());
         std::vector<ServerEntry> nextEntries;
         std::string error;
@@ -340,7 +349,7 @@ void TServerList::refresh() {
             if (connection != nullptr) rc_disconnect(connection);
             connection = nextConnection;
         }
-        g_idle_add_full(G_PRIORITY_DEFAULT, finishLoad, new LoadResult{this, std::move(nextEntries), std::move(error)}, nullptr);
+        g_idle_add_full(G_PRIORITY_DEFAULT, finishLoad, new LoadResult{this, std::move(nextEntries), std::move(error)}, +[](gpointer data) { delete static_cast<LoadResult*>(data); });
     });
 }
 
@@ -351,13 +360,27 @@ void TServerList::connect() {
     if (!gtk_tree_selection_get_selected(selection, &model, &iter)) return;
     int index = -1;
     gtk_tree_model_get(model, &iter, 4, &index, -1);
+    if (onServerSelectedCallback) onServerSelectedCallback();
     std::lock_guard lock(connectionMutex);
     if (connection == nullptr) return;
+    remoteControlDebugLog("connecting to server index %d", index);
     if (rc_connect_to_server(connection, index)) {
+        void* remoteConnection = connection;
+        connection = nullptr;
         gtk_widget_hide(window);
-        onConnectedCallback(connection, entries[index].name, nickname);
+        onConnectedCallback(remoteConnection, entries[index].name, nickname, account);
     }
-    else gtk_label_set_text(GTK_LABEL(statusField), rc_last_error(connection));
+    else {
+        remoteControlDebugLog("server connection failed: %s", rc_last_error(connection));
+        gtk_label_set_text(GTK_LABEL(statusField), rc_last_error(connection));
+    }
+}
+
+void TServerList::disconnectCurrentConnection() {
+    std::lock_guard lock(connectionMutex);
+    if (connection == nullptr) return;
+    rc_disconnect(connection);
+    connection = nullptr;
 }
 
 void TServerList::showEntry(int index) {

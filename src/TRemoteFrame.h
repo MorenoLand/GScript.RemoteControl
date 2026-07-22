@@ -21,10 +21,11 @@ class TNPCList;
 
 class TRemoteFrame {
 public:
-    TRemoteFrame(const RC::RCOptions& options, const std::filesystem::path& applicationDirectory, std::function<void()> onClose, std::function<void()> onListServerSettings);
+    TRemoteFrame(const RC::RCOptions& options, const std::filesystem::path& applicationDirectory, std::function<void()> onClose, std::function<void()> onListServer, std::function<void()> onListServerSettings);
     ~TRemoteFrame();
 
-    void open(void* connection, const std::string& serverName, const std::string& nickname);
+    void open(void* connection, const std::string& serverName, const std::string& nickname, const std::string& accountName);
+    void disconnect();
     void show();
     bool openLatestPrivateMessage();
 
@@ -66,7 +67,13 @@ private:
     static gboolean scrollChatToBottom(gpointer data);
 
     void appendChat(const std::string& message);
+    void appendChatLog(const std::string& message) const;
+    void applyOptions(const RC::RCOptions& previous);
+    void sendServerListOptions();
+    void updateMassPMAcceptance();
+    void setNCChannelVisible(bool visible);
     void appendChannelMessage(const std::string& channel, const std::string& message);
+    void removeChannel(const std::string& channel);
     void configureChatField(GtkWidget* field);
     void applyEmotes(GtkTextBuffer* buffer, gint startOffset, const std::string& message);
     bool applyAlertTag(std::string& message);
@@ -75,6 +82,7 @@ private:
     void graphicalAction(int index);
 
     std::function<void()> onCloseCallback;
+    std::function<void()> onListServerCallback;
     std::function<void()> onListServerSettingsCallback;
     GtkWidget* window = nullptr;
     GtkWidget* chatField = nullptr;
@@ -85,6 +93,8 @@ private:
     GtkWidget* editField = nullptr;
     GtkWidget* serverLabel = nullptr;
     GtkWidget* playersLabel = nullptr;
+    std::array<GtkWidget*, 8> serverLabelShadows{};
+    std::array<GtkWidget*, 8> playersLabelShadows{};
     std::array<GtkWidget*, 12> graphicalButtons{};
     GdkPixbuf* kappaEmote = nullptr;
     GdkPixbuf* pmNormalEmote = nullptr;
@@ -92,6 +102,7 @@ private:
     GdkPixbuf* backgroundPixbuf = nullptr;
     void* connection = nullptr;
     std::string nickname;
+    std::string accountName;
     std::vector<std::string> chatHistory;
     int chatHistoryIndex = -1;
     guint eventSource = 0;

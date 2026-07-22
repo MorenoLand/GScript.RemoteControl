@@ -1,10 +1,11 @@
 #pragma once
 
 #include <gtk/gtk.h>
+#include <string>
 
 class TNPCList {
 public:
-    TNPCList();
+    explicit TNPCList(std::string accountName);
     ~TNPCList();
     void open(void* connection);
 private:
@@ -34,5 +35,10 @@ private:
     GtkWidget* tree = nullptr;
     GtkListStore* store = nullptr;
     void* connection = nullptr;
+    std::string accountName;
+    std::string addNPCType = "OBJECT";
+    std::string addNPCLevel;
+    std::string addNPCX = "0";
+    std::string addNPCY = "0";
     int selectedNPCId = -1;
 };

@@ -29,6 +29,7 @@ namespace RC {
         bool showbrackets = true;
         bool showlinenumbers = true;
         bool lsp = true;
+        std::string autocompletesource = "https://api.gscript.dev/";
         bool separatenc = false;
         bool rctimestamps = true;
         bool newpmalerts = true;

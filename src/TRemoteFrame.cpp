@@ -1,5 +1,6 @@
 #include "TRemoteFrame.h"
 #include "Backup.h"
+#include "Debug.h"
 #include "RCOptions.h"
 #include "TFileBrowserTree.h"
 #include "TPlayerList.h"
@@ -11,8 +12,10 @@
 #include "TNPCList.h"
 
 #include <grclib.h>
+#include <IEnums.h>
 
 #include <ctime>
+#include <fstream>
 #include <iomanip>
 #include <sstream>
 
@@ -34,7 +37,7 @@ namespace {
     }
 }
 
-TRemoteFrame::TRemoteFrame(const RC::RCOptions& nextOptions, const std::filesystem::path& nextApplicationDirectory, std::function<void()> onClose, std::function<void()> onListServerSettings) : onCloseCallback(std::move(onClose)), onListServerSettingsCallback(std::move(onListServerSettings)), options(nextOptions), applicationDirectory(nextApplicationDirectory) {
+TRemoteFrame::TRemoteFrame(const RC::RCOptions& nextOptions, const std::filesystem::path& nextApplicationDirectory, std::function<void()> onClose, std::function<void()> onListServer, std::function<void()> onListServerSettings) : onCloseCallback(std::move(onClose)), onListServerCallback(std::move(onListServer)), onListServerSettingsCallback(std::move(onListServerSettings)), options(nextOptions), applicationDirectory(nextApplicationDirectory) {
     kappaEmote = gdk_pixbuf_new_from_file((applicationDirectory / "images" / "emote_kappa.png").string().c_str(), nullptr);
     pmNormalEmote = gdk_pixbuf_new_from_file((applicationDirectory / "images" / "pmicon_normal.png").string().c_str(), nullptr);
     pacmanEmote = gdk_pixbuf_new_from_file((applicationDirectory / "images" / "emote_pacman.png").string().c_str(), nullptr);
@@ -109,21 +112,23 @@ TRemoteFrame::TRemoteFrame(const RC::RCOptions& nextOptions, const std::filesyst
         gdk_color_parse(options.colorlabel.c_str(), &labelColor);
         gdk_color_parse(options.colorlabelback.c_str(), &labelBackgroundColor);
         PangoFontDescription* labelFont = pango_font_description_from_string("Sans Bold 12");
-        const auto addLabel = [&](const std::string& text, int x, int y, GtkWidget** front) {
-            const int offsets[][2] = {{-1, 0}, {1, 0}, {0, -1}, {0, 1}, {1, 1}};
-            for (const auto& offset : offsets) {
+        const auto addLabel = [&](const std::string& text, int x, int y, GtkWidget** front, std::array<GtkWidget*, 8>* shadows) {
+            const int offsets[][2] = {{-1, -1}, {0, -1}, {1, -1}, {-1, 0}, {1, 0}, {-1, 1}, {0, 1}, {1, 1}};
+            for (int index = 0; index < static_cast<int>(shadows->size()); ++index) {
+                const auto& offset = offsets[index];
                 GtkWidget* shadow = gtk_label_new(text.c_str());
                 gtk_widget_modify_fg(shadow, GTK_STATE_NORMAL, &labelBackgroundColor);
                 gtk_widget_modify_font(shadow, labelFont);
                 gtk_fixed_put(GTK_FIXED(fixed), shadow, x + offset[0], y + offset[1]);
+                (*shadows)[index] = shadow;
             }
             *front = gtk_label_new(text.c_str());
             gtk_widget_modify_fg(*front, GTK_STATE_NORMAL, &labelColor);
             gtk_widget_modify_font(*front, labelFont);
             gtk_fixed_put(GTK_FIXED(fixed), *front, x, y);
         };
-        addLabel(options.labelservers, 10, 90, &serverLabel);
-        addLabel(options.labelplayers, 10, 110, &playersLabel);
+        addLabel(options.labelservers, 10, 90, &serverLabel, &serverLabelShadows);
+        addLabel(options.labelplayers, 10, 110, &playersLabel, &playersLabelShadows);
         pango_font_description_free(labelFont);
         gtk_box_pack_start(GTK_BOX(root), fixed, true, true, 0);
         g_signal_connect(fixed, "size-allocate", G_CALLBACK(onGraphicalAllocate), this);
@@ -196,11 +201,12 @@ TRemoteFrame::~TRemoteFrame() {
     delete npcList;
 }
 
-void TRemoteFrame::open(void* nextConnection, const std::string& serverName, const std::string& nickname) {
+void TRemoteFrame::open(void* nextConnection, const std::string& serverName, const std::string& nickname, const std::string& accountName) {
     connection = nextConnection;
     setBackupServerName(serverName);
     disconnectHandled = false;
     this->nickname = nickname;
+    this->accountName = accountName;
     ncConnectionAttempted = false;
     rc_on_connected(connection, onConnected, this);
     rc_on_disconnected(connection, onDisconnected, this);
@@ -214,11 +220,24 @@ void TRemoteFrame::open(void* nextConnection, const std::string& serverName, con
     rc_on_player_attributes(connection, onPlayerAttributes, this);
     rc_on_ban_data(connection, onBanData, this);
     rc_on_ban_list_data(connection, onBanListData, this);
-    if (serverLabel != nullptr) gtk_label_set_text(GTK_LABEL(serverLabel), (options.labelservers + " " + serverName).c_str());
+    setNCChannelVisible(options.separatenc);
+    const std::string serverText = options.labelservers + " " + serverName;
+    if (serverLabel != nullptr) gtk_label_set_text(GTK_LABEL(serverLabel), serverText.c_str());
+    for (GtkWidget* shadow : serverLabelShadows) if (shadow != nullptr) gtk_label_set_text(GTK_LABEL(shadow), serverText.c_str());
     if (eventSource == 0) eventSource = g_timeout_add(50, processEvents, this);
     gtk_widget_show_all(window);
     gtk_window_present(GTK_WINDOW(window));
     gtk_widget_grab_focus(editField);
+}
+
+void TRemoteFrame::disconnect() {
+    if (eventSource != 0) {
+        g_source_remove(eventSource);
+        eventSource = 0;
+    }
+    if (connection == nullptr) return;
+    rc_disconnect(connection);
+    connection = nullptr;
 }
 
 void TRemoteFrame::show() {
@@ -255,7 +274,7 @@ void TRemoteFrame::onAccounts(GtkMenuItem*, gpointer data) {
 
 void TRemoteFrame::onRCOptions(GtkMenuItem*, gpointer data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
-    if (frame->optionsWindow == nullptr) frame->optionsWindow = new TOptionsWindow(const_cast<RC::RCOptions&>(frame->options), frame->applicationDirectory);
+    if (frame->optionsWindow == nullptr) frame->optionsWindow = new TOptionsWindow(const_cast<RC::RCOptions&>(frame->options), frame->applicationDirectory, [frame](const RC::RCOptions& previous) { frame->applyOptions(previous); });
     frame->optionsWindow->open();
 }
 
@@ -301,6 +320,7 @@ void TRemoteFrame::onFileBrowser(GtkMenuItem*, gpointer data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
     if (frame->connection == nullptr) return;
     if (frame->fileBrowser == nullptr) frame->fileBrowser = new TFileBrowserTree();
+    frame->fileBrowser->setDownloadFolder(frame->options.downloadfolder);
     frame->fileBrowser->open(frame->connection);
 }
 
@@ -321,7 +341,7 @@ void TRemoteFrame::onWeapons(GtkMenuItem*, gpointer data) {
 void TRemoteFrame::onNPCs(GtkMenuItem*, gpointer data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
     if (frame->connection == nullptr || rc_is_nc_authenticated(frame->connection) == 0) return;
-    if (frame->npcList == nullptr) frame->npcList = new TNPCList();
+    if (frame->npcList == nullptr) frame->npcList = new TNPCList(frame->accountName);
     frame->npcList->open(frame->connection);
 }
 
@@ -414,7 +434,7 @@ gboolean TRemoteFrame::onGraphicalButton(GtkWidget* button, GdkEventButton* even
 gboolean TRemoteFrame::onEditKey(GtkWidget*, GdkEventKey* event, gpointer data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
     if (event->keyval == GDK_KEY_F8) {
-        frame->onCloseCallback();
+        if (frame->onListServerCallback) frame->onListServerCallback();
         return true;
     }
     if (event->keyval == GDK_KEY_Up && !frame->chatHistory.empty()) {
@@ -434,7 +454,8 @@ gboolean TRemoteFrame::onEditKey(GtkWidget*, GdkEventKey* event, gpointer data) 
 
 gboolean TRemoteFrame::onWindowKey(GtkWidget*, GdkEventKey* event, gpointer data) {
     if (event->keyval != GDK_KEY_F8) return false;
-    static_cast<TRemoteFrame*>(data)->onCloseCallback();
+    TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
+    if (frame->onListServerCallback) frame->onListServerCallback();
     return true;
 }
 
@@ -475,7 +496,9 @@ gboolean TRemoteFrame::processEvents(gpointer data) {
         if (frame->playersLabel != nullptr) {
             RCPlayer* players = nullptr;
             const int count = rc_get_players(frame->connection, &players);
-            gtk_label_set_text(GTK_LABEL(frame->playersLabel), (frame->options.labelplayers + " " + std::to_string(count)).c_str());
+            const std::string playerText = frame->options.labelplayers + " " + std::to_string(count);
+            gtk_label_set_text(GTK_LABEL(frame->playersLabel), playerText.c_str());
+            for (GtkWidget* shadow : frame->playersLabelShadows) if (shadow != nullptr) gtk_label_set_text(GTK_LABEL(shadow), playerText.c_str());
         }
     }
     return G_SOURCE_CONTINUE;
@@ -483,13 +506,16 @@ gboolean TRemoteFrame::processEvents(gpointer data) {
 
 void TRemoteFrame::onConnected(void* data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
+    remoteControlDebugLog("connected to %s", frame->accountName.c_str());
     if (!frame->nickname.empty()) rc_set_nickname(frame->connection, frame->nickname.c_str());
+    frame->updateMassPMAcceptance();
     rc_execute(frame->connection, (std::string("/npc newrc,") + REMOTE_CONTROL_BUILD_DATE).c_str());
 }
 
 void TRemoteFrame::onDisconnected(const char* reason, void* data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
     if (frame->disconnectHandled) return;
+    remoteControlDebugLog("connection disconnected: %s", reason == nullptr ? "Disconnected." : reason);
     frame->disconnectHandled = true;
     GtkWidget* dialog = gtk_dialog_new_with_buttons("Connection Error", GTK_WINDOW(frame->window), GTK_DIALOG_MODAL, "OK", GTK_RESPONSE_OK, nullptr);
     gtk_window_set_default_size(GTK_WINDOW(dialog), 400, 150);
@@ -514,9 +540,17 @@ void TRemoteFrame::onIrcMessage(const char* channel, const char* line, void* dat
 
 void TRemoteFrame::onPrivateMessage(int playerId, const char* account, const char* nick, const char* message, const char* type, void* data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
+    const std::string messageType = type == nullptr ? "normal" : type;
+    if (messageType == "mass" && frame->options.nomassmessages) return;
     if (frame->playerList == nullptr) frame->playerList = new TPlayerList(frame->applicationDirectory);
     frame->playerList->notePrivateMessage(playerId, account, nick, message, type);
-    remote_control_begin_pm_tray_alert();
+    if (frame->options.newpmalerts) {
+        const std::string accountText = account == nullptr ? "" : account;
+        const std::string nickText = nick == nullptr ? "" : nick;
+        const std::string display = nickText.empty() || nickText == accountText ? accountText : nickText + " (" + accountText + ")";
+        frame->appendChat("#ALERT New PM from " + display);
+    }
+    if (frame->options.newpmalerts) remote_control_begin_pm_tray_alert();
 }
 
 void TRemoteFrame::onServerData(const char* type, const char* content, void* data) {
@@ -596,6 +630,65 @@ void TRemoteFrame::appendChat(const std::string& message) {
     gtk_text_buffer_get_end_iter(buffer, &end);
     gtk_text_view_scroll_to_iter(GTK_TEXT_VIEW(chatField), &end, 0.0, false, 0.0, 1.0);
     g_idle_add(scrollChatToBottom, this);
+    appendChatLog(message);
+}
+
+void TRemoteFrame::appendChatLog(const std::string& message) const {
+    if (!options.logrcchat || options.chatlogfile.empty()) return;
+    const std::filesystem::path path = options.chatlogfile;
+    std::error_code error;
+    if (path.has_parent_path()) std::filesystem::create_directories(path.parent_path(), error);
+    std::ofstream stream(path, std::ios::app | std::ios::binary);
+    if (!stream) return;
+    const std::string timestamp = chatTimestamp(options);
+    if (!timestamp.empty()) stream << timestamp << ' ';
+    stream << message << '\n';
+}
+
+void TRemoteFrame::applyOptions(const RC::RCOptions& previous) {
+    nickname = options.nickname;
+    if (connection != nullptr && nickname != previous.nickname) rc_set_nickname(connection, nickname.c_str());
+    if (connection != nullptr && (options.nomassmessages != previous.nomassmessages || options.nomassifclienton != previous.nomassifclienton)) updateMassPMAcceptance();
+    if (connection != nullptr && (options.globalpms != previous.globalpms || options.buddytracking != previous.buddytracking || options.showbuddies != previous.showbuddies)) sendServerListOptions();
+    if (playerList != nullptr && options.attachaway != previous.attachaway) playerList->setAttachAway(options.attachaway);
+    if (options.separatenc != previous.separatenc) setNCChannelVisible(options.separatenc);
+    if (fileBrowser != nullptr && options.downloadfolder != previous.downloadfolder) fileBrowser->setDownloadFolder(options.downloadfolder);
+    if (chatField != nullptr) configureChatField(chatField);
+    for (const auto& entry : channelFields) if (entry.second != nullptr) configureChatField(entry.second);
+}
+
+void TRemoteFrame::sendServerListOptions() {
+    const std::string payload = "GraalEngine,lister,options,globalpms=" + std::string(options.globalpms ? "true" : "false") + ",buddytracking=" + std::string(options.buddytracking ? "true" : "false") + ",showbuddies=" + std::string(options.showbuddies ? "true" : "false");
+    rc_send_raw_packet(connection, PLI_SENDTEXT, payload.c_str(), static_cast<int>(payload.size()));
+}
+
+void TRemoteFrame::updateMassPMAcceptance() {
+    if (connection == nullptr) return;
+    const char state[] = {'A', options.nomassmessages ? '!' : ' '};
+    rc_send_raw_packet(connection, PLI_PLAYERPROPS, state, sizeof(state));
+}
+
+void TRemoteFrame::setNCChannelVisible(bool visible) {
+    const auto found = channelFields.find("NC");
+    if (!visible) {
+        if (found == channelFields.end()) return;
+        GtkWidget* page = gtk_widget_get_parent(found->second);
+        const int pageNumber = gtk_notebook_page_num(GTK_NOTEBOOK(notebook), page);
+        if (pageNumber >= 0) gtk_notebook_remove_page(GTK_NOTEBOOK(notebook), pageNumber);
+        channelFields.erase(found);
+        return;
+    }
+    if (found != channelFields.end()) return;
+    GtkWidget* scrolled = gtk_scrolled_window_new(nullptr, nullptr);
+    GtkWidget* field = gtk_text_view_new();
+    gtk_text_view_set_editable(GTK_TEXT_VIEW(field), false);
+    gtk_text_view_set_cursor_visible(GTK_TEXT_VIEW(field), false);
+    gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(field), GTK_WRAP_WORD_CHAR);
+    configureChatField(field);
+    gtk_container_add(GTK_CONTAINER(scrolled), field);
+    channelFields.emplace("NC", field);
+    gtk_notebook_append_page(GTK_NOTEBOOK(notebook), scrolled, gtk_label_new("NC"));
+    gtk_widget_show_all(scrolled);
 }
 
 void TRemoteFrame::configureChatField(GtkWidget* field) {
@@ -638,6 +731,10 @@ void TRemoteFrame::applyEmotes(GtkTextBuffer* buffer, gint startOffset, const st
 void TRemoteFrame::appendChannelMessage(const std::string& channel, const std::string& message) {
     if (channel.empty()) {
         appendChat(message);
+        return;
+    }
+    if (message == "* Left " + channel) {
+        removeChannel(channel);
         return;
     }
     const bool colorAlert = message.rfind("#ALERT", 0) == 0;
@@ -698,6 +795,15 @@ void TRemoteFrame::appendChannelMessage(const std::string& channel, const std::s
         GtkAdjustment* adjustment = gtk_scrolled_window_get_vadjustment(GTK_SCROLLED_WINDOW(scrolled));
         gtk_adjustment_set_value(adjustment, gtk_adjustment_get_upper(adjustment) - gtk_adjustment_get_page_size(adjustment));
     }
+}
+
+void TRemoteFrame::removeChannel(const std::string& channel) {
+    const auto found = channelFields.find(channel);
+    if (found == channelFields.end()) return;
+    GtkWidget* scrolled = gtk_widget_get_parent(found->second);
+    const int page = scrolled == nullptr ? -1 : gtk_notebook_page_num(GTK_NOTEBOOK(notebook), scrolled);
+    if (page != -1) gtk_notebook_remove_page(GTK_NOTEBOOK(notebook), page);
+    channelFields.erase(found);
 }
 
 bool TRemoteFrame::applyAlertTag(std::string& message) {

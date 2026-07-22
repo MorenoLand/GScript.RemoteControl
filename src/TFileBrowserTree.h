@@ -9,6 +9,7 @@ public:
     TFileBrowserTree();
     ~TFileBrowserTree();
     void open(void* connection);
+    void setDownloadFolder(const std::string& folder);
 private:
     static void onRefresh(GtkButton*, gpointer data);
     static void onFolderSelected(GtkTreeSelection*, gpointer data);
@@ -50,4 +51,5 @@ private:
     void* connection = nullptr;
     std::string currentFolder;
     std::string pendingEditPath;
+    std::string downloadFolder;
 };

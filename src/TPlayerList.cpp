@@ -3,7 +3,9 @@
 #include "TLocalBanWindow.h"
 
 #include <grclib.h>
+#include <IEnums.h>
 
+#include <algorithm>
 #include <string>
 #include <cstdlib>
 #include <vector>
@@ -11,6 +13,8 @@
 #include <filesystem>
 #include <fstream>
 #include <map>
+
+extern void remote_control_clear_pm_tray_alert();
 
 namespace {
     constexpr int PlayerIconColumn = 0;
@@ -225,12 +229,12 @@ TPlayerList::TPlayerList(const std::filesystem::path& nextApplicationDirectory) 
     gtk_widget_set_margin_top(bottom, 2);
     gtk_widget_set_margin_bottom(bottom, 4);
     gtk_box_pack_start(GTK_BOX(bottom), gtk_label_new("Status:"), false, false, 5);
-    GtkWidget* status = gtk_combo_box_text_new();
-    gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(status), "Online");
-    gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(status), "Away");
-    gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(status), "Offline");
-    gtk_combo_box_set_active(GTK_COMBO_BOX(status), 0);
-    gtk_box_pack_start(GTK_BOX(bottom), status, false, false, 0);
+    statusCombo = gtk_combo_box_text_new();
+    gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(statusCombo), "Online");
+    gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(statusCombo), "Away");
+    gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(statusCombo), "Offline");
+    gtk_combo_box_set_active(GTK_COMBO_BOX(statusCombo), 0);
+    gtk_box_pack_start(GTK_BOX(bottom), statusCombo, false, false, 0);
     GtkWidget* buttons = gtk_button_box_new(GTK_ORIENTATION_HORIZONTAL);
     gtk_button_box_set_layout(GTK_BUTTON_BOX(buttons), GTK_BUTTONBOX_END);
     GtkWidget* refreshButton = gtk_button_new_with_label("Refresh");
@@ -247,17 +251,26 @@ TPlayerList::TPlayerList(const std::filesystem::path& nextApplicationDirectory) 
     g_signal_connect(refreshButton, "clicked", G_CALLBACK(onRefresh), this);
     g_signal_connect(massPMButton, "clicked", G_CALLBACK(onMassPM), this);
     g_signal_connect(adminMessageButton, "clicked", G_CALLBACK(onAdminMessage), this);
+    g_signal_connect(statusCombo, "changed", G_CALLBACK(onStatusChanged), this);
     g_signal_connect(closeButton, "clicked", G_CALLBACK(onClose), this);
     g_signal_connect(window, "delete-event", G_CALLBACK(onDelete), this);
 }
 
-TPlayerList::~TPlayerList() { if (pmBlinkSource != 0) g_source_remove(pmBlinkSource); delete localBanWindow; if (onlineIcon != nullptr) g_object_unref(onlineIcon); if (channelIcon != nullptr) g_object_unref(channelIcon); if (channelClosedIcon != nullptr) g_object_unref(channelClosedIcon); if (pmNormalIcon != nullptr) g_object_unref(pmNormalIcon); if (pmGuildIcon != nullptr) g_object_unref(pmGuildIcon); if (pmAdminIcon != nullptr) g_object_unref(pmAdminIcon); if (pmMassIcon != nullptr) g_object_unref(pmMassIcon); if (window != nullptr) gtk_widget_destroy(window); }
+TPlayerList::~TPlayerList() { if (pmBlinkSource != 0) g_source_remove(pmBlinkSource); delete localBanWindow; if (onlineIcon != nullptr) g_object_unref(onlineIcon); if (channelIcon != nullptr) g_object_unref(channelIcon); if (channelClosedIcon != nullptr) g_object_unref(channelClosedIcon); if (pmNormalIcon != nullptr) g_object_unref(pmNormalIcon); if (pmGuildIcon != nullptr) g_object_unref(pmGuildIcon); if (pmAdminIcon != nullptr) g_object_unref(pmAdminIcon); if (pmMassIcon != nullptr) g_object_unref(pmMassIcon); if (window != nullptr) gtk_widget_destroy(window); if (store != nullptr) g_object_unref(store); if (guildStore != nullptr) g_object_unref(guildStore); if (serverStore != nullptr) g_object_unref(serverStore); if (channelStore != nullptr) g_object_unref(channelStore); }
 void TPlayerList::open(void* nextConnection) { setConnection(nextConnection); rc_on_pm_servers_updated(connection, onPMServers, this); rc_on_pm_guilds_updated(connection, onPMGuilds, this); rc_on_pm_server_players(connection, onPMServerPlayers, this); refresh(); gtk_widget_show_all(window); gtk_window_present(GTK_WINDOW(window)); }
 void TPlayerList::setConnection(void* nextConnection) { connection = nextConnection; }
+void TPlayerList::setAttachAway(bool enabled) { if (statusCombo != nullptr) gtk_combo_box_set_active(GTK_COMBO_BOX(statusCombo), enabled && !gtk_widget_get_visible(window) ? 1 : 0); }
 void TPlayerList::onRefresh(GtkButton*, gpointer data) { static_cast<TPlayerList*>(data)->refresh(); }
 void TPlayerList::onMassPM(GtkButton*, gpointer data) { static_cast<TPlayerList*>(data)->sendMassPM(); }
 void TPlayerList::onAdminMessage(GtkButton*, gpointer data) { static_cast<TPlayerList*>(data)->sendAdminMessage(); }
+void TPlayerList::onStatusChanged(GtkComboBox*, gpointer data) { static_cast<TPlayerList*>(data)->sendAttachAway(); }
 void TPlayerList::onClose(GtkButton*, gpointer data) { gtk_widget_hide(static_cast<TPlayerList*>(data)->window); }
+void TPlayerList::sendAttachAway() {
+    if (connection == nullptr || statusCombo == nullptr) return;
+    const int status = std::clamp(gtk_combo_box_get_active(GTK_COMBO_BOX(statusCombo)), 0, 223);
+    const char payload[] = {'U', static_cast<char>(status + 32)};
+    rc_send_raw_packet(connection, PLI_PLAYERPROPS, payload, sizeof(payload));
+}
 gboolean TPlayerList::onButtonPress(GtkWidget* widget, GdkEventButton* event, gpointer data) {
     if (event->type != GDK_BUTTON_PRESS && event->type != GDK_2BUTTON_PRESS) return false;
     GtkTreePath* path = nullptr;
@@ -328,6 +341,7 @@ gboolean TPlayerList::onButtonPress(GtkWidget* widget, GdkEventButton* event, gp
     g_signal_connect(warp, "activate", G_CALLBACK(+[](GtkMenuItem*, gpointer userData) { static_cast<TPlayerList*>(userData)->warpSelectedPlayer(); }), data);
     g_signal_connect(updateLevel, "activate", G_CALLBACK(+[](GtkMenuItem*, gpointer userData) { static_cast<TPlayerList*>(userData)->updateSelectedPlayerLevel(); }), data);
     g_signal_connect(adminMessage, "activate", G_CALLBACK(+[](GtkMenuItem*, gpointer userData) { static_cast<TPlayerList*>(userData)->adminMessageSelectedPlayer(); }), data);
+    g_signal_connect(menu, "deactivate", G_CALLBACK(+[](GtkWidget* menuWidget, gpointer) { gtk_widget_destroy(menuWidget); }), nullptr);
     gtk_widget_show_all(menu);
     gtk_menu_popup_at_pointer(GTK_MENU(menu), reinterpret_cast<GdkEvent*>(event));
     return true;
@@ -754,6 +768,7 @@ gboolean TPlayerList::onServerButtonPress(GtkWidget* widget, GdkEventButton* eve
             g_free(account);
             g_free(nick);
         })), list);
+        g_signal_connect(menu, "deactivate", G_CALLBACK(+[](GtkWidget* menuWidget, gpointer) { gtk_widget_destroy(menuWidget); }), nullptr);
         gtk_widget_show_all(menu);
         gtk_menu_popup_at_pointer(GTK_MENU(menu), reinterpret_cast<GdkEvent*>(event));
     }
@@ -830,12 +845,8 @@ void TPlayerList::notePrivateMessage(int playerId, const char* account, const ch
 bool TPlayerList::openLatestPrivateMessage() {
     const auto player = pmPlayers.find(latestPMPlayerId);
     if (player == pmPlayers.end() || player->second.first.empty()) return false;
-    openPrivateMessage(latestPMPlayerId, player->second.first.c_str(), player->second.second.c_str());
-    pmTypes.erase(latestPMPlayerId);
-    pmPlayers.erase(player);
-    latestPMPlayerId = pmPlayers.empty() ? 0 : pmPlayers.rbegin()->first;
-    pmIconsVisible = true;
-    updatePMIcons();
+    openPrivateMessageHistory(player->second.first.c_str(), player->second.second.c_str());
+    markPrivateMessageRead(latestPMPlayerId);
     return true;
 }
 
@@ -849,6 +860,11 @@ void TPlayerList::appendHistory(const char* account, const char* direction, cons
 
 void TPlayerList::openPrivateMessage(int playerId, const char* account, const char* nick) {
     if (playerId == 0 || account == nullptr || *account == '\0') return;
+    if (pmPlayers.find(playerId) != pmPlayers.end()) {
+        openPrivateMessageHistory(account, nick);
+        markPrivateMessageRead(playerId);
+        return;
+    }
     PMWindowData* data = new PMWindowData{connection, applicationDirectory / "PMs", nullptr, nullptr, playerId, account, nick == nullptr ? "" : nick};
     data->window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
     gtk_widget_set_name(data->window, "PrivateMessage");
@@ -884,6 +900,24 @@ void TPlayerList::openPrivateMessage(int playerId, const char* account, const ch
     gtk_widget_show_all(data->window);
     gtk_window_present(GTK_WINDOW(data->window));
     gtk_widget_grab_focus(data->reply);
+}
+
+void TPlayerList::openPrivateMessageHistory(const char* account, const char* nick) {
+    PMWindowData data{connection, applicationDirectory / "PMs", nullptr, nullptr, 0, account == nullptr ? "" : account, nick == nullptr ? "" : nick};
+    onPMHistory(nullptr, &data);
+}
+
+void TPlayerList::markPrivateMessageRead(int playerId) {
+    pmTypes.erase(playerId);
+    pmPlayers.erase(playerId);
+    if (latestPMPlayerId == playerId) latestPMPlayerId = pmPlayers.empty() ? 0 : pmPlayers.rbegin()->first;
+    if (pmPlayers.empty() && pmBlinkSource != 0) {
+        g_source_remove(pmBlinkSource);
+        pmBlinkSource = 0;
+        pmIconsVisible = true;
+        remote_control_clear_pm_tray_alert();
+    }
+    updatePMIcons();
 }
 
 void TPlayerList::updatePMIcons() {

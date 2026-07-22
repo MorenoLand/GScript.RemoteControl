@@ -1,6 +1,7 @@
 #include "TAccountsWindow.h"
 
 #include <grclib.h>
+#include <IEnums.h>
 
 #include <map>
 #include <sstream>
@@ -157,7 +158,7 @@ TAccountsWindow::TAccountsWindow() {
     g_signal_connect(editorWindow, "delete-event", G_CALLBACK(onDelete), this);
 }
 
-TAccountsWindow::~TAccountsWindow() { if (queryWindow != nullptr) gtk_widget_destroy(queryWindow); if (listWindow != nullptr) gtk_widget_destroy(listWindow); if (editorWindow != nullptr) gtk_widget_destroy(editorWindow); }
+TAccountsWindow::~TAccountsWindow() { if (queryWindow != nullptr) gtk_widget_destroy(queryWindow); if (listWindow != nullptr) gtk_widget_destroy(listWindow); if (editorWindow != nullptr) gtk_widget_destroy(editorWindow); if (store != nullptr) g_object_unref(store); }
 void TAccountsWindow::open(void* nextConnection) { connection = nextConnection; gtk_widget_show_all(listWindow); gtk_window_present(GTK_WINDOW(listWindow)); }
 void TAccountsWindow::openQuery() { gtk_widget_show_all(queryWindow); gtk_window_present(GTK_WINDOW(queryWindow)); gtk_widget_grab_focus(accountField); }
 void TAccountsWindow::setAccounts(const char* accounts) { gtk_list_store_clear(store); std::istringstream input(accounts == nullptr ? "" : accounts); for (std::string account; std::getline(input, account);) { GtkTreeIter row; gtk_list_store_append(store, &row); gtk_list_store_set(store, &row, 0, account.c_str(), -1); } gtk_widget_show_all(listWindow); gtk_window_present(GTK_WINDOW(listWindow)); }
@@ -201,23 +202,68 @@ gboolean TAccountsWindow::onAccountContext(GtkWidget* widget, GdkEventButton* ev
     gtk_tree_selection_select_path(gtk_tree_view_get_selection(tree), path);
     gtk_tree_path_free(path);
     GtkWidget* menu = gtk_menu_new();
-    GtkWidget* edit = gtk_menu_item_new_with_label("Edit");
-    gtk_menu_shell_append(GTK_MENU_SHELL(menu), edit);
-    g_signal_connect(edit, "activate", G_CALLBACK(onEditAccount), data);
+    GtkWidget* attributes = gtk_menu_item_new_with_label("Edit Attributes");
+    GtkWidget* account = gtk_menu_item_new_with_label("Edit Account");
+    GtkWidget* rights = gtk_menu_item_new_with_label("Edit Rights");
+    GtkWidget* comments = gtk_menu_item_new_with_label("Edit Comments");
+    GtkWidget* access = gtk_menu_item_new_with_label("Edit Access");
+    GtkWidget* reset = gtk_menu_item_new_with_label("Reset");
+    GtkWidget* remove = gtk_menu_item_new_with_label("Delete");
+    gtk_menu_shell_append(GTK_MENU_SHELL(menu), attributes);
+    gtk_menu_shell_append(GTK_MENU_SHELL(menu), gtk_separator_menu_item_new());
+    gtk_menu_shell_append(GTK_MENU_SHELL(menu), account);
+    gtk_menu_shell_append(GTK_MENU_SHELL(menu), rights);
+    gtk_menu_shell_append(GTK_MENU_SHELL(menu), comments);
+    gtk_menu_shell_append(GTK_MENU_SHELL(menu), access);
+    gtk_menu_shell_append(GTK_MENU_SHELL(menu), gtk_separator_menu_item_new());
+    gtk_menu_shell_append(GTK_MENU_SHELL(menu), reset);
+    gtk_menu_shell_append(GTK_MENU_SHELL(menu), remove);
+    g_signal_connect(attributes, "activate", G_CALLBACK(onEditAttributes), data);
+    g_signal_connect(account, "activate", G_CALLBACK(onEditAccount), data);
+    g_signal_connect(rights, "activate", G_CALLBACK(onEditRights), data);
+    g_signal_connect(comments, "activate", G_CALLBACK(onEditComments), data);
+    g_signal_connect(access, "activate", G_CALLBACK(onEditAccess), data);
+    g_signal_connect(reset, "activate", G_CALLBACK(onReset), data);
+    g_signal_connect(remove, "activate", G_CALLBACK(onDeleteAccount), data);
     g_signal_connect(menu, "deactivate", G_CALLBACK(+[](GtkWidget* menuWidget, gpointer) { gtk_widget_destroy(menuWidget); }), nullptr);
     gtk_widget_show_all(menu);
     gtk_menu_popup_at_pointer(GTK_MENU(menu), reinterpret_cast<GdkEvent*>(event));
     return TRUE;
 }
+void TAccountsWindow::onEditAttributes(GtkMenuItem*, gpointer data) { TAccountsWindow* window = static_cast<TAccountsWindow*>(data); const std::string account = window->selectedAccount(); if (!account.empty()) rc_request_player_attrs(window->connection, account.c_str()); }
 void TAccountsWindow::onEditAccount(GtkMenuItem*, gpointer data) { static_cast<TAccountsWindow*>(data)->requestSelectedAccount(); }
+void TAccountsWindow::onEditRights(GtkMenuItem*, gpointer data) { TAccountsWindow* window = static_cast<TAccountsWindow*>(data); const std::string account = window->selectedAccount(); if (!account.empty()) rc_request_player_rights(window->connection, account.c_str()); }
+void TAccountsWindow::onEditComments(GtkMenuItem*, gpointer data) { TAccountsWindow* window = static_cast<TAccountsWindow*>(data); const std::string account = window->selectedAccount(); if (!account.empty()) rc_request_player_comments(window->connection, account.c_str()); }
+void TAccountsWindow::onEditAccess(GtkMenuItem*, gpointer data) { TAccountsWindow* window = static_cast<TAccountsWindow*>(data); const std::string account = window->selectedAccount(); if (!account.empty()) { rc_request_ban_types(window->connection); rc_request_player_ban_by_account(window->connection, account.c_str()); } }
+void TAccountsWindow::onReset(GtkMenuItem*, gpointer data) {
+    TAccountsWindow* window = static_cast<TAccountsWindow*>(data);
+    const std::string account = window->selectedAccount();
+    if (account.empty()) return;
+    GtkWidget* dialog = gtk_message_dialog_new(GTK_WINDOW(window->listWindow), GTK_DIALOG_MODAL, GTK_MESSAGE_QUESTION, GTK_BUTTONS_OK_CANCEL, "Do you really want to reset the attributes of %s?", account.c_str());
+    if (gtk_dialog_run(GTK_DIALOG(dialog)) == GTK_RESPONSE_OK) rc_reset_player(window->connection, account.c_str());
+    gtk_widget_destroy(dialog);
+}
+void TAccountsWindow::onDeleteAccount(GtkMenuItem*, gpointer data) {
+    TAccountsWindow* window = static_cast<TAccountsWindow*>(data);
+    const std::string account = window->selectedAccount();
+    if (account.empty()) return;
+    GtkWidget* dialog = gtk_message_dialog_new(GTK_WINDOW(window->listWindow), GTK_DIALOG_MODAL, GTK_MESSAGE_QUESTION, GTK_BUTTONS_OK_CANCEL, "Do you really want to delete the account %s?", account.c_str());
+    if (gtk_dialog_run(GTK_DIALOG(dialog)) == GTK_RESPONSE_OK) rc_send_raw_packet(window->connection, PLI_RC_ACCOUNTDEL, account.c_str(), static_cast<int>(account.size()));
+    gtk_widget_destroy(dialog);
+}
 void TAccountsWindow::requestSelectedAccount() {
+    const std::string account = selectedAccount();
+    if (!account.empty()) rc_request_player_account(connection, account.c_str());
+}
+std::string TAccountsWindow::selectedAccount() const {
     GtkTreeModel* model = nullptr;
     GtkTreeIter row;
-    if (accountTree == nullptr || !gtk_tree_selection_get_selected(gtk_tree_view_get_selection(GTK_TREE_VIEW(accountTree)), &model, &row)) return;
+    if (accountTree == nullptr || !gtk_tree_selection_get_selected(gtk_tree_view_get_selection(GTK_TREE_VIEW(accountTree)), &model, &row)) return "";
     gchar* account = nullptr;
     gtk_tree_model_get(model, &row, 0, &account, -1);
-    if (account != nullptr && *account != '\0') rc_request_player_account(connection, account);
+    const std::string result = account == nullptr ? "" : account;
     g_free(account);
+    return result;
 }
 void TAccountsWindow::onApply(GtkButton*, gpointer data) { TAccountsWindow* window = static_cast<TAccountsWindow*>(data); const std::string content = window->accountText(); if (window->editingAccount.empty()) rc_add_player_account(window->connection, content.c_str()); else rc_set_player_account(window->connection, window->editingAccount.c_str(), content.c_str()); }
 void TAccountsWindow::onClose(GtkButton* button, gpointer) { gtk_widget_hide(gtk_widget_get_toplevel(GTK_WIDGET(button))); }

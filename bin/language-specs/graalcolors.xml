@@ -53,7 +53,7 @@
   <color name="purple" value="#b14cf7" />
   
   <!-- Extras -->
-  <style name="Others 4" foreground="white" />
+    <style name="Others 4" foreground="#ffffff" />
   <style name="Others 5" foreground="orange2" />
   <style name="Operators" foreground="#F92672" />
   <style name="Object Properties" foreground="chameleon3" />

@@ -1,5 +1,6 @@
 #include "RCOptions.h"
 #include "Backup.h"
+#include "Debug.h"
 #include "GScriptEditor.h"
 #include "TRemoteFrame.h"
 #include "TServerList.h"
@@ -31,6 +32,7 @@ std::string pmTrayAlertIcon;
 guint pmTrayBlinkSource = 0;
 bool pmTrayAlertVisible = false;
 std::function<void()> trayServerListOpen;
+bool remoteControlDebug = false;
 
 namespace {
 
@@ -153,15 +155,24 @@ void remote_control_begin_pm_tray_alert() {
     pmTrayBlinkSource = g_timeout_add(500, onTrayPMBlink, nullptr);
 }
 
+void remote_control_clear_pm_tray_alert() { clearTrayPMAlert(); }
+
 int main(int argc, char** argv) {
 #ifdef _WIN32
     bool debugMode = false;
-    for (int index = 1; index < argc; ++index) if (std::string(argv[index]) == "--debug") debugMode = true;
+    int argumentCount = 1;
+    for (int index = 1; index < argc; ++index) {
+        if (std::string(argv[index]) == "--debug") debugMode = true;
+        else argv[argumentCount++] = argv[index];
+    }
+    argc = argumentCount;
     if (debugMode && AttachConsole(ATTACH_PARENT_PROCESS)) {
         FILE* stream = nullptr;
         freopen_s(&stream, "CONOUT$", "w", stdout);
         freopen_s(&stream, "CONOUT$", "w", stderr);
     }
+    remoteControlDebug = debugMode;
+    remoteControlDebugLog("debug logging enabled");
 #endif
     const std::filesystem::path applicationDirectory = getApplicationDirectory();
     std::filesystem::current_path(applicationDirectory);
@@ -197,15 +208,24 @@ int main(int argc, char** argv) {
     g_signal_connect(trayIcon, "popup-menu", G_CALLBACK(onTrayPopup), nullptr);
     TStartFrame* startFrame = nullptr;
     std::unique_ptr<TRemoteFrame> remoteFrame;
-    TServerList serverList([&] { startFrame->show(); }, [&](void* connection, const std::string& serverName, const std::string& nickname) {
-        remoteFrame = std::make_unique<TRemoteFrame>(options, applicationDirectory, [&] { serverList.reopen(); }, [&] { serverList.openListServerSettings(); });
+    std::function<void()> switchServer;
+    TServerList serverList([&] { startFrame->show(); }, [&](void* connection, const std::string& serverName, const std::string& nickname, const std::string& accountName) {
+        remoteFrame = std::make_unique<TRemoteFrame>(options, applicationDirectory, [&] { serverList.reopen(); }, [&] { switchServer(); }, [&] { serverList.openListServerSettings(); });
         trayRemoteFrame = remoteFrame.get();
-        remoteFrame->open(connection, serverName, nickname);
+        remoteFrame->open(connection, serverName, nickname, accountName);
+    }, [&] {
+        if (remoteFrame == nullptr) return;
+        trayRemoteFrame = nullptr;
+        remoteFrame->disconnect();
+        remoteFrame.reset();
     });
+    switchServer = [&] {
+        serverList.reopen();
+    };
     TStartFrame frame(options, applicationDirectory, [&](const std::string& account, const std::string& password, const std::string& nickname) { serverList.open(account, password, nickname); }, [&] { serverList.openListServerSettings(); });
     startFrame = &frame;
     trayStartFrame = startFrame;
-    trayServerListOpen = [&] { serverList.show(); };
+    trayServerListOpen = switchServer;
 #ifdef _WIN32
     frame.show();
     if (GdkWindow* startWindow = frame.nativeWindow()) {
@@ -223,5 +243,15 @@ int main(int argc, char** argv) {
         if (GdkWindow* startWindow = frame.nativeWindow()) gdk_window_remove_filter(startWindow, onWindowsMessage, nullptr);
     }
 #endif
+    clearTrayPMAlert();
+    if (trayMenu != nullptr) {
+        gtk_widget_destroy(trayMenu);
+        trayMenu = nullptr;
+    }
+    if (trayIcon != nullptr) {
+        gtk_status_icon_set_visible(trayIcon, false);
+        g_object_unref(trayIcon);
+        pmTrayIcon = nullptr;
+    }
     return 0;
 }

@@ -36,7 +36,3 @@ endforeach()
 
 set(loaderCache "${REMOTE_CONTROL_OUTPUT_DIRECTORY}/lib/gdk-pixbuf-2.0/2.10.0/loaders.cache")
 execute_process(COMMAND "${REMOTE_CONTROL_MINGW_RUNTIME_DIRECTORY}/gdk-pixbuf-query-loaders.exe" ${deployedLoaderModules} OUTPUT_FILE "${loaderCache}" COMMAND_ERROR_IS_FATAL ANY)
-file(READ "${loaderCache}" loaderCacheContents)
-file(TO_CMAKE_PATH "${REMOTE_CONTROL_OUTPUT_DIRECTORY}" normalizedOutputDirectory)
-string(REPLACE "${normalizedOutputDirectory}" "." loaderCacheContents "${loaderCacheContents}")
-file(WRITE "${loaderCache}" "${loaderCacheContents}")
