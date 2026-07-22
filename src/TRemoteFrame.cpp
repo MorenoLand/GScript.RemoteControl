@@ -21,8 +21,10 @@
 #include <grclib.h>
 #include <IEnums.h>
 #include <gtksourceview/gtksource.h>
+#include <webp/demux.h>
 
 #include <cctype>
+#include <algorithm>
 #include <ctime>
 #include <fstream>
 #include <iomanip>
@@ -61,6 +63,37 @@ namespace {
         std::ostringstream text;
         text << std::put_time(&local, options.timestampformat.c_str());
         return text.str();
+    }
+
+    bool loadWebPAnimation(const std::filesystem::path& path, std::vector<GdkPixbuf*>& frames, std::vector<int>& durations) {
+        gchar* contents = nullptr;
+        gsize length = 0;
+        if (!g_file_get_contents(path.string().c_str(), &contents, &length, nullptr)) return false;
+        WebPData data{reinterpret_cast<const uint8_t*>(contents), length};
+        WebPAnimDecoderOptions options;
+        WebPAnimDecoderOptionsInit(&options);
+        WebPAnimDecoder* decoder = WebPAnimDecoderNew(&data, &options);
+        if (decoder == nullptr) { g_free(contents); return false; }
+        WebPAnimInfo info;
+        if (!WebPAnimDecoderGetInfo(decoder, &info)) { WebPAnimDecoderDelete(decoder); g_free(contents); return false; }
+        int previousTimestamp = 0;
+        while (WebPAnimDecoderHasMoreFrames(decoder)) {
+            uint8_t* pixels = nullptr;
+            int timestamp = 0;
+            if (!WebPAnimDecoderGetNext(decoder, &pixels, &timestamp)) break;
+            GdkPixbuf* frame = gdk_pixbuf_new_from_data(pixels, GDK_COLORSPACE_RGB, true, 8, info.canvas_width, info.canvas_height, info.canvas_width * 4, nullptr, nullptr);
+            if (frame != nullptr) {
+                frames.push_back(gdk_pixbuf_copy(frame));
+                g_object_unref(frame);
+                durations.push_back(std::max(10, timestamp - previousTimestamp));
+                previousTimestamp = timestamp;
+            }
+        }
+        WebPAnimDecoderDelete(decoder);
+        g_free(contents);
+        if (frames.empty()) return false;
+        if (durations.size() == 1) durations[0] = 100;
+        return true;
     }
 }
 
@@ -114,26 +147,41 @@ TRemoteFrame::TRemoteFrame(const RC::RCOptions& nextOptions, const std::filesyst
         GtkWidget* fixed = gtk_fixed_new();
         graphicalFixed = fixed;
         const std::filesystem::path background = applicationDirectory / "images" / options.background;
-        GError* imageError = nullptr;
-        backgroundAnimation = gdk_pixbuf_animation_new_from_file(background.string().c_str(), &imageError);
-        if (backgroundAnimation != nullptr && gdk_pixbuf_animation_is_static_image(backgroundAnimation)) {
-            backgroundPixbuf = gdk_pixbuf_animation_get_static_image(backgroundAnimation);
-            g_object_ref(backgroundPixbuf);
-            g_object_unref(backgroundAnimation);
-            backgroundAnimation = nullptr;
-        } else if (backgroundAnimation != nullptr) {
-            GTimeVal now;
-            g_get_current_time(&now);
-            backgroundAnimationIter = gdk_pixbuf_animation_get_iter(backgroundAnimation, &now);
+        std::string extension = background.extension().string();
+        std::transform(extension.begin(), extension.end(), extension.begin(), [](unsigned char value) { return static_cast<char>(std::tolower(value)); });
+        if (extension == ".webp" && loadWebPAnimation(background, backgroundWebPFrames, backgroundWebPFrameDurations)) {
+            backgroundWebPNextFrame = g_get_monotonic_time() + static_cast<gint64>(backgroundWebPFrameDurations.front()) * 1000;
+        } else {
+            GError* imageError = nullptr;
+            backgroundAnimation = gdk_pixbuf_animation_new_from_file(background.string().c_str(), &imageError);
+            if (backgroundAnimation != nullptr && gdk_pixbuf_animation_is_static_image(backgroundAnimation)) {
+                backgroundPixbuf = gdk_pixbuf_animation_get_static_image(backgroundAnimation);
+                g_object_ref(backgroundPixbuf);
+                g_object_unref(backgroundAnimation);
+                backgroundAnimation = nullptr;
+            } else if (backgroundAnimation != nullptr) {
+                GTimeVal now;
+                g_get_current_time(&now);
+                backgroundAnimationIter = gdk_pixbuf_animation_get_iter(backgroundAnimation, &now);
+            }
+            if (imageError != nullptr) g_error_free(imageError);
         }
         backgroundImage = gtk_drawing_area_new();
-        if (imageError != nullptr) g_error_free(imageError);
         gtk_container_add(GTK_CONTAINER(header), backgroundImage);
         gtk_overlay_add_overlay(GTK_OVERLAY(header), fixed);
         g_signal_connect(backgroundImage, "draw", G_CALLBACK(onGraphicalDraw), this);
-        if (backgroundAnimationIter != nullptr) backgroundAnimationSource = g_timeout_add(16, +[](gpointer data) -> gboolean {
+        if (backgroundAnimationIter != nullptr || !backgroundWebPFrames.empty()) backgroundAnimationSource = g_timeout_add(16, +[](gpointer data) -> gboolean {
             TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
-            if (frame->backgroundAnimationIter == nullptr || frame->backgroundImage == nullptr) return G_SOURCE_REMOVE;
+            if (frame->backgroundImage == nullptr) return G_SOURCE_REMOVE;
+            if (!frame->backgroundWebPFrames.empty()) {
+                const gint64 now = g_get_monotonic_time();
+                if (now < frame->backgroundWebPNextFrame) return G_SOURCE_CONTINUE;
+                frame->backgroundWebPFrame = (frame->backgroundWebPFrame + 1) % frame->backgroundWebPFrames.size();
+                frame->backgroundWebPNextFrame = now + static_cast<gint64>(frame->backgroundWebPFrameDurations[frame->backgroundWebPFrame]) * 1000;
+                gtk_widget_queue_draw(frame->backgroundImage);
+                return G_SOURCE_CONTINUE;
+            }
+            if (frame->backgroundAnimationIter == nullptr) return G_SOURCE_REMOVE;
             GTimeVal now;
             g_get_current_time(&now);
             if (!gdk_pixbuf_animation_iter_advance(frame->backgroundAnimationIter, &now)) return G_SOURCE_CONTINUE;
@@ -297,7 +345,7 @@ gboolean TRemoteFrame::onWindowState(GtkWidget*, GdkEventWindowState* event, gpo
 
 gboolean TRemoteFrame::onGraphicalDraw(GtkWidget* widget, cairo_t* context, gpointer data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
-    GdkPixbuf* pixbuf = frame->backgroundAnimationIter != nullptr ? gdk_pixbuf_animation_iter_get_pixbuf(frame->backgroundAnimationIter) : frame->backgroundPixbuf;
+    GdkPixbuf* pixbuf = !frame->backgroundWebPFrames.empty() ? frame->backgroundWebPFrames[frame->backgroundWebPFrame] : (frame->backgroundAnimationIter != nullptr ? gdk_pixbuf_animation_iter_get_pixbuf(frame->backgroundAnimationIter) : frame->backgroundPixbuf);
     if (pixbuf == nullptr) return false;
     GtkAllocation allocation;
     gtk_widget_get_allocation(widget, &allocation);
@@ -317,6 +365,7 @@ TRemoteFrame::~TRemoteFrame() {
     if (backgroundPixbuf != nullptr) g_object_unref(backgroundPixbuf);
     if (backgroundAnimationIter != nullptr) g_object_unref(backgroundAnimationIter);
     if (backgroundAnimation != nullptr) g_object_unref(backgroundAnimation);
+    for (GdkPixbuf* frame : backgroundWebPFrames) g_object_unref(frame);
     if (kappaEmote != nullptr) g_object_unref(kappaEmote);
     if (pmNormalEmote != nullptr) g_object_unref(pmNormalEmote);
     if (pacmanEmote != nullptr) g_object_unref(pacmanEmote);
@@ -401,7 +450,7 @@ void TRemoteFrame::onSend(GtkButton*, gpointer data) { static_cast<TRemoteFrame*
 void TRemoteFrame::onPlayerList(GtkMenuItem*, gpointer data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
     if (frame->connection == nullptr) return;
-    if (frame->playerList == nullptr) frame->playerList = new TPlayerList(frame->applicationDirectory);
+    if (frame->playerList == nullptr) frame->playerList = new TPlayerList(frame->applicationDirectory, frame->accountName);
     frame->playerList->open(frame->connection);
 }
 
@@ -434,31 +483,31 @@ void TRemoteFrame::onPlayerText(const char* type, const char* account, const cha
         frame->accountsWindow->showEditor(frame->connection, account, content);
         return;
     }
-    if (frame->playerList == nullptr) frame->playerList = new TPlayerList(frame->applicationDirectory);
+    if (frame->playerList == nullptr) frame->playerList = new TPlayerList(frame->applicationDirectory, frame->accountName);
     frame->playerList->setConnection(frame->connection);
     frame->playerList->handlePlayerText(type, account, content);
 }
 void TRemoteFrame::onPlayerRights(const char* account, int rights, const char* ipRange, const char* folderAccess, void* data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
-    if (frame->playerList == nullptr) frame->playerList = new TPlayerList(frame->applicationDirectory);
+    if (frame->playerList == nullptr) frame->playerList = new TPlayerList(frame->applicationDirectory, frame->accountName);
     frame->playerList->setConnection(frame->connection);
     frame->playerList->handlePlayerRights(account, rights, ipRange, folderAccess);
 }
 void TRemoteFrame::onPlayerAttributes(const char* account, const char* properties, const char* editorText, void* data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
-    if (frame->playerList == nullptr) frame->playerList = new TPlayerList(frame->applicationDirectory);
+    if (frame->playerList == nullptr) frame->playerList = new TPlayerList(frame->applicationDirectory, frame->accountName);
     frame->playerList->setConnection(frame->connection);
     frame->playerList->handlePlayerAttributes(account, properties, editorText);
 }
 void TRemoteFrame::onBanData(const char* account, const char* computerId, const char* details, void* data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
-    if (frame->playerList == nullptr) frame->playerList = new TPlayerList(frame->applicationDirectory);
+    if (frame->playerList == nullptr) frame->playerList = new TPlayerList(frame->applicationDirectory, frame->accountName);
     frame->playerList->setConnection(frame->connection);
     frame->playerList->handleBanData(account, computerId, details);
 }
 void TRemoteFrame::onBanListData(const char* type, const char* account, const char* content, void* data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
-    if (frame->playerList == nullptr) frame->playerList = new TPlayerList(frame->applicationDirectory);
+    if (frame->playerList == nullptr) frame->playerList = new TPlayerList(frame->applicationDirectory, frame->accountName);
     frame->playerList->setConnection(frame->connection);
     frame->playerList->handleBanListData(type, account, content);
 }
@@ -698,7 +747,7 @@ void TRemoteFrame::onPrivateMessage(int playerId, const char* account, const cha
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
     const std::string messageType = type == nullptr ? "normal" : type;
     if (messageType == "mass" && frame->options.nomassmessages) return;
-    if (frame->playerList == nullptr) frame->playerList = new TPlayerList(frame->applicationDirectory);
+    if (frame->playerList == nullptr) frame->playerList = new TPlayerList(frame->applicationDirectory, frame->accountName);
     const std::string display = frame->playerList->notePrivateMessage(playerId, account, nick, message, type);
     if (frame->options.newpmalerts) {
         frame->appendChat("#ALERT New PM from " + display, true);

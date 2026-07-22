@@ -4,6 +4,9 @@ foreach(openSslRuntimeFile IN LISTS openSslRuntimeFiles)
     file(REMOVE "${REMOTE_CONTROL_OUTPUT_DIRECTORY}/${openSslRuntimeName}")
 endforeach()
 
+file(GLOB webpRuntimeFiles "${REMOTE_CONTROL_OUTPUT_DIRECTORY}/libwebp*.dll" "${REMOTE_CONTROL_OUTPUT_DIRECTORY}/libsharpyuv*.dll")
+file(REMOVE ${webpRuntimeFiles})
+
 file(GET_RUNTIME_DEPENDENCIES
     EXECUTABLES "${REMOTE_CONTROL_EXECUTABLE}"
     DIRECTORIES "${REMOTE_CONTROL_MINGW_RUNTIME_DIRECTORY}"

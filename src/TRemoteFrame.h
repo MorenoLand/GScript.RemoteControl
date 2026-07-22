@@ -110,7 +110,11 @@ private:
     GdkPixbuf* backgroundPixbuf = nullptr;
     GdkPixbufAnimation* backgroundAnimation = nullptr;
     GdkPixbufAnimationIter* backgroundAnimationIter = nullptr;
+    std::vector<GdkPixbuf*> backgroundWebPFrames;
+    std::vector<int> backgroundWebPFrameDurations;
     unsigned int backgroundAnimationSource = 0;
+    std::size_t backgroundWebPFrame = 0;
+    gint64 backgroundWebPNextFrame = 0;
     int graphicalBackgroundWidth = 500;
     void* connection = nullptr;
     std::string serverName;
