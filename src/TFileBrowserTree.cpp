@@ -30,7 +30,7 @@ namespace {
     constexpr int FileModifiedColumn = 4;
     constexpr int FileSizeSortColumn = 5;
     constexpr int FileModifiedSortColumn = 6;
-    struct FileMenuItem { TFileBrowserTree* browser; std::string path; };
+    struct FileMenuItem { TFileBrowserTree* browser; std::vector<std::string> paths; };
     void destroyFileMenuItem(gpointer data, GClosure*) { delete static_cast<FileMenuItem*>(data); }
 
     std::string formatModified(int timestamp) {
@@ -225,6 +225,11 @@ gboolean TFileBrowserTree::onFileButtonPress(GtkWidget* widget, GdkEventButton* 
         if (gtk_tree_view_get_path_at_pos(GTK_TREE_VIEW(widget), static_cast<gint>(event->x), static_cast<gint>(event->y), &path, nullptr, nullptr, nullptr)) {
             GtkTreeSelection* selection = gtk_tree_view_get_selection(GTK_TREE_VIEW(widget));
             if (gtk_tree_selection_path_is_selected(selection, path)) {
+                GList* selectedRows = gtk_tree_selection_get_selected_rows(selection, nullptr);
+                const bool multiple = selectedRows != nullptr && selectedRows->next != nullptr;
+                for (GList* node = selectedRows; node != nullptr; node = node->next) gtk_tree_path_free(static_cast<GtkTreePath*>(node->data));
+                g_list_free(selectedRows);
+                if (multiple) { gtk_tree_path_free(path); return false; }
                 gchar* pathText = gtk_tree_path_to_string(path);
                 browser->pendingInlineRenamePath = pathText == nullptr ? "" : pathText;
                 g_free(pathText);
@@ -368,29 +373,36 @@ void TFileBrowserTree::showItemMenu(GtkWidget* view, GdkEventButton* event, bool
     GtkTreePath* path = nullptr;
     if (!gtk_tree_view_get_path_at_pos(GTK_TREE_VIEW(view), static_cast<gint>(event->x), static_cast<gint>(event->y), &path, nullptr, nullptr, nullptr)) return;
     GtkTreeSelection* selection = gtk_tree_view_get_selection(GTK_TREE_VIEW(view));
-    gtk_tree_selection_unselect_all(selection);
-    gtk_tree_selection_select_path(selection, path);
+    if (!gtk_tree_selection_path_is_selected(selection, path)) {
+        gtk_tree_selection_unselect_all(selection);
+        gtk_tree_selection_select_path(selection, path);
+    }
     GtkTreeIter row;
     GtkTreeModel* model = gtk_tree_view_get_model(GTK_TREE_VIEW(view));
     gtk_tree_model_get_iter(model, &row, path);
-    gchar* itemPath = nullptr;
-    gtk_tree_model_get(model, &row, folder ? FolderPathColumn : FilePathColumn, &itemPath, -1);
+    std::vector<std::string> itemPaths;
+    GList* selectedRows = gtk_tree_selection_get_selected_rows(selection, &model);
+    for (GList* node = selectedRows; node != nullptr; node = node->next) {
+        GtkTreeIter selectedRow;
+        gchar* itemPath = nullptr;
+        if (gtk_tree_model_get_iter(model, &selectedRow, static_cast<GtkTreePath*>(node->data))) gtk_tree_model_get(model, &selectedRow, folder ? FolderPathColumn : FilePathColumn, &itemPath, -1);
+        if (itemPath != nullptr && *itemPath != '\0') itemPaths.emplace_back(itemPath);
+        g_free(itemPath);
+        gtk_tree_path_free(static_cast<GtkTreePath*>(node->data));
+    }
+    g_list_free(selectedRows);
     gtk_tree_path_free(path);
-    if (itemPath == nullptr || *itemPath == '\0') { g_free(itemPath); return; }
+    if (itemPaths.empty()) return;
     GtkWidget* menu = gtk_menu_new();
     GtkWidget* upload = gtk_menu_item_new_with_label("Upload file(s)");
     g_signal_connect(upload, "activate", G_CALLBACK(onUpload), this);
     if (!folder) {
-        GtkWidget* download = gtk_menu_item_new_with_label("Download");
-        GtkWidget* editAsText = gtk_menu_item_new_with_label("Edit");
-        GtkWidget* move = gtk_menu_item_new_with_label("Move");
+        GtkWidget* download = gtk_menu_item_new_with_label(itemPaths.size() == 1 ? "Download" : "Download selected");
+        GtkWidget* move = gtk_menu_item_new_with_label(itemPaths.size() == 1 ? "Move" : "Move selected");
         gtk_menu_shell_append(GTK_MENU_SHELL(menu), download);
-        gtk_menu_shell_append(GTK_MENU_SHELL(menu), editAsText);
-        FileMenuItem* item = new FileMenuItem{this, itemPath};
-        FileMenuItem* editItem = new FileMenuItem{this, itemPath};
-        FileMenuItem* moveItem = new FileMenuItem{this, itemPath};
+        FileMenuItem* item = new FileMenuItem{this, itemPaths};
+        FileMenuItem* moveItem = new FileMenuItem{this, itemPaths};
         g_signal_connect_data(download, "activate", G_CALLBACK(onDownload), item, destroyFileMenuItem, static_cast<GConnectFlags>(0));
-        g_signal_connect_data(editAsText, "activate", G_CALLBACK(onEditAsText), editItem, destroyFileMenuItem, static_cast<GConnectFlags>(0));
         gtk_menu_shell_append(GTK_MENU_SHELL(menu), upload);
         gtk_menu_shell_append(GTK_MENU_SHELL(menu), gtk_separator_menu_item_new());
         gtk_menu_shell_append(GTK_MENU_SHELL(menu), move);
@@ -399,45 +411,59 @@ void TFileBrowserTree::showItemMenu(GtkWidget* view, GdkEventButton* event, bool
         gtk_menu_shell_append(GTK_MENU_SHELL(menu), upload);
         gtk_menu_shell_append(GTK_MENU_SHELL(menu), gtk_separator_menu_item_new());
     }
-    GtkWidget* rename = gtk_menu_item_new_with_label("Rename");
+    if (!folder && itemPaths.size() == 1) {
+        GtkWidget* editAsText = gtk_menu_item_new_with_label("Edit");
+        gtk_menu_shell_insert(GTK_MENU_SHELL(menu), editAsText, 1);
+        FileMenuItem* editItem = new FileMenuItem{this, itemPaths};
+        g_signal_connect_data(editAsText, "activate", G_CALLBACK(onEditAsText), editItem, destroyFileMenuItem, static_cast<GConnectFlags>(0));
+    }
     GtkWidget* remove = gtk_menu_item_new_with_label("Delete");
-    gtk_menu_shell_append(GTK_MENU_SHELL(menu), rename);
+    GtkWidget* rename = nullptr;
+    if (itemPaths.size() == 1) {
+        rename = gtk_menu_item_new_with_label("Rename");
+        gtk_menu_shell_append(GTK_MENU_SHELL(menu), rename);
+    }
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), remove);
-    FileMenuItem* renameItem = new FileMenuItem{this, itemPath};
-    FileMenuItem* deleteItem = new FileMenuItem{this, itemPath};
-    g_signal_connect_data(rename, "activate", G_CALLBACK(onRename), renameItem, destroyFileMenuItem, static_cast<GConnectFlags>(0));
+    FileMenuItem* deleteItem = new FileMenuItem{this, itemPaths};
+    if (rename != nullptr) {
+        FileMenuItem* renameItem = new FileMenuItem{this, itemPaths};
+        g_signal_connect_data(rename, "activate", G_CALLBACK(onRename), renameItem, destroyFileMenuItem, static_cast<GConnectFlags>(0));
+    }
     g_signal_connect_data(remove, "activate", G_CALLBACK(onDeleteItem), deleteItem, destroyFileMenuItem, static_cast<GConnectFlags>(0));
-    g_free(itemPath);
     gtk_widget_show_all(menu);
     gtk_menu_popup_at_pointer(GTK_MENU(menu), reinterpret_cast<GdkEvent*>(event));
 }
 
 void TFileBrowserTree::onDownload(GtkMenuItem*, gpointer data) {
     FileMenuItem* item = static_cast<FileMenuItem*>(data);
-    if (!rc_filebrowser_download(item->browser->connection, item->path.c_str())) item->browser->appendLog(rc_last_error(item->browser->connection));
+    for (const std::string& path : item->paths) if (!rc_filebrowser_download(item->browser->connection, path.c_str())) item->browser->appendLog(rc_last_error(item->browser->connection));
 }
 
 void TFileBrowserTree::onEditAsText(GtkMenuItem*, gpointer data) {
     FileMenuItem* item = static_cast<FileMenuItem*>(data);
-    item->browser->pendingEditPath = item->path;
-    if (!rc_filebrowser_download(item->browser->connection, item->path.c_str())) item->browser->appendLog(rc_last_error(item->browser->connection));
+    if (item->paths.size() != 1) return;
+    item->browser->pendingEditPath = item->paths.front();
+    if (!rc_filebrowser_download(item->browser->connection, item->paths.front().c_str())) item->browser->appendLog(rc_last_error(item->browser->connection));
 }
 
 void TFileBrowserTree::onDeleteItem(GtkMenuItem*, gpointer data) {
     FileMenuItem* item = static_cast<FileMenuItem*>(data);
-    if (!rc_filebrowser_delete(item->browser->connection, item->path.c_str())) item->browser->appendLog(rc_last_error(item->browser->connection));
-    else if (!item->browser->currentFolder.empty() && !rc_filebrowser_cd(item->browser->connection, item->browser->currentFolder.c_str())) item->browser->appendLog(rc_last_error(item->browser->connection));
+    for (const std::string& path : item->paths) {
+        if (!rc_filebrowser_delete(item->browser->connection, path.c_str())) item->browser->appendLog(rc_last_error(item->browser->connection));
+    }
+    if (!item->browser->currentFolder.empty() && !rc_filebrowser_cd(item->browser->connection, item->browser->currentFolder.c_str())) item->browser->appendLog(rc_last_error(item->browser->connection));
 }
 
 void TFileBrowserTree::onRename(GtkMenuItem*, gpointer data) {
     FileMenuItem* item = static_cast<FileMenuItem*>(data);
+    if (item->paths.size() != 1) return;
     GtkTreeModel* model = GTK_TREE_MODEL(item->browser->files);
     GtkTreeIter row;
     gboolean found = gtk_tree_model_get_iter_first(model, &row);
     while (found) {
         gchar* path = nullptr;
         gtk_tree_model_get(model, &row, FilePathColumn, &path, -1);
-        const bool matches = path != nullptr && item->path == path;
+        const bool matches = path != nullptr && item->paths.front() == path;
         g_free(path);
         if (matches) {
             GtkTreePath* treePath = gtk_tree_model_get_path(model, &row);
@@ -468,12 +494,12 @@ void TFileBrowserTree::onFileNameEdited(GtkCellRendererText*, gchar* path, gchar
 
 void TFileBrowserTree::onMove(GtkMenuItem*, gpointer data) {
     FileMenuItem* item = static_cast<FileMenuItem*>(data);
-    GtkWidget* dialog = gtk_dialog_new_with_buttons(("Move " + item->path).c_str(), GTK_WINDOW(item->browser->window), GTK_DIALOG_MODAL, "Cancel", GTK_RESPONSE_CANCEL, "OK", GTK_RESPONSE_ACCEPT, nullptr);
+    GtkWidget* dialog = gtk_dialog_new_with_buttons((item->paths.size() == 1 ? "Move " + item->paths.front() : "Move selected files").c_str(), GTK_WINDOW(item->browser->window), GTK_DIALOG_MODAL, "Cancel", GTK_RESPONSE_CANCEL, "OK", GTK_RESPONSE_ACCEPT, nullptr);
     GtkWidget* entry = gtk_entry_new();
     gtk_entry_set_text(GTK_ENTRY(entry), item->browser->currentFolder.c_str());
     gtk_box_pack_start(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), entry, false, false, 8);
     gtk_widget_show_all(dialog);
-    if (gtk_dialog_run(GTK_DIALOG(dialog)) == GTK_RESPONSE_ACCEPT && !rc_filebrowser_move(item->browser->connection, gtk_entry_get_text(GTK_ENTRY(entry)), item->path.c_str())) item->browser->appendLog(rc_last_error(item->browser->connection));
+    if (gtk_dialog_run(GTK_DIALOG(dialog)) == GTK_RESPONSE_ACCEPT) for (const std::string& path : item->paths) if (!rc_filebrowser_move(item->browser->connection, gtk_entry_get_text(GTK_ENTRY(entry)), path.c_str())) item->browser->appendLog(rc_last_error(item->browser->connection));
     gtk_widget_destroy(dialog);
 }
 
