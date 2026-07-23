@@ -45,7 +45,7 @@ add_executable(RCOptionsTests tests/RCOptionsTests.cpp)
 target_link_libraries(RCOptionsTests PRIVATE remote_control_options)
 add_test(NAME RCOptionsTests COMMAND RCOptionsTests)
 
-add_executable(RemoteControl src/main.cpp src/Backup.cpp src/GScriptEditor.cpp src/RCAccounts.cpp src/TAccountsWindow.cpp src/TFileBrowser.cpp src/TFileBrowserTree.cpp src/TLocalBanWindow.cpp src/TNPCList.cpp src/TOptionsWindow.cpp src/TPlayerList.cpp src/TScriptList.cpp src/TRemoteFrame.cpp src/TServerList.cpp src/TServerTextEditor.cpp src/TToallsWindow.cpp src/TStartFrame.cpp)
+add_executable(RemoteControl src/main.cpp src/Backup.cpp src/GScriptEditor.cpp src/RCAccounts.cpp src/TAccountsWindow.cpp src/TFileBrowser.cpp src/TFileBrowserTree.cpp src/TLocalBanWindow.cpp src/TNPCList.cpp src/TOptionsWindow.cpp src/TPlayerList.cpp src/TScriptList.cpp src/TRemoteFrame.cpp src/TServerList.cpp src/TServerPlayer.cpp src/TServerTextEditor.cpp src/TToallsWindow.cpp src/TStartFrame.cpp)
 if(WIN32)
     set_target_properties(RemoteControl PROPERTIES WIN32_EXECUTABLE TRUE)
     target_sources(RemoteControl PRIVATE assets/RemoteControl.rc)

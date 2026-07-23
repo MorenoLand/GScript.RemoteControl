@@ -34,6 +34,43 @@ extern void remote_control_begin_pm_tray_alert();
 extern void remote_control_clear_pm_tray_alert();
 extern void remote_control_set_tray_label(const char* serverName, int playerCount);
 
+struct WebPAnimation {
+    std::vector<uint8_t> data;
+    WebPData source{};
+    WebPAnimDecoder* decoder = nullptr;
+    WebPAnimInfo info{};
+    GdkPixbuf* frame = nullptr;
+    int previousTimestamp = 0;
+    gint64 nextFrame = 0;
+
+    ~WebPAnimation() {
+        if (frame != nullptr) g_object_unref(frame);
+        if (decoder != nullptr) WebPAnimDecoderDelete(decoder);
+    }
+
+    bool advance(gint64 now, bool force = false) {
+        if (!force && now < nextFrame) return false;
+        if (!WebPAnimDecoderHasMoreFrames(decoder)) {
+            WebPAnimDecoderReset(decoder);
+            previousTimestamp = 0;
+        }
+        uint8_t* pixels = nullptr;
+        int timestamp = 0;
+        if (!WebPAnimDecoderGetNext(decoder, &pixels, &timestamp)) return false;
+        GdkPixbuf* sourceFrame = gdk_pixbuf_new_from_data(pixels, GDK_COLORSPACE_RGB, true, 8, info.canvas_width, info.canvas_height, info.canvas_width * 4, nullptr, nullptr);
+        if (sourceFrame == nullptr) return false;
+        GdkPixbuf* next = gdk_pixbuf_copy(sourceFrame);
+        g_object_unref(sourceFrame);
+        if (next == nullptr) return false;
+        if (frame != nullptr) g_object_unref(frame);
+        frame = next;
+        const int duration = std::max(10, timestamp - previousTimestamp);
+        previousTimestamp = timestamp;
+        nextFrame = now + static_cast<gint64>(duration) * 1000;
+        return true;
+    }
+};
+
 namespace {
     bool hasActiveRemoteControlWindow() {
         GList* windows = gtk_window_list_toplevels();
@@ -65,35 +102,21 @@ namespace {
         return text.str();
     }
 
-    bool loadWebPAnimation(const std::filesystem::path& path, std::vector<GdkPixbuf*>& frames, std::vector<int>& durations) {
+    std::unique_ptr<WebPAnimation> loadWebPAnimation(const std::filesystem::path& path) {
         gchar* contents = nullptr;
         gsize length = 0;
-        if (!g_file_get_contents(path.string().c_str(), &contents, &length, nullptr)) return false;
-        WebPData data{reinterpret_cast<const uint8_t*>(contents), length};
+        if (!g_file_get_contents(path.string().c_str(), &contents, &length, nullptr)) return nullptr;
+        auto animation = std::make_unique<WebPAnimation>();
+        animation->data.assign(reinterpret_cast<const uint8_t*>(contents), reinterpret_cast<const uint8_t*>(contents) + length);
+        g_free(contents);
+        animation->source.bytes = animation->data.data();
+        animation->source.size = animation->data.size();
         WebPAnimDecoderOptions options;
         WebPAnimDecoderOptionsInit(&options);
-        WebPAnimDecoder* decoder = WebPAnimDecoderNew(&data, &options);
-        if (decoder == nullptr) { g_free(contents); return false; }
-        WebPAnimInfo info;
-        if (!WebPAnimDecoderGetInfo(decoder, &info)) { WebPAnimDecoderDelete(decoder); g_free(contents); return false; }
-        int previousTimestamp = 0;
-        while (WebPAnimDecoderHasMoreFrames(decoder)) {
-            uint8_t* pixels = nullptr;
-            int timestamp = 0;
-            if (!WebPAnimDecoderGetNext(decoder, &pixels, &timestamp)) break;
-            GdkPixbuf* frame = gdk_pixbuf_new_from_data(pixels, GDK_COLORSPACE_RGB, true, 8, info.canvas_width, info.canvas_height, info.canvas_width * 4, nullptr, nullptr);
-            if (frame != nullptr) {
-                frames.push_back(gdk_pixbuf_copy(frame));
-                g_object_unref(frame);
-                durations.push_back(std::max(10, timestamp - previousTimestamp));
-                previousTimestamp = timestamp;
-            }
-        }
-        WebPAnimDecoderDelete(decoder);
-        g_free(contents);
-        if (frames.empty()) return false;
-        if (durations.size() == 1) durations[0] = 100;
-        return true;
+        animation->decoder = WebPAnimDecoderNew(&animation->source, &options);
+        if (animation->decoder == nullptr || !WebPAnimDecoderGetInfo(animation->decoder, &animation->info)) return nullptr;
+        if (!animation->advance(g_get_monotonic_time(), true)) return nullptr;
+        return animation;
     }
 }
 
@@ -149,8 +172,7 @@ TRemoteFrame::TRemoteFrame(const RC::RCOptions& nextOptions, const std::filesyst
         const std::filesystem::path background = applicationDirectory / "images" / options.background;
         std::string extension = background.extension().string();
         std::transform(extension.begin(), extension.end(), extension.begin(), [](unsigned char value) { return static_cast<char>(std::tolower(value)); });
-        if (extension == ".webp" && loadWebPAnimation(background, backgroundWebPFrames, backgroundWebPFrameDurations)) {
-            backgroundWebPNextFrame = g_get_monotonic_time() + static_cast<gint64>(backgroundWebPFrameDurations.front()) * 1000;
+        if (extension == ".webp" && (backgroundWebPAnimation = loadWebPAnimation(background)) != nullptr) {
         } else {
             GError* imageError = nullptr;
             backgroundAnimation = gdk_pixbuf_animation_new_from_file(background.string().c_str(), &imageError);
@@ -170,15 +192,12 @@ TRemoteFrame::TRemoteFrame(const RC::RCOptions& nextOptions, const std::filesyst
         gtk_container_add(GTK_CONTAINER(header), backgroundImage);
         gtk_overlay_add_overlay(GTK_OVERLAY(header), fixed);
         g_signal_connect(backgroundImage, "draw", G_CALLBACK(onGraphicalDraw), this);
-        if (backgroundAnimationIter != nullptr || !backgroundWebPFrames.empty()) backgroundAnimationSource = g_timeout_add(16, +[](gpointer data) -> gboolean {
+        if (backgroundAnimationIter != nullptr || backgroundWebPAnimation != nullptr) backgroundAnimationSource = g_timeout_add(16, +[](gpointer data) -> gboolean {
             TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
             if (frame->backgroundImage == nullptr) return G_SOURCE_REMOVE;
-            if (!frame->backgroundWebPFrames.empty()) {
+            if (frame->backgroundWebPAnimation != nullptr) {
                 const gint64 now = g_get_monotonic_time();
-                if (now < frame->backgroundWebPNextFrame) return G_SOURCE_CONTINUE;
-                frame->backgroundWebPFrame = (frame->backgroundWebPFrame + 1) % frame->backgroundWebPFrames.size();
-                frame->backgroundWebPNextFrame = now + static_cast<gint64>(frame->backgroundWebPFrameDurations[frame->backgroundWebPFrame]) * 1000;
-                gtk_widget_queue_draw(frame->backgroundImage);
+                if (frame->backgroundWebPAnimation->advance(now)) gtk_widget_queue_draw(frame->backgroundImage);
                 return G_SOURCE_CONTINUE;
             }
             if (frame->backgroundAnimationIter == nullptr) return G_SOURCE_REMOVE;
@@ -345,7 +364,7 @@ gboolean TRemoteFrame::onWindowState(GtkWidget*, GdkEventWindowState* event, gpo
 
 gboolean TRemoteFrame::onGraphicalDraw(GtkWidget* widget, cairo_t* context, gpointer data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
-    GdkPixbuf* pixbuf = !frame->backgroundWebPFrames.empty() ? frame->backgroundWebPFrames[frame->backgroundWebPFrame] : (frame->backgroundAnimationIter != nullptr ? gdk_pixbuf_animation_iter_get_pixbuf(frame->backgroundAnimationIter) : frame->backgroundPixbuf);
+    GdkPixbuf* pixbuf = frame->backgroundWebPAnimation != nullptr ? frame->backgroundWebPAnimation->frame : (frame->backgroundAnimationIter != nullptr ? gdk_pixbuf_animation_iter_get_pixbuf(frame->backgroundAnimationIter) : frame->backgroundPixbuf);
     if (pixbuf == nullptr) return false;
     GtkAllocation allocation;
     gtk_widget_get_allocation(widget, &allocation);
@@ -365,7 +384,6 @@ TRemoteFrame::~TRemoteFrame() {
     if (backgroundPixbuf != nullptr) g_object_unref(backgroundPixbuf);
     if (backgroundAnimationIter != nullptr) g_object_unref(backgroundAnimationIter);
     if (backgroundAnimation != nullptr) g_object_unref(backgroundAnimation);
-    for (GdkPixbuf* frame : backgroundWebPFrames) g_object_unref(frame);
     if (kappaEmote != nullptr) g_object_unref(kappaEmote);
     if (pmNormalEmote != nullptr) g_object_unref(pmNormalEmote);
     if (pacmanEmote != nullptr) g_object_unref(pacmanEmote);
@@ -397,6 +415,7 @@ void TRemoteFrame::open(void* nextConnection, int serverIndex, const std::string
     rc_on_message(connection, onMessage, this);
     rc_on_irc_message(connection, onIrcMessage, this);
     rc_on_private_message_ex(connection, onPrivateMessage, this);
+    rc_on_player_properties_changed(connection, onPlayerPropertiesChanged, this);
     rc_on_server_data(connection, onServerData, this);
     rc_on_account_list(connection, onAccountList, this);
     rc_on_player_text_data(connection, onPlayerText, this);
@@ -760,6 +779,13 @@ void TRemoteFrame::onPrivateMessage(int playerId, const char* account, const cha
     remote_control_begin_pm_tray_alert();
 }
 
+void TRemoteFrame::onPlayerPropertiesChanged(int playerId, const char* properties, void* data) {
+    TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
+    if (frame->playerList == nullptr) frame->playerList = new TPlayerList(frame->applicationDirectory, frame->accountName);
+    frame->playerList->setPlayerProperties(playerId, properties);
+    frame->updateMassPMAcceptance();
+}
+
 void TRemoteFrame::onServerData(const char* type, const char* content, void* data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
     const std::string value = content == nullptr ? "" : content;
@@ -876,7 +902,9 @@ void TRemoteFrame::sendServerListOptions() {
 
 void TRemoteFrame::updateMassPMAcceptance() {
     if (connection == nullptr) return;
-    const char state[] = {'A', options.nomassmessages ? '!' : ' '};
+    const std::optional<bool> connected = playerList == nullptr ? std::nullopt : playerList->localAccountConnected();
+    const bool reject = options.nomassmessages || (options.nomassifclienton && connected.has_value() && !*connected);
+    const char state[] = {'A', reject ? '!' : ' '};
     rc_send_raw_packet(connection, PLI_PLAYERPROPS, state, sizeof(state));
 }
 

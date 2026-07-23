@@ -1084,6 +1084,8 @@ void TPlayerList::refresh() {
     gtk_tree_store_append(store, &playersGroup, nullptr);
     gtk_tree_store_set(store, &playersGroup, PlayerIconColumn, channelIcon, PlayerNickColumn, "Players", PlayerIdColumn, 0, PlayerOrderColumn, 1, -1);
     for (int index = 0; index < count; ++index) {
+        auto [player, inserted] = serverPlayersById.try_emplace(players[index].id, players[index].id);
+        player->second.setIdentity(players[index].account, players[index].nick, players[index].level);
         GtkTreeIter row;
         const bool admin = players[index].level == nullptr || *players[index].level == '\0';
         gtk_tree_store_append(store, &row, admin ? &admins : &playersGroup);
@@ -1094,6 +1096,22 @@ void TPlayerList::refresh() {
     rc_request_pm_guild_list(connection);
     refreshRemoteLists();
     gtk_tree_view_expand_all(GTK_TREE_VIEW(tree));
+}
+
+void TPlayerList::setPlayerProperties(int playerId, const char* properties) {
+    auto [player, inserted] = serverPlayersById.try_emplace(playerId, playerId);
+    RCPlayer* players = nullptr;
+    const int count = connection == nullptr ? 0 : rc_get_players(connection, &players);
+    for (int index = 0; index < count; ++index) if (players[index].id == playerId) {
+        player->second.setIdentity(players[index].account, players[index].nick, players[index].level);
+        break;
+    }
+    player->second.setProperties(properties == nullptr ? "" : properties);
+}
+
+std::optional<bool> TPlayerList::localAccountConnected() const {
+    for (const auto& [id, player] : serverPlayersById) if (g_ascii_strcasecmp(player.account().c_str(), accountName.c_str()) == 0) return player.connected();
+    return std::nullopt;
 }
 
 GdkPixbuf* TPlayerList::pmIconFor(const std::string& type) const {

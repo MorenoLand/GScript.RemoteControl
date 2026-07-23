@@ -19,6 +19,7 @@ class TToallsWindow;
 class TAccountsWindow;
 class TOptionsWindow;
 class TNPCList;
+struct WebPAnimation;
 
 class TRemoteFrame {
 public:
@@ -70,6 +71,7 @@ private:
     static void onMessage(const char* message, void* data);
     static void onIrcMessage(const char* channel, const char* line, void* data);
     static void onPrivateMessage(int playerId, const char* account, const char* nick, const char* message, const char* type, void* data);
+    static void onPlayerPropertiesChanged(int playerId, const char* properties, void* data);
     static void onServerData(const char* type, const char* content, void* data);
     static gboolean scrollChatToBottom(gpointer data);
 
@@ -113,11 +115,8 @@ private:
     GdkPixbuf* backgroundPixbuf = nullptr;
     GdkPixbufAnimation* backgroundAnimation = nullptr;
     GdkPixbufAnimationIter* backgroundAnimationIter = nullptr;
-    std::vector<GdkPixbuf*> backgroundWebPFrames;
-    std::vector<int> backgroundWebPFrameDurations;
+    std::unique_ptr<WebPAnimation> backgroundWebPAnimation;
     unsigned int backgroundAnimationSource = 0;
-    std::size_t backgroundWebPFrame = 0;
-    gint64 backgroundWebPNextFrame = 0;
     int graphicalBackgroundWidth = 500;
     void* connection = nullptr;
     int currentServerIndex = -1;

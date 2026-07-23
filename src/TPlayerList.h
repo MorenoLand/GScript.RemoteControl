@@ -3,8 +3,11 @@
 #include <gtk/gtk.h>
 #include <filesystem>
 #include <map>
+#include <optional>
 #include <string>
 #include <vector>
+
+#include "TServerPlayer.h"
 
 class TPlayerList {
 public:
@@ -18,6 +21,8 @@ public:
     void handlePlayerRights(const char* account, int rights, const char* ipRange, const char* folderAccess);
     void handlePlayerAttributes(const char* account, const char* properties, const char* editorText);
     void handlePlayerText(const char* type, const char* account, const char* content);
+    void setPlayerProperties(int playerId, const char* properties);
+    std::optional<bool> localAccountConnected() const;
     std::string notePrivateMessage(int playerId, const char* account, const char* nick, const char* message, const char* type);
     bool openLatestPrivateMessage();
     void clearPrivateMessageAlert();
@@ -87,6 +92,7 @@ private:
     std::map<int, std::string> pmTypes;
     std::map<int, std::pair<std::string, std::string>> pmPlayers;
     std::map<int, std::string> pmMessages;
+    std::map<int, TServerPlayer> serverPlayersById;
     int latestPMPlayerId = 0;
     guint pmBlinkSource = 0;
     bool pmIconsVisible = true;
