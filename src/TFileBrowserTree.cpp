@@ -9,11 +9,17 @@
 
 #ifdef _WIN32
 #include <windows.h>
+#include <ole2.h>
 #include <shellapi.h>
+#include <shlobj.h>
 #endif
 
 #include <string>
+#include <cstring>
+#include <functional>
+#include <memory>
 #include <ctime>
+#include <cwchar>
 #include <iomanip>
 #include <sstream>
 #include <vector>
@@ -48,6 +54,139 @@ namespace {
     }
 
     GdkPixbuf* loadImage(const char* name) { return gdk_pixbuf_new_from_file((std::string("images/") + name).c_str(), nullptr); }
+
+    bool pathMatches(const std::string& expected, const std::string& received) {
+        return expected == received || received.ends_with("/" + expected) || expected.ends_with("/" + received);
+    }
+
+#ifdef _WIN32
+    struct NativeDropFiles { DWORD pFiles; POINT pt; BOOL fNC; BOOL fWide; };
+
+    class NativeDropSource final : public IDropSource {
+    public:
+        explicit NativeDropSource(const std::shared_ptr<bool>& accepted) : dropAccepted(accepted) {}
+        HRESULT __stdcall QueryInterface(REFIID iid, void** result) override {
+            if (result == nullptr) return E_POINTER;
+            *result = nullptr;
+            if (iid == IID_IUnknown || iid == IID_IDropSource) *result = static_cast<IDropSource*>(this);
+            if (*result == nullptr) return E_NOINTERFACE;
+            AddRef();
+            return S_OK;
+        }
+        ULONG __stdcall AddRef() override { return ++references; }
+        ULONG __stdcall Release() override { ULONG value = --references; if (value == 0) delete this; return value; }
+        HRESULT __stdcall QueryContinueDrag(BOOL escapePressed, DWORD keyState) override {
+            if (escapePressed) return DRAGDROP_S_CANCEL;
+            if ((keyState & MK_LBUTTON) == 0) { if (dropAccepted) *dropAccepted = true; return DRAGDROP_S_DROP; }
+            return S_OK;
+        }
+        HRESULT __stdcall GiveFeedback(DWORD) override { return DRAGDROP_S_USEDEFAULTCURSORS; }
+    private:
+        ULONG references = 1;
+        std::shared_ptr<bool> dropAccepted;
+    };
+
+    class NativeFileDataObject final : public IDataObject {
+    public:
+        using ContentProvider = std::function<bool(size_t, std::vector<guint8>&)>;
+        NativeFileDataObject(const std::vector<std::wstring>& values, ContentProvider provider) : names(values), contentProvider(std::move(provider)) {}
+        HRESULT __stdcall QueryInterface(REFIID iid, void** result) override {
+            if (result == nullptr) return E_POINTER;
+            *result = nullptr;
+            if (iid == IID_IUnknown || iid == IID_IDataObject) *result = static_cast<IDataObject*>(this);
+            if (*result == nullptr) return E_NOINTERFACE;
+            AddRef();
+            return S_OK;
+        }
+        ULONG __stdcall AddRef() override { return ++references; }
+        ULONG __stdcall Release() override { ULONG value = --references; if (value == 0) delete this; return value; }
+        HRESULT __stdcall GetData(FORMATETC* format, STGMEDIUM* medium) override {
+            if (format == nullptr || medium == nullptr) return E_POINTER;
+            std::memset(medium, 0, sizeof(STGMEDIUM));
+            if (format->cfFormat == descriptorFormat() && (format->tymed & TYMED_HGLOBAL) != 0) {
+                const SIZE_T bytes = sizeof(FILEGROUPDESCRIPTORW) + (names.size() - 1) * sizeof(FILEDESCRIPTORW);
+                HGLOBAL global = GlobalAlloc(GHND | GMEM_SHARE, bytes);
+                if (global == nullptr) return E_OUTOFMEMORY;
+                FILEGROUPDESCRIPTORW* group = static_cast<FILEGROUPDESCRIPTORW*>(GlobalLock(global));
+                if (group == nullptr) { GlobalFree(global); return E_OUTOFMEMORY; }
+                group->cItems = static_cast<UINT>(names.size());
+                for (size_t index = 0; index < names.size(); ++index) {
+                    FILEDESCRIPTORW& file = group->fgd[index];
+                    file.dwFlags = FD_ATTRIBUTES | FD_PROGRESSUI;
+                    file.dwFileAttributes = FILE_ATTRIBUTE_NORMAL;
+                    std::wcsncpy(file.cFileName, names[index].c_str(), ARRAYSIZE(file.cFileName) - 1);
+                    file.cFileName[ARRAYSIZE(file.cFileName) - 1] = L'\0';
+                }
+                GlobalUnlock(global);
+                medium->tymed = TYMED_HGLOBAL;
+                medium->hGlobal = global;
+                return S_OK;
+            }
+            if (format->cfFormat == contentsFormat() && (format->tymed & TYMED_ISTREAM) != 0) {
+                if (format->lindex < 0 || static_cast<size_t>(format->lindex) >= names.size() || !contentProvider) return DV_E_LINDEX;
+                std::vector<guint8> content;
+                if (!contentProvider(static_cast<size_t>(format->lindex), content)) return E_FAIL;
+                HGLOBAL global = GlobalAlloc(GMEM_MOVEABLE, content.size() == 0 ? 1 : content.size());
+                if (global == nullptr) return E_OUTOFMEMORY;
+                void* buffer = GlobalLock(global);
+                if (buffer == nullptr) { GlobalFree(global); return E_OUTOFMEMORY; }
+                if (!content.empty()) std::memcpy(buffer, content.data(), content.size());
+                GlobalUnlock(global);
+                IStream* stream = nullptr;
+                HRESULT result = CreateStreamOnHGlobal(global, TRUE, &stream);
+                if (FAILED(result)) { GlobalFree(global); return result; }
+                medium->tymed = TYMED_ISTREAM;
+                medium->pstm = stream;
+                return S_OK;
+            }
+            return DV_E_FORMATETC;
+        }
+        HRESULT __stdcall GetDataHere(FORMATETC*, STGMEDIUM*) override { return DATA_E_FORMATETC; }
+        HRESULT __stdcall QueryGetData(FORMATETC* format) override {
+            if (format == nullptr) return E_POINTER;
+            if (format->cfFormat == descriptorFormat() && (format->tymed & TYMED_HGLOBAL) != 0) return S_OK;
+            if (format->cfFormat == contentsFormat() && (format->tymed & TYMED_ISTREAM) != 0 && format->lindex >= 0 && static_cast<size_t>(format->lindex) < names.size()) return S_OK;
+            return DV_E_FORMATETC;
+        }
+        HRESULT __stdcall GetCanonicalFormatEtc(FORMATETC* format, FORMATETC* result) override { if (format == nullptr || result == nullptr) return E_POINTER; *result = *format; result->ptd = nullptr; return DATA_S_SAMEFORMATETC; }
+        HRESULT __stdcall SetData(FORMATETC*, STGMEDIUM*, BOOL) override { return E_NOTIMPL; }
+        HRESULT __stdcall EnumFormatEtc(DWORD direction, IEnumFORMATETC** result) override {
+            if (result == nullptr) return E_POINTER;
+            *result = nullptr;
+            if (direction != DATADIR_GET) return E_NOTIMPL;
+            FORMATETC formats[2] = {
+                {static_cast<CLIPFORMAT>(descriptorFormat()), nullptr, DVASPECT_CONTENT, -1, TYMED_HGLOBAL},
+                {static_cast<CLIPFORMAT>(contentsFormat()), nullptr, DVASPECT_CONTENT, -1, TYMED_ISTREAM}
+            };
+            IEnumFORMATETC* first = nullptr;
+            HRESULT status = SHCreateStdEnumFmtEtc(2, formats, &first);
+            if (FAILED(status)) return status;
+            *result = first;
+            return S_OK;
+        }
+        HRESULT __stdcall DAdvise(FORMATETC*, DWORD, IAdviseSink*, DWORD*) override { return OLE_E_ADVISENOTSUPPORTED; }
+        HRESULT __stdcall DUnadvise(DWORD) override { return OLE_E_ADVISENOTSUPPORTED; }
+        HRESULT __stdcall EnumDAdvise(IEnumSTATDATA** result) override { if (result != nullptr) *result = nullptr; return OLE_E_ADVISENOTSUPPORTED; }
+    private:
+        static UINT descriptorFormat() { static UINT value = RegisterClipboardFormatW(L"FileGroupDescriptorW"); return value; }
+        static UINT contentsFormat() { static UINT value = RegisterClipboardFormatW(L"FileContents"); return value; }
+        ULONG references = 1;
+        std::vector<std::wstring> names;
+        ContentProvider contentProvider;
+    };
+
+    void nativeFileDrag(const std::vector<std::wstring>& names, NativeFileDataObject::ContentProvider contentProvider, const std::shared_ptr<bool>& dropAccepted) {
+        if (names.empty()) return;
+        if (FAILED(OleInitialize(nullptr))) return;
+        IDataObject* data = new NativeFileDataObject(names, std::move(contentProvider));
+        IDropSource* source = new NativeDropSource(dropAccepted);
+        DWORD effect = DROPEFFECT_NONE;
+        DoDragDrop(data, source, DROPEFFECT_COPY, &effect);
+        data->Release();
+        source->Release();
+        OleUninitialize();
+    }
+#endif
 
     GdkPixbuf* fileIcon(const RCFileBrowserEntry& entry, GdkPixbuf* text, GdkPixbuf* nw, GdkPixbuf* script, GdkPixbuf* gmap) {
         const std::string path = entry.path == nullptr ? "" : entry.path;
@@ -148,12 +287,19 @@ TFileBrowserTree::TFileBrowserTree() {
     g_signal_connect(gtk_tree_view_get_selection(GTK_TREE_VIEW(folderView)), "changed", G_CALLBACK(onFolderSelected), this);
     g_signal_connect(folderView, "button-press-event", G_CALLBACK(onFolderButtonPress), this);
     g_signal_connect(fileView, "button-press-event", G_CALLBACK(onFileButtonPress), this);
-    GtkTargetEntry fileTarget[] = {{const_cast<gchar*>("application/x-remote-control-file-path"), GTK_TARGET_SAME_APP, 1}};
     GtkTargetEntry dropTargets[] = {{const_cast<gchar*>("application/x-remote-control-file-path"), GTK_TARGET_SAME_APP, 1}, {const_cast<gchar*>("text/uri-list"), 0, 2}};
-    gtk_drag_source_set(fileView, GDK_BUTTON1_MASK, fileTarget, G_N_ELEMENTS(fileTarget), GDK_ACTION_MOVE);
+#ifndef _WIN32
+    GtkTargetEntry fileTarget[] = {{const_cast<gchar*>("application/x-remote-control-file-path"), GTK_TARGET_SAME_APP, 1}, {const_cast<gchar*>("text/uri-list"), 0, 2}};
+    gtk_drag_source_set(fileView, GDK_BUTTON1_MASK, fileTarget, G_N_ELEMENTS(fileTarget), static_cast<GdkDragAction>(GDK_ACTION_COPY | GDK_ACTION_MOVE));
+#else
+    gtk_widget_add_events(fileView, static_cast<GdkEventMask>(GDK_BUTTON_RELEASE_MASK | GDK_POINTER_MOTION_MASK));
+    g_signal_connect(fileView, "button-release-event", G_CALLBACK(onFileButtonRelease), this);
+    g_signal_connect(fileView, "motion-notify-event", G_CALLBACK(onFileMotion), this);
+#endif
     gtk_drag_dest_set(folderView, static_cast<GtkDestDefaults>(GTK_DEST_DEFAULT_MOTION | GTK_DEST_DEFAULT_DROP), dropTargets, G_N_ELEMENTS(dropTargets), static_cast<GdkDragAction>(GDK_ACTION_COPY | GDK_ACTION_MOVE));
     gtk_drag_dest_set(fileView, static_cast<GtkDestDefaults>(GTK_DEST_DEFAULT_MOTION | GTK_DEST_DEFAULT_DROP), dropTargets, G_N_ELEMENTS(dropTargets), static_cast<GdkDragAction>(GDK_ACTION_COPY | GDK_ACTION_MOVE));
     g_signal_connect(fileView, "drag-begin", G_CALLBACK(onFileDragBegin), this);
+    g_signal_connect(fileView, "drag-end", G_CALLBACK(onFileDragEnd), this);
     g_signal_connect(fileView, "drag-data-get", G_CALLBACK(onFileDragDataGet), this);
     g_signal_connect(folderView, "drag-data-received", G_CALLBACK(onDropDataReceived), this);
     g_signal_connect(fileView, "drag-data-received", G_CALLBACK(onDropDataReceived), this);
@@ -165,6 +311,9 @@ TFileBrowserTree::TFileBrowserTree() {
 TFileBrowserTree::~TFileBrowserTree() {
     if (externalWatchId != 0) g_source_remove(externalWatchId);
     if (inlineRenameId != 0) g_source_remove(inlineRenameId);
+    for (const std::string& path : pendingDragLocalPaths) g_remove(path.c_str());
+    for (const std::string& path : completedDragDownloads) g_remove(path.c_str());
+    if (!dragStagingFolder.empty()) g_rmdir(dragStagingFolder.c_str());
     if (closedFolderIcon != nullptr) g_object_unref(closedFolderIcon);
     if (openFolderIcon != nullptr) g_object_unref(openFolderIcon);
     if (textFileIcon != nullptr) g_object_unref(textFileIcon);
@@ -227,9 +376,20 @@ gboolean TFileBrowserTree::onFileButtonPress(GtkWidget* widget, GdkEventButton* 
             if (gtk_tree_selection_path_is_selected(selection, path)) {
                 GList* selectedRows = gtk_tree_selection_get_selected_rows(selection, nullptr);
                 const bool multiple = selectedRows != nullptr && selectedRows->next != nullptr;
+#ifdef _WIN32
+                browser->nativeDragButton = event->button;
+                browser->nativeDragX = static_cast<gint>(event->x);
+                browser->nativeDragY = static_cast<gint>(event->y);
+#endif
+                browser->pendingDragSelectionPaths.clear();
+                if (multiple) for (GList* node = selectedRows; node != nullptr; node = node->next) {
+                    gchar* selectedPath = gtk_tree_path_to_string(static_cast<GtkTreePath*>(node->data));
+                    if (selectedPath != nullptr) browser->pendingDragSelectionPaths.emplace_back(selectedPath);
+                    g_free(selectedPath);
+                }
                 for (GList* node = selectedRows; node != nullptr; node = node->next) gtk_tree_path_free(static_cast<GtkTreePath*>(node->data));
                 g_list_free(selectedRows);
-                if (multiple) { gtk_tree_path_free(path); return false; }
+                if (multiple) { gtk_tree_path_free(path); return true; }
                 gchar* pathText = gtk_tree_path_to_string(path);
                 browser->pendingInlineRenamePath = pathText == nullptr ? "" : pathText;
                 g_free(pathText);
@@ -265,11 +425,143 @@ gboolean TFileBrowserTree::onFileButtonPress(GtkWidget* widget, GdkEventButton* 
     return true;
 }
 
-void TFileBrowserTree::onFileDragBegin(GtkWidget* widget, GdkDragContext* context, gpointer) {
+#ifdef _WIN32
+gboolean TFileBrowserTree::onFileButtonRelease(GtkWidget*, GdkEventButton* event, gpointer data) {
+    TFileBrowserTree* browser = static_cast<TFileBrowserTree*>(data);
+    if (browser->nativeDragButton == event->button) browser->nativeDragButton = 0;
+    return false;
+}
+
+gboolean TFileBrowserTree::onFileMotion(GtkWidget* widget, GdkEventMotion* event, gpointer data) {
+    TFileBrowserTree* browser = static_cast<TFileBrowserTree*>(data);
+    if (browser->nativeDragButton == 0) return false;
+    if (!gtk_drag_check_threshold(widget, browser->nativeDragX, browser->nativeDragY, static_cast<gint>(event->x), static_cast<gint>(event->y))) return true;
+    if (browser->inlineRenameId != 0) { g_source_remove(browser->inlineRenameId); browser->inlineRenameId = 0; browser->pendingInlineRenamePath.clear(); }
+    browser->startNativeDrag(widget);
+    browser->nativeDragButton = 0;
+    return true;
+}
+
+void TFileBrowserTree::startNativeDrag(GtkWidget* widget) {
+    for (const std::string& path : pendingDragLocalPaths) g_remove(path.c_str());
+    for (const std::string& path : completedDragDownloads) g_remove(path.c_str());
+    if (!dragStagingFolder.empty()) { g_rmdir(dragStagingFolder.c_str()); dragStagingFolder.clear(); }
+    pendingDragDownloads.clear();
+    completedDragDownloads.clear();
+    pendingDragLocalPaths.clear();
+    pendingExternalPath.clear();
+    GtkTreeModel* model = gtk_tree_view_get_model(GTK_TREE_VIEW(widget));
+    GList* rows = nullptr;
+    for (const std::string& pathText : pendingDragSelectionPaths) {
+        GtkTreePath* path = gtk_tree_path_new_from_string(pathText.c_str());
+        if (path != nullptr) rows = g_list_append(rows, path);
+    }
+    pendingDragSelectionPaths.clear();
+    if (rows == nullptr) rows = gtk_tree_selection_get_selected_rows(gtk_tree_view_get_selection(GTK_TREE_VIEW(widget)), nullptr);
+    if (rows == nullptr) return;
+    gchar* temp = g_get_tmp_dir() == nullptr ? nullptr : g_build_filename(g_get_tmp_dir(), "RemoteControl-filebrowser-drag", nullptr);
+    dragStagingFolder = temp == nullptr ? "" : temp;
+    g_free(temp);
+    if (!dragStagingFolder.empty()) g_mkdir_with_parents(dragStagingFolder.c_str(), 0755);
+    std::vector<std::string> remotePaths;
+    std::vector<std::wstring> names;
+    for (GList* node = rows; node != nullptr; node = node->next) {
+        GtkTreeIter row;
+        gchar* remotePath = nullptr;
+        if (!gtk_tree_model_get_iter(model, &row, static_cast<GtkTreePath*>(node->data))) continue;
+        gtk_tree_model_get(model, &row, FilePathColumn, &remotePath, -1);
+        if (remotePath == nullptr || *remotePath == '\0' || dragStagingFolder.empty()) { g_free(remotePath); continue; }
+        gchar* basename = g_path_get_basename(remotePath);
+        const std::string fileName = basename == nullptr ? "download" : basename;
+        std::string localPath = dragStagingFolder + G_DIR_SEPARATOR_S + fileName;
+        g_free(basename);
+        int suffix = 2;
+        while (g_file_test(localPath.c_str(), G_FILE_TEST_EXISTS)) localPath = dragStagingFolder + G_DIR_SEPARATOR_S + std::to_string(suffix++) + "-" + fileName;
+        gunichar2* wideName = g_utf8_to_utf16(fileName.c_str(), -1, nullptr, nullptr, nullptr);
+        if (wideName != nullptr) names.emplace_back(reinterpret_cast<wchar_t*>(wideName));
+        g_free(wideName);
+        remotePaths.emplace_back(remotePath);
+        pendingDragLocalPaths.push_back(localPath);
+        g_free(remotePath);
+    }
+    const auto dropAccepted = std::make_shared<bool>(false);
+    nativeFileDrag(names, [this, remotePaths, dropAccepted](size_t index, std::vector<guint8>& content) {
+        if (!*dropAccepted) return false;
+        if (index >= remotePaths.size() || index >= pendingDragLocalPaths.size()) return false;
+        const std::string& remotePath = remotePaths[index];
+        const std::string& localPath = pendingDragLocalPaths[index];
+        if (!g_file_test(localPath.c_str(), G_FILE_TEST_EXISTS)) {
+            pendingDragDownloads[remotePath] = localPath;
+            if (!rc_filebrowser_download(connection, remotePath.c_str())) { pendingDragDownloads.erase(remotePath); return false; }
+            const gint64 deadline = g_get_monotonic_time() + 10 * G_TIME_SPAN_SECOND;
+            while (pendingDragDownloads.contains(remotePath) && g_get_monotonic_time() < deadline) {
+                while (gtk_events_pending()) gtk_main_iteration();
+                g_usleep(10000);
+            }
+        }
+        if (!g_file_test(localPath.c_str(), G_FILE_TEST_EXISTS)) return false;
+        gchar* bytes = nullptr;
+        gsize length = 0;
+        GError* error = nullptr;
+        if (!g_file_get_contents(localPath.c_str(), &bytes, &length, &error)) { if (error != nullptr) g_error_free(error); return false; }
+        content.assign(reinterpret_cast<guint8*>(bytes), reinterpret_cast<guint8*>(bytes) + length);
+        g_free(bytes);
+        return true;
+    }, dropAccepted);
+    for (const std::string& path : pendingDragLocalPaths) g_remove(path.c_str());
+    if (!dragStagingFolder.empty()) g_rmdir(dragStagingFolder.c_str());
+    pendingDragDownloads.clear();
+    completedDragDownloads.clear();
+    pendingDragLocalPaths.clear();
+    dragStagingFolder.clear();
+    for (GList* node = rows; node != nullptr; node = node->next) gtk_tree_path_free(static_cast<GtkTreePath*>(node->data));
+    g_list_free(rows);
+}
+#endif
+
+void TFileBrowserTree::onFileDragBegin(GtkWidget* widget, GdkDragContext* context, gpointer data) {
+    TFileBrowserTree* browser = static_cast<TFileBrowserTree*>(data);
+    if (!browser->pendingDragSelectionPaths.empty()) {
+        GtkTreeSelection* selection = gtk_tree_view_get_selection(GTK_TREE_VIEW(widget));
+        gtk_tree_selection_unselect_all(selection);
+        for (const std::string& pathText : browser->pendingDragSelectionPaths) {
+            GtkTreePath* path = gtk_tree_path_new_from_string(pathText.c_str());
+            if (path != nullptr) { gtk_tree_selection_select_path(selection, path); gtk_tree_path_free(path); }
+        }
+        browser->pendingDragSelectionPaths.clear();
+    }
+    for (const std::string& path : browser->pendingDragLocalPaths) g_remove(path.c_str());
+    for (const std::string& path : browser->completedDragDownloads) g_remove(path.c_str());
+    if (!browser->dragStagingFolder.empty()) { g_rmdir(browser->dragStagingFolder.c_str()); browser->dragStagingFolder.clear(); }
+    browser->pendingDragDownloads.clear();
+    browser->completedDragDownloads.clear();
+    browser->pendingDragLocalPaths.clear();
+    browser->pendingExternalPath.clear();
     GtkTreeSelection* selected = gtk_tree_view_get_selection(GTK_TREE_VIEW(widget));
     GtkTreeModel* model = nullptr;
     GList* rows = gtk_tree_selection_get_selected_rows(selected, &model);
     if (rows == nullptr) return;
+    gchar* staging = g_canonicalize_filename("cache/filebrowser-drag", nullptr);
+    browser->dragStagingFolder = staging == nullptr ? "" : staging;
+    g_free(staging);
+    if (!browser->dragStagingFolder.empty()) g_mkdir_with_parents(browser->dragStagingFolder.c_str(), 0755);
+    for (GList* node = rows; node != nullptr; node = node->next) {
+        GtkTreeIter selectedRow;
+        gchar* remotePath = nullptr;
+        if (!gtk_tree_model_get_iter(model, &selectedRow, static_cast<GtkTreePath*>(node->data))) continue;
+        gtk_tree_model_get(model, &selectedRow, FilePathColumn, &remotePath, -1);
+        if (remotePath == nullptr || *remotePath == '\0' || browser->dragStagingFolder.empty()) { g_free(remotePath); continue; }
+        gchar* basename = g_path_get_basename(remotePath);
+        const std::string fileName = basename == nullptr ? "download" : basename;
+        std::string localPath = browser->dragStagingFolder + G_DIR_SEPARATOR_S + fileName;
+        g_free(basename);
+        int suffix = 2;
+        while (g_file_test(localPath.c_str(), G_FILE_TEST_EXISTS)) localPath = browser->dragStagingFolder + G_DIR_SEPARATOR_S + std::to_string(suffix++) + "-" + fileName;
+        browser->pendingDragDownloads.emplace(remotePath, localPath);
+        browser->pendingDragLocalPaths.push_back(localPath);
+        if (!rc_filebrowser_download(browser->connection, remotePath)) browser->appendLog(rc_last_error(browser->connection));
+        g_free(remotePath);
+    }
     GtkTreeIter row;
     GtkTreePath* path = static_cast<GtkTreePath*>(rows->data);
     if (gtk_tree_model_get_iter(model, &row, path)) {
@@ -297,7 +589,34 @@ void TFileBrowserTree::onFileDragBegin(GtkWidget* widget, GdkDragContext* contex
     g_list_free(rows);
 }
 
-void TFileBrowserTree::onFileDragDataGet(GtkWidget* widget, GdkDragContext*, GtkSelectionData* selection, guint, guint, gpointer) {
+void TFileBrowserTree::onFileDragEnd(GtkWidget*, GdkDragContext*, gpointer data) {
+    TFileBrowserTree* browser = static_cast<TFileBrowserTree*>(data);
+    browser->pendingDragSelectionPaths.clear();
+    browser->pendingDragDownloads.clear();
+    browser->completedDragDownloads.clear();
+}
+
+void TFileBrowserTree::onFileDragDataGet(GtkWidget* widget, GdkDragContext*, GtkSelectionData* selection, guint, guint targetInfo, gpointer data) {
+    TFileBrowserTree* browser = static_cast<TFileBrowserTree*>(data);
+    if (targetInfo == 2) {
+        const gint64 deadline = g_get_monotonic_time() + 10 * G_TIME_SPAN_SECOND;
+        while (!browser->pendingDragDownloads.empty() && g_get_monotonic_time() < deadline) {
+            while (gtk_events_pending()) gtk_main_iteration();
+            g_usleep(10000);
+        }
+        std::vector<gchar*> uris;
+        for (const std::string& localPath : browser->pendingDragLocalPaths) {
+            if (!g_file_test(localPath.c_str(), G_FILE_TEST_EXISTS)) continue;
+            gchar* uri = g_filename_to_uri(localPath.c_str(), nullptr, nullptr);
+            if (uri != nullptr) uris.push_back(uri);
+        }
+        if (!uris.empty()) {
+            uris.push_back(nullptr);
+            gtk_selection_data_set_uris(selection, uris.data());
+            for (gchar* uri : uris) g_free(uri);
+        }
+        return;
+    }
     GtkTreeSelection* selected = gtk_tree_view_get_selection(GTK_TREE_VIEW(widget));
     GtkTreeModel* model = nullptr;
     GList* rows = gtk_tree_selection_get_selected_rows(selected, &model);
@@ -537,7 +856,19 @@ void TFileBrowserTree::onFileReceived(const char* path, const void* content, int
     TFileBrowserTree* browser = static_cast<TFileBrowserTree*>(data);
     if (path == nullptr || content == nullptr || length < 0) return;
     const std::string receivedPath(path);
-    const bool externalPathMatches = browser->pendingExternalPath == receivedPath || receivedPath.ends_with("/" + browser->pendingExternalPath) || browser->pendingExternalPath.ends_with("/" + receivedPath);
+    for (auto iterator = browser->pendingDragDownloads.begin(); iterator != browser->pendingDragDownloads.end(); ++iterator) {
+        if (!pathMatches(iterator->first, receivedPath)) continue;
+        GError* error = nullptr;
+        if (g_file_set_contents(iterator->second.c_str(), static_cast<const gchar*>(content), length, &error)) {
+            browser->completedDragDownloads.push_back(iterator->second);
+        } else {
+            browser->appendLog(error == nullptr ? "Could not stage dragged file." : error->message);
+        }
+        if (error != nullptr) g_error_free(error);
+        browser->pendingDragDownloads.erase(iterator);
+        return;
+    }
+    const bool externalPathMatches = pathMatches(browser->pendingExternalPath, receivedPath);
     if (!browser->pendingExternalPath.empty() && externalPathMatches) {
         const std::string remotePath = browser->pendingExternalPath;
         browser->pendingExternalPath.clear();
@@ -575,7 +906,7 @@ void TFileBrowserTree::onFileReceived(const char* path, const void* content, int
         browser->appendLog((std::string("Downloaded file ") + localPath).c_str());
         return;
     }
-    const bool editPathMatches = browser->pendingEditPath == receivedPath || receivedPath.ends_with("/" + browser->pendingEditPath) || browser->pendingEditPath.ends_with("/" + receivedPath);
+    const bool editPathMatches = pathMatches(browser->pendingEditPath, receivedPath);
     if (!browser->pendingEditPath.empty() && editPathMatches) {
         browser->pendingEditPath.clear();
         browser->showTextEditor(path, content, length);

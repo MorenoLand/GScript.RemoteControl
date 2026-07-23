@@ -3,6 +3,8 @@
 #include <gtk/gtk.h>
 
 #include <string>
+#include <unordered_map>
+#include <vector>
 
 class TFileBrowserTree {
 public:
@@ -15,7 +17,13 @@ private:
     static void onFolderSelected(GtkTreeSelection*, gpointer data);
     static gboolean onFolderButtonPress(GtkWidget*, GdkEventButton*, gpointer data);
     static gboolean onFileButtonPress(GtkWidget*, GdkEventButton*, gpointer data);
+#ifdef _WIN32
+    static gboolean onFileButtonRelease(GtkWidget*, GdkEventButton*, gpointer data);
+    static gboolean onFileMotion(GtkWidget*, GdkEventMotion*, gpointer data);
+    void startNativeDrag(GtkWidget* widget);
+#endif
     static void onFileDragBegin(GtkWidget*, GdkDragContext*, gpointer data);
+    static void onFileDragEnd(GtkWidget*, GdkDragContext*, gpointer data);
     static void onFileDragDataGet(GtkWidget*, GdkDragContext*, GtkSelectionData*, guint, guint, gpointer data);
     static void onDropDataReceived(GtkWidget*, GdkDragContext*, gint, gint, GtkSelectionData*, guint, guint, gpointer data);
     static void onDownload(GtkMenuItem*, gpointer data);
@@ -66,4 +74,14 @@ private:
     std::string pendingInlineRenamePath;
     guint inlineRenameId = 0;
     std::string downloadFolder;
+    std::vector<std::string> pendingDragSelectionPaths;
+    std::unordered_map<std::string, std::string> pendingDragDownloads;
+    std::vector<std::string> completedDragDownloads;
+    std::vector<std::string> pendingDragLocalPaths;
+    std::string dragStagingFolder;
+#ifdef _WIN32
+    guint nativeDragButton = 0;
+    gint nativeDragX = 0;
+    gint nativeDragY = 0;
+#endif
 };

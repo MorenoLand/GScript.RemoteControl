@@ -53,7 +53,7 @@ endif()
 target_link_libraries(RemoteControl PRIVATE remote_control_options grclib OpenSSL::Crypto OpenSSL::SSL PkgConfig::GTK3 PkgConfig::GTKSOURCEVIEW3 PkgConfig::WEBP)
 target_compile_definitions(RemoteControl PRIVATE REMOTE_CONTROL_BUILD_DATE="${REMOTE_CONTROL_BUILD_DATE}")
 if(WIN32)
-    target_link_libraries(RemoteControl PRIVATE iphlpapi rpcrt4 shell32)
+    target_link_libraries(RemoteControl PRIVATE iphlpapi rpcrt4 shell32 ole32)
 endif()
 set_target_properties(RemoteControl PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/bin")
 
