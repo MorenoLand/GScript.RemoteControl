@@ -508,7 +508,38 @@ void TPlayerList::handleBanListData(const char* type, const char* account, const
     GtkWidget* field = gtk_text_view_new();
     gtk_text_view_set_editable(GTK_TEXT_VIEW(field), false);
     gtk_text_view_set_cursor_visible(GTK_TEXT_VIEW(field), false);
-    gtk_text_buffer_set_text(gtk_text_view_get_buffer(GTK_TEXT_VIEW(field)), content == nullptr || *content == '\0' ? "(none)" : content, -1);
+    GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(field));
+    const std::string history = content == nullptr ? "" : content;
+    if (history.empty()) {
+        gtk_text_buffer_set_text(buffer, "(none)", -1);
+    } else if (listType != "banhistory") {
+        gtk_text_buffer_set_text(buffer, history.c_str(), -1);
+    } else {
+        GtkTextTag* headerTag = gtk_text_buffer_create_tag(buffer, "ban-history-header", "foreground", remoteControlDarkMode() ? "#ff00ff" : "#a000a0", "weight", PANGO_WEIGHT_BOLD, nullptr);
+        const auto isDigit = [](char value) { return value >= '0' && value <= '9'; };
+        bool hasEntry = false;
+        size_t lineStart = 0;
+        while (lineStart <= history.size()) {
+            const size_t lineEnd = history.find('\n', lineStart);
+            std::string line = history.substr(lineStart, lineEnd == std::string::npos ? std::string::npos : lineEnd - lineStart);
+            if (!line.empty() && line.back() == '\r') line.pop_back();
+            const bool header = line.size() >= 20 && isDigit(line[0]) && isDigit(line[1]) && isDigit(line[2]) && isDigit(line[3]) && line[4] == '-' && isDigit(line[5]) && isDigit(line[6]) && line[7] == '-' && isDigit(line[8]) && isDigit(line[9]) && line[10] == ' ' && isDigit(line[11]) && isDigit(line[12]) && line[13] == ':' && isDigit(line[14]) && isDigit(line[15]) && line[16] == ':' && isDigit(line[17]) && isDigit(line[18]) && line.back() == ':';
+            if (!line.empty()) {
+                if (header && hasEntry) gtk_text_buffer_insert_at_cursor(buffer, "\n", -1);
+                if (header) {
+                    GtkTextIter end;
+                    gtk_text_buffer_get_end_iter(buffer, &end);
+                    gtk_text_buffer_insert_with_tags(buffer, &end, line.c_str(), -1, headerTag, nullptr);
+                    hasEntry = true;
+                } else {
+                    gtk_text_buffer_insert_at_cursor(buffer, line.c_str(), -1);
+                }
+                gtk_text_buffer_insert_at_cursor(buffer, "\n", -1);
+            }
+            if (lineEnd == std::string::npos) break;
+            lineStart = lineEnd + 1;
+        }
+    }
     gtk_container_add(GTK_CONTAINER(scrolled), field);
     gtk_box_pack_start(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), scrolled, true, true, 0);
     g_signal_connect(dialog, "response", G_CALLBACK(+[](GtkDialog* responseDialog, gint, gpointer) { gtk_widget_destroy(GTK_WIDGET(responseDialog)); }), nullptr);
