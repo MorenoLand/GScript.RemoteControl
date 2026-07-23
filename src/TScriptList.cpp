@@ -3,6 +3,7 @@
 #include "EditorFind.h"
 #include "GScriptEditor.h"
 #include "Theme.h"
+#include "TreeSearch.h"
 
 #include <grclib.h>
 #include <gtksourceview/gtksource.h>
@@ -28,6 +29,9 @@ TScriptList::TScriptList(std::string nextType) : type(std::move(nextType)) {
     store = gtk_list_store_new(1, G_TYPE_STRING);
     tree = gtk_tree_view_new_with_model(GTK_TREE_MODEL(store));
     gtk_tree_view_set_headers_visible(GTK_TREE_VIEW(tree), false);
+    gtk_tree_view_set_enable_search(GTK_TREE_VIEW(tree), true);
+    gtk_tree_view_set_search_column(GTK_TREE_VIEW(tree), 0);
+    gtk_tree_view_set_search_equal_func(GTK_TREE_VIEW(tree), treeSearchContains, nullptr, nullptr);
     GtkCellRenderer* renderer = gtk_cell_renderer_text_new();
     gtk_tree_view_append_column(GTK_TREE_VIEW(tree), gtk_tree_view_column_new_with_attributes("Name", renderer, "text", 0, nullptr));
     gtk_tree_sortable_set_sort_column_id(GTK_TREE_SORTABLE(store), 0, GTK_SORT_ASCENDING);

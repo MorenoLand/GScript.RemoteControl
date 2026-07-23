@@ -15,6 +15,7 @@ private:
     static void onFolderSelected(GtkTreeSelection*, gpointer data);
     static gboolean onFolderButtonPress(GtkWidget*, GdkEventButton*, gpointer data);
     static gboolean onFileButtonPress(GtkWidget*, GdkEventButton*, gpointer data);
+    static void onFileDragBegin(GtkWidget*, GdkDragContext*, gpointer data);
     static void onFileDragDataGet(GtkWidget*, GdkDragContext*, GtkSelectionData*, guint, guint, gpointer data);
     static void onDropDataReceived(GtkWidget*, GdkDragContext*, gint, gint, GtkSelectionData*, guint, guint, gpointer data);
     static void onDownload(GtkMenuItem*, gpointer data);

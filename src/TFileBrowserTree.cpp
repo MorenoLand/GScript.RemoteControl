@@ -151,8 +151,9 @@ TFileBrowserTree::TFileBrowserTree() {
     GtkTargetEntry fileTarget[] = {{const_cast<gchar*>("application/x-remote-control-file-path"), GTK_TARGET_SAME_APP, 1}};
     GtkTargetEntry dropTargets[] = {{const_cast<gchar*>("application/x-remote-control-file-path"), GTK_TARGET_SAME_APP, 1}, {const_cast<gchar*>("text/uri-list"), 0, 2}};
     gtk_drag_source_set(fileView, GDK_BUTTON1_MASK, fileTarget, G_N_ELEMENTS(fileTarget), GDK_ACTION_MOVE);
-    gtk_drag_dest_set(folderView, GTK_DEST_DEFAULT_ALL, dropTargets, G_N_ELEMENTS(dropTargets), static_cast<GdkDragAction>(GDK_ACTION_COPY | GDK_ACTION_MOVE));
-    gtk_drag_dest_set(fileView, GTK_DEST_DEFAULT_ALL, dropTargets, G_N_ELEMENTS(dropTargets), static_cast<GdkDragAction>(GDK_ACTION_COPY | GDK_ACTION_MOVE));
+    gtk_drag_dest_set(folderView, static_cast<GtkDestDefaults>(GTK_DEST_DEFAULT_MOTION | GTK_DEST_DEFAULT_DROP), dropTargets, G_N_ELEMENTS(dropTargets), static_cast<GdkDragAction>(GDK_ACTION_COPY | GDK_ACTION_MOVE));
+    gtk_drag_dest_set(fileView, static_cast<GtkDestDefaults>(GTK_DEST_DEFAULT_MOTION | GTK_DEST_DEFAULT_DROP), dropTargets, G_N_ELEMENTS(dropTargets), static_cast<GdkDragAction>(GDK_ACTION_COPY | GDK_ACTION_MOVE));
+    g_signal_connect(fileView, "drag-begin", G_CALLBACK(onFileDragBegin), this);
     g_signal_connect(fileView, "drag-data-get", G_CALLBACK(onFileDragDataGet), this);
     g_signal_connect(folderView, "drag-data-received", G_CALLBACK(onDropDataReceived), this);
     g_signal_connect(fileView, "drag-data-received", G_CALLBACK(onDropDataReceived), this);
@@ -257,6 +258,38 @@ gboolean TFileBrowserTree::onFileButtonPress(GtkWidget* widget, GdkEventButton* 
     if (event->type != GDK_BUTTON_PRESS || event->button != GDK_BUTTON_SECONDARY) return false;
     browser->showItemMenu(widget, event, false);
     return true;
+}
+
+void TFileBrowserTree::onFileDragBegin(GtkWidget* widget, GdkDragContext* context, gpointer) {
+    GtkTreeSelection* selected = gtk_tree_view_get_selection(GTK_TREE_VIEW(widget));
+    GtkTreeModel* model = nullptr;
+    GList* rows = gtk_tree_selection_get_selected_rows(selected, &model);
+    if (rows == nullptr) return;
+    GtkTreeIter row;
+    GtkTreePath* path = static_cast<GtkTreePath*>(rows->data);
+    if (gtk_tree_model_get_iter(model, &row, path)) {
+        GdkPixbuf* icon = nullptr;
+        gchar* name = nullptr;
+        gtk_tree_model_get(model, &row, FileIconColumn, &icon, FilePathColumn, &name, -1);
+        GtkWidget* preview = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 5);
+        gtk_widget_set_margin_start(preview, 6);
+        gtk_widget_set_margin_end(preview, 6);
+        gtk_widget_set_margin_top(preview, 4);
+        gtk_widget_set_margin_bottom(preview, 4);
+        if (icon != nullptr) {
+            GtkWidget* image = gtk_image_new_from_pixbuf(icon);
+            gtk_box_pack_start(GTK_BOX(preview), image, false, false, 0);
+            g_object_unref(icon);
+        }
+        GtkWidget* label = gtk_label_new(name == nullptr ? "" : name);
+        gtk_label_set_max_width_chars(GTK_LABEL(label), 42);
+        gtk_box_pack_start(GTK_BOX(preview), label, false, false, 0);
+        gtk_widget_show_all(preview);
+        gtk_drag_set_icon_widget(context, preview, 8, 8);
+        g_free(name);
+    }
+    for (GList* node = rows; node != nullptr; node = node->next) gtk_tree_path_free(static_cast<GtkTreePath*>(node->data));
+    g_list_free(rows);
 }
 
 void TFileBrowserTree::onFileDragDataGet(GtkWidget* widget, GdkDragContext*, GtkSelectionData* selection, guint, guint, gpointer) {

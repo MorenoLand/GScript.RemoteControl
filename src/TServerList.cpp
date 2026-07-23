@@ -1,6 +1,7 @@
 #include "TServerList.h"
 #include "Debug.h"
 #include "ErrorWindow.h"
+#include "TreeSearch.h"
 
 #include <grclib.h>
 
@@ -83,6 +84,8 @@ TServerList::TServerList(std::function<void()> onClose, std::function<void(void*
     tree = gtk_tree_view_new_with_model(GTK_TREE_MODEL(store));
     gtk_widget_set_name(tree, "ServerListField");
     gtk_tree_view_set_enable_search(GTK_TREE_VIEW(tree), true);
+    gtk_tree_view_set_search_column(GTK_TREE_VIEW(tree), 1);
+    gtk_tree_view_set_search_equal_func(GTK_TREE_VIEW(tree), treeSearchContains, nullptr, nullptr);
     gtk_container_add(GTK_CONTAINER(scrolled), tree);
 
     GtkCellRenderer* serverRenderer = gtk_cell_renderer_text_new();

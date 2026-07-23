@@ -1,4 +1,5 @@
 #include "TAccountsWindow.h"
+#include "TreeSearch.h"
 
 #include <grclib.h>
 #include <IEnums.h>
@@ -83,6 +84,8 @@ TAccountsWindow::TAccountsWindow() {
     accountTree = tree;
     gtk_tree_view_set_headers_visible(GTK_TREE_VIEW(tree), false);
     gtk_tree_view_set_enable_search(GTK_TREE_VIEW(tree), true);
+    gtk_tree_view_set_search_column(GTK_TREE_VIEW(tree), 0);
+    gtk_tree_view_set_search_equal_func(GTK_TREE_VIEW(tree), treeSearchContains, nullptr, nullptr);
     GtkCellRenderer* renderer = gtk_cell_renderer_text_new();
     gtk_tree_view_append_column(GTK_TREE_VIEW(tree), gtk_tree_view_column_new_with_attributes("", renderer, "text", 0, nullptr));
     gtk_container_add(GTK_CONTAINER(scrolled), tree);
