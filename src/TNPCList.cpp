@@ -338,6 +338,7 @@ void TNPCList::onClose(GtkButton*, gpointer data) { gtk_widget_hide(static_cast<
 void TNPCList::onNPCChanged(int, const char*, void* data) { static_cast<TNPCList*>(data)->refresh(); }
 gboolean TNPCList::onDelete(GtkWidget*, GdkEvent*, gpointer data) { gtk_widget_hide(static_cast<TNPCList*>(data)->window); return true; }
 void TNPCList::refresh() {
+    gtk_tree_sortable_set_sort_column_id(GTK_TREE_SORTABLE(store), GTK_TREE_SORTABLE_UNSORTED_SORT_COLUMN_ID, GTK_SORT_ASCENDING);
     gtk_list_store_clear(store);
     RCNPC* npcs = nullptr;
     const int count = rc_get_npcs(connection, &npcs);
@@ -346,6 +347,7 @@ void TNPCList::refresh() {
         gtk_list_store_append(store, &row);
         gtk_list_store_set(store, &row, 0, npcs[index].id, 1, npcs[index].name == nullptr ? "" : npcs[index].name, 2, npcs[index].type == nullptr ? "" : npcs[index].type, 3, npcs[index].level == nullptr ? "" : npcs[index].level, -1);
     }
+    gtk_tree_sortable_set_sort_column_id(GTK_TREE_SORTABLE(store), 0, GTK_SORT_ASCENDING);
 }
 int TNPCList::firstFreeNPCId() const {
     RCNPC* npcs = nullptr;

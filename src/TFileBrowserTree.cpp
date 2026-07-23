@@ -663,8 +663,10 @@ void TFileBrowserTree::refresh() {
 void TFileBrowserTree::refreshFolders() {
     RCFileBrowserFolder* entries = nullptr;
     const int count = rc_copy_filebrowser_folders(connection, &entries);
+    gtk_tree_sortable_set_sort_column_id(GTK_TREE_SORTABLE(folders), GTK_TREE_SORTABLE_UNSORTED_SORT_COLUMN_ID, GTK_SORT_ASCENDING);
     gtk_tree_store_clear(folders);
     for (int index = 0; index < count; ++index) addFolder(entries[index].pattern == nullptr ? "" : entries[index].pattern, entries[index].rights == nullptr ? "" : entries[index].rights);
+    gtk_tree_sortable_set_sort_column_id(GTK_TREE_SORTABLE(folders), FolderDisplayColumn, GTK_SORT_ASCENDING);
     rc_free_filebrowser_folders(entries, count);
 }
 
@@ -673,6 +675,7 @@ void TFileBrowserTree::refreshFiles(const char* folder, int count) {
     if (!currentFolder.empty() && responseFolder != currentFolder) return;
     RCFileBrowserEntry* entries = nullptr;
     const int entryCount = count > 0 ? rc_copy_filebrowser_files(connection, &entries) : 0;
+    gtk_tree_sortable_set_sort_column_id(GTK_TREE_SORTABLE(files), GTK_TREE_SORTABLE_UNSORTED_SORT_COLUMN_ID, GTK_SORT_ASCENDING);
     gtk_list_store_clear(files);
     currentFolder = responseFolder;
     gtk_label_set_text(GTK_LABEL(folderPath), (std::string("Current Folder: ") + responseFolder).c_str());
@@ -683,6 +686,7 @@ void TFileBrowserTree::refreshFiles(const char* folder, int count) {
         const std::string size = entries[index].size == 0 ? "" : std::to_string(entries[index].size);
         gtk_list_store_set(files, &row, FileIconColumn, fileIcon(entries[index], textFileIcon, nwFileIcon, scriptFileIcon, gmapFileIcon), FilePathColumn, entries[index].path == nullptr ? "" : entries[index].path, FileRightsColumn, entries[index].rights == nullptr ? "" : entries[index].rights, FileSizeColumn, size.c_str(), FileModifiedColumn, modified.c_str(), FileSizeSortColumn, entries[index].size, FileModifiedSortColumn, entries[index].modified, -1);
     }
+    gtk_tree_sortable_set_sort_column_id(GTK_TREE_SORTABLE(files), FilePathColumn, GTK_SORT_ASCENDING);
     rc_free_filebrowser_files(entries, entryCount);
 }
 
