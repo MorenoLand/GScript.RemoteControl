@@ -553,10 +553,23 @@ void TPlayerList::handlePlayerRights(const char* account, int rights, const char
         gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(state->checks[entry.bit]), (rights & (1 << entry.bit)) != 0);
         gtk_grid_attach(GTK_GRID(grid), state->checks[entry.bit], entry.column, entry.row, 1, 1);
     }
+    gtk_box_pack_start(GTK_BOX(flags), grid, false, false, 0);
+    GtkWidget* presets = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 3);
     GtkWidget* clearAll = gtk_button_new_with_label("Clear all");
     g_signal_connect(clearAll, "clicked", G_CALLBACK(+[](GtkButton*, gpointer data) { auto* state = static_cast<RightsState*>(data); for (GtkWidget* check : state->checks) if (check != nullptr) gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(check), false); }), state);
-    gtk_grid_attach(GTK_GRID(grid), clearAll, 1, 9, 1, 1);
-    gtk_box_pack_start(GTK_BOX(flags), grid, false, false, 0);
+    gtk_box_pack_start(GTK_BOX(presets), clearAll, false, false, 0);
+    const int presetRights[] = {(1 << 5) - 1, (1 << 10) - 1, (1 << 15) - 1, (1 << 20) - 1};
+    for (int index = 0; index < 4; ++index) {
+        GtkWidget* preset = gtk_button_new_with_label(std::to_string(index + 1).c_str());
+        g_signal_connect(preset, "clicked", G_CALLBACK(+[](GtkButton* button, gpointer data) {
+            auto* state = static_cast<RightsState*>(data);
+            const int value = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(button), "rights-preset"));
+            for (int bit = 0; bit < 20; ++bit) if (state->checks[bit] != nullptr) gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(state->checks[bit]), (value & (1 << bit)) != 0);
+        }), state);
+        g_object_set_data(G_OBJECT(preset), "rights-preset", GINT_TO_POINTER(presetRights[index]));
+        gtk_box_pack_start(GTK_BOX(presets), preset, false, false, 0);
+    }
+    gtk_box_pack_start(GTK_BOX(flags), presets, false, false, 0);
     GtkWidget* folderScroll = gtk_scrolled_window_new(nullptr, nullptr);
     gtk_container_set_border_width(GTK_CONTAINER(folderScroll), 5);
     GtkWidget* folderField = gtk_text_view_new();
