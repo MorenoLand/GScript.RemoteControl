@@ -539,8 +539,8 @@ void TPlayerList::handlePlayerRights(const char* account, int rights, const char
     gtk_box_pack_start(GTK_BOX(flags), ipRow, false, false, 0);
     auto* state = new RightsState{this, account, ipField, nullptr};
     GtkWidget* grid = gtk_grid_new();
-    gtk_grid_set_column_spacing(GTK_GRID(grid), 8);
-    gtk_grid_set_row_spacing(GTK_GRID(grid), 2);
+    gtk_grid_set_column_spacing(GTK_GRID(grid), 26);
+    gtk_grid_set_row_spacing(GTK_GRID(grid), 6);
     const struct { const char* label; int bit; int column; int row; } rightsLayout[] = {
         {"Warpto XY", 0, 0, 0}, {"Set server flags", 15, 1, 0}, {"Warpto player", 1, 0, 1}, {"Change rights", 10, 1, 1},
         {"Warp players", 2, 0, 2}, {"Ban players", 11, 1, 2}, {"Update level", 3, 0, 3}, {"Change comments", 12, 1, 3},
@@ -558,7 +558,12 @@ void TPlayerList::handlePlayerRights(const char* account, int rights, const char
     GtkWidget* clearAll = gtk_button_new_with_label("Clear all");
     g_signal_connect(clearAll, "clicked", G_CALLBACK(+[](GtkButton*, gpointer data) { auto* state = static_cast<RightsState*>(data); for (GtkWidget* check : state->checks) if (check != nullptr) gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(check), false); }), state);
     gtk_box_pack_start(GTK_BOX(presets), clearAll, false, false, 0);
-    const int presetRights[] = {(1 << 5) - 1, (1 << 10) - 1, (1 << 15) - 1, (1 << 20) - 1};
+    const int presetRights[] = {
+        (1 << 0) | (1 << 1) | (1 << 2),
+        (1 << 0) | (1 << 1) | (1 << 2) | (1 << 3) | (1 << 5) | (1 << 6) | (1 << 7),
+        (1 << 15) - 1,
+        (1 << 20) - 1
+    };
     for (int index = 0; index < 4; ++index) {
         GtkWidget* preset = gtk_button_new_with_label(std::to_string(index + 1).c_str());
         g_signal_connect(preset, "clicked", G_CALLBACK(+[](GtkButton* button, gpointer data) {
@@ -569,7 +574,6 @@ void TPlayerList::handlePlayerRights(const char* account, int rights, const char
         g_object_set_data(G_OBJECT(preset), "rights-preset", GINT_TO_POINTER(presetRights[index]));
         gtk_box_pack_start(GTK_BOX(presets), preset, false, false, 0);
     }
-    gtk_box_pack_start(GTK_BOX(flags), presets, false, false, 0);
     GtkWidget* folderScroll = gtk_scrolled_window_new(nullptr, nullptr);
     gtk_container_set_border_width(GTK_CONTAINER(folderScroll), 5);
     GtkWidget* folderField = gtk_text_view_new();
@@ -581,6 +585,10 @@ void TPlayerList::handlePlayerRights(const char* account, int rights, const char
     gtk_notebook_append_page(GTK_NOTEBOOK(notebook), flags, gtk_label_new("IP Range and Right flags"));
     gtk_notebook_append_page(GTK_NOTEBOOK(notebook), folderScroll, gtk_label_new("Folder rights"));
     gtk_box_pack_start(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), notebook, true, true, 0);
+    GtkWidget* actionArea = gtk_dialog_get_action_area(GTK_DIALOG(dialog));
+    gtk_widget_set_hexpand(presets, true);
+    gtk_box_pack_start(GTK_BOX(actionArea), presets, true, true, 0);
+    gtk_box_reorder_child(GTK_BOX(actionArea), presets, 0);
     auto onAttributeResponse = +[](GtkDialog* responseDialog, gint response, gpointer userData) {
         auto* state = static_cast<RightsState*>(userData);
         if (response == GTK_RESPONSE_ACCEPT) {
@@ -1422,7 +1430,19 @@ void TPlayerList::resetSelectedPlayer() {
     if (!gtk_tree_selection_get_selected(gtk_tree_view_get_selection(GTK_TREE_VIEW(tree)), &model, &row)) return;
     gchar* account = nullptr;
     gtk_tree_model_get(model, &row, PlayerAccountColumn, &account, -1);
-    if (account != nullptr && *account != '\0') rc_reset_player(connection, account);
+    if (account != nullptr && *account != '\0') {
+        const std::string prompt = "Do you really want to reset the attributes of " + std::string(account) + " ?";
+        GtkWidget* dialog = gtk_message_dialog_new(GTK_WINDOW(window), GTK_DIALOG_DESTROY_WITH_PARENT, GTK_MESSAGE_QUESTION, GTK_BUTTONS_CANCEL, "%s", prompt.c_str());
+        gtk_window_set_title(GTK_WINDOW(dialog), "Question");
+        gtk_dialog_add_button(GTK_DIALOG(dialog), "OK", GTK_RESPONSE_ACCEPT);
+        g_object_set_data_full(G_OBJECT(dialog), "player-account", g_strdup(account), g_free);
+        g_signal_connect(dialog, "response", G_CALLBACK(+[](GtkDialog* responseDialog, gint response, gpointer userData) {
+            auto* list = static_cast<TPlayerList*>(userData);
+            if (response == GTK_RESPONSE_ACCEPT) rc_reset_player(list->connection, static_cast<const char*>(g_object_get_data(G_OBJECT(responseDialog), "player-account")));
+            gtk_widget_destroy(GTK_WIDGET(responseDialog));
+        }), this);
+        gtk_widget_show_all(dialog);
+    }
     g_free(account);
 }
 void TPlayerList::updateSelectedPlayerLevel() {

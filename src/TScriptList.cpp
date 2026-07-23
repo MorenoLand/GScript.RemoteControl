@@ -55,14 +55,28 @@ TScriptList::~TScriptList() { if (classList == this) classList = nullptr; if (we
 
 void TScriptList::open(void* nextConnection) {
     connection = nextConnection;
-    if (type == "classes") classList = this;
-    else weaponList = this;
+    if (type == "classes") {
+        classList = this;
+        restoreScriptReceiver(connection);
+        refresh();
+        gtk_widget_show_all(window);
+        gtk_window_present(GTK_WINDOW(window));
+        return;
+    }
+    weaponList = this;
     restoreScriptReceiver(connection);
-    refresh();
-    gtk_widget_show_all(window);
-    gtk_window_present(GTK_WINDOW(window));
+    rc_on_weapon_list_received(connection, onWeaponListReceived, this);
+    rc_request_weapon_list(connection);
 }
 void TScriptList::restoreScriptReceiver(void* connection) { rc_on_script_received(connection, onScript, nullptr); }
+
+void TScriptList::onWeaponListReceived(int, void* data) {
+    TScriptList* list = static_cast<TScriptList*>(data);
+    if (list == nullptr || list->connection == nullptr) return;
+    list->refresh();
+    gtk_widget_show_all(list->window);
+    gtk_window_present(GTK_WINDOW(list->window));
+}
 
 void TScriptList::onEdit(GtkButton*, gpointer data) { static_cast<TScriptList*>(data)->edit(); }
 void TScriptList::onDeleteScript(GtkButton*, gpointer data) { static_cast<TScriptList*>(data)->deleteSelected(); }
