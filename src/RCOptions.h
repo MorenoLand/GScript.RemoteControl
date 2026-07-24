@@ -20,6 +20,8 @@ namespace RC {
         bool dontsavepassword = false;
         bool graphicalmenu = true;
         bool darkmode = true;
+        std::string theme = "dark";
+        bool synccolors = true;
         int chatfontsize = 9;
         bool globalpms = true;
         bool buddytracking = true;

@@ -266,21 +266,38 @@ namespace {
 
     GtkCssProvider* darkThemeProvider = nullptr;
 
-    void applyDarkTheme(bool enabled) {
+    void applyTheme(const std::string& theme, bool enabled) {
         if (darkThemeProvider != nullptr) {
             gtk_style_context_remove_provider_for_screen(gdk_screen_get_default(), GTK_STYLE_PROVIDER(darkThemeProvider));
             g_object_unref(darkThemeProvider);
             darkThemeProvider = nullptr;
         }
         g_object_set_data(G_OBJECT(gtk_settings_get_default()), "remote-control-dark-mode", GINT_TO_POINTER(enabled));
+        g_object_set_data_full(G_OBJECT(gtk_settings_get_default()), "remote-control-theme", g_strdup(theme.c_str()), g_free);
         if (!enabled) return;
         GtkCssProvider* provider = gtk_css_provider_new();
-        constexpr const char* css = "window, dialog, .background { background-color: #454545; color: #dddddd; } label, checkbutton label, button label { color: #dddddd; } entry { background-color: #1e1e1e; color: #dddddd; caret-color: #00ff00; border-color: #555555; } entry:disabled { background-color: #383838; color: #c1c1c1; } textview, textview text { background-color: #1e1e1e; color: #dddddd; caret-color: #00ff00; } combobox button, button { background-image: none; background-color: #383838; color: #cbcbcb; border-color: #555555; } button:hover, combobox button:hover { background-image: none; background-color: #3b3b3b; } button:active, combobox button:active { background-image: none; background-color: #303030; } button:disabled { background-image: none; background-color: #383838; color: #828282; } checkbutton { color: #dddddd; } treeview.view { background-color: #272822; color: #dddddd; } filechooser box, filechooser .path-bar, filechooser .path-bar button, filechooser .pathbar, filechooser .pathbar button { background-image: none; background-color: #454545; color: #dddddd; } filechooser placessidebar, filechooser placessidebar viewport, filechooser placessidebar list, filechooser placessidebar row, filechooser .sidebar, filechooser .sidebar viewport, filechooser .sidebar list, filechooser .sidebar row { background-color: #272822; color: #dddddd; } filechooser placessidebar row:selected, filechooser .sidebar row:selected { background-color: #555555; color: #ffffff; } menubar, menu { background-color: #484848; color: #cbcbcb; } menuitem { color: #cbcbcb; } notebook, notebook > header, notebook > stack, scrolledwindow, viewport { background-color: transparent; border: none; box-shadow: none; padding: 0; } notebook > header, notebook > header > tabs { min-height: 0; } notebook > header > tabs > tab { background-image: none; background-color: #3d3d3d; border: 1px solid #707070; border-bottom: none; border-radius: 4px 4px 0 0; margin-right: 2px; padding: 2px 5px; } notebook > header > tabs > tab:checked { background-color: #454545; border-color: #909090; } treeview.view:selected { background-color: #555555; color: #ffffff; }";
-        gtk_css_provider_load_from_data(provider, css, -1, nullptr);
+        const bool dracula = theme == "dracula";
+        const bool material = theme == "material";
+        const bool ayuMirage = theme == "ayu-mirage";
+        const bool nord = theme == "nord";
+        const bool monokai = theme == "monokai";
+        const bool oneDark = theme == "one-dark";
+        const char* background = dracula ? "#282a36" : material ? "#263238" : ayuMirage ? "#1f2430" : nord ? "#2e3440" : monokai ? "#272822" : oneDark ? "#282c34" : "#454545";
+        const char* surface = dracula ? "#44475a" : material ? "#37474f" : ayuMirage ? "#242936" : nord ? "#3b4252" : monokai ? "#30312b" : oneDark ? "#21252b" : "#383838";
+        const char* editor = dracula ? "#282a36" : material ? "#263238" : ayuMirage ? "#1f2430" : nord ? "#2e3440" : monokai ? "#1e1f1c" : oneDark ? "#282c34" : "#1e1e1e";
+        const char* text = dracula ? "#f8f8f2" : material ? "#eeffff" : ayuMirage ? "#cbccc6" : nord ? "#eceff4" : monokai ? "#f8f8f2" : oneDark ? "#abb2bf" : "#dddddd";
+        const char* accent = dracula ? "#bd93f9" : material ? "#80cbc4" : ayuMirage ? "#ffcc66" : nord ? "#88c0d0" : monokai ? "#a6e22e" : oneDark ? "#61afef" : "#00ff00";
+        const char* border = dracula ? "#6272a4" : material ? "#546e7a" : ayuMirage ? "#4b5263" : nord ? "#4c566a" : monokai ? "#75715e" : oneDark ? "#3e4451" : "#555555";
+        const std::string css = std::string("window, dialog, .background { background-color: ") + background + "; color: " + text + "; } label, checkbutton label, button label { color: " + std::string(text) + "; } entry { background-image: none; background-color: " + editor + "; color: " + text + "; caret-color: " + accent + "; border: 1px solid " + border + "; } entry:disabled { background-color: " + surface + "; color: #c1c1c1; } textview, textview text { background-color: " + editor + "; color: " + text + "; caret-color: " + accent + "; } combobox button, button { background-image: none; background-color: " + surface + "; color: " + text + "; border: 1px solid " + border + "; } button:hover, combobox button:hover { background-image: none; background-color: " + surface + "; } button:active, combobox button:active { background-image: none; background-color: " + editor + "; } button:disabled { background-image: none; background-color: " + surface + "; color: #828282; } checkbutton { color: " + text + "; } frame, expander { background-color: transparent; border: 1px solid " + border + "; } separator, paned separator { background-color: " + border + "; min-height: 1px; min-width: 1px; } treeview.view, treeview.view header button { background-color: " + editor + "; color: " + text + "; border-color: " + border + "; } treeview.view:selected { background-color: " + surface + "; color: #ffffff; } filechooser box, filechooser .path-bar, filechooser .path-bar button, filechooser .pathbar, filechooser .pathbar button { background-image: none; background-color: " + background + "; color: " + text + "; } filechooser placessidebar, filechooser placessidebar viewport, filechooser placessidebar list, filechooser placessidebar row, filechooser .sidebar, filechooser .sidebar viewport, filechooser .sidebar list, filechooser .sidebar row { background-color: " + editor + "; color: " + text + "; } filechooser placessidebar row:selected, filechooser .sidebar row:selected { background-color: " + surface + "; color: #ffffff; } menubar, menu { background-color: " + surface + "; color: " + text + "; } menuitem { color: " + text + "; } notebook, notebook > header, notebook > stack, scrolledwindow, viewport { background-color: transparent; border: 1px solid " + border + "; box-shadow: none; padding: 0; } notebook > header, notebook > header > tabs { min-height: 0; } notebook > header > tabs > tab { background-image: none; background-color: " + surface + "; border: 1px solid " + border + "; border-bottom: none; border-radius: 4px 4px 0 0; margin-right: 2px; padding: 2px 5px; } notebook > header > tabs > tab:checked { background-color: " + background + "; border-color: " + accent + "; }";
+        gtk_css_provider_load_from_data(provider, css.c_str(), -1, nullptr);
         gtk_style_context_add_provider_for_screen(gdk_screen_get_default(), GTK_STYLE_PROVIDER(provider), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
         darkThemeProvider = provider;
     }
 
+}
+
+void applyRemoteControlTheme(const std::string& theme, bool darkMode) {
+    applyTheme(theme, darkMode);
 }
 
 void remote_control_begin_pm_tray_alert() {
@@ -329,7 +346,7 @@ int main(int argc, char** argv) {
     RC::loadRCOptions(options, applicationDirectory);
     setGScriptEditorCacheDirectory(applicationDirectory / "cache");
     setGScriptEditorOptions(options);
-    applyDarkTheme(options.darkmode);
+    applyRemoteControlTheme(options.theme, options.darkmode);
     GtkStatusIcon* trayIcon = gtk_status_icon_new_from_file((applicationDirectory / "images" / "rcicon.png").string().c_str());
     pmTrayIcon = trayIcon;
     pmTrayNormalIcon = (applicationDirectory / "images" / "rcicon.png").string();
@@ -365,10 +382,11 @@ int main(int argc, char** argv) {
         trayRemoteFrame = nullptr;
         remoteFrame->disconnect();
         remoteFrame.reset();
-    }, options.darkmode, [&](bool darkMode) {
+    }, options.darkmode, options.theme, [&](bool darkMode, const std::string& theme) {
         options.darkmode = darkMode;
+        options.theme = theme;
         RC::saveRCOptions(options, applicationDirectory);
-        applyDarkTheme(darkMode);
+        applyRemoteControlTheme(theme, darkMode);
     });
     switchServer = [&] {
         serverList.reopen();

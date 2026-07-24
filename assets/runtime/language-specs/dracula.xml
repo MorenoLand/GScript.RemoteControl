@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<style-scheme id="dracula" _name="Dracula" version="1.0">
+  <style name="text" foreground="#f8f8f2" background="#282a36" />
+  <style name="selection" foreground="#f8f8f2" background="#44475a" />
+  <style name="line-numbers" foreground="#6272a4" background="#282a36" />
+  <style name="def:comment" foreground="#6272a4" />
+  <style name="def:keyword" foreground="#ff79c6" />
+  <style name="def:statement" foreground="#ff79c6" />
+  <style name="def:type" foreground="#8be9fd" />
+  <style name="def:function" foreground="#50fa7b" />
+  <style name="def:string" foreground="#f1fa8c" />
+  <style name="def:constant" foreground="#bd93f9" />
+  <style name="def:number" foreground="#bd93f9" />
+  <style name="def:decimal" foreground="#bd93f9" />
+  <style name="def:operator" foreground="#ff79c6" />
+  <style name="def:preprocessor" foreground="#8be9fd" />
+  <style name="def:identifier" foreground="#f8f8f2" />
+  <style name="cursor" foreground="#f8f8f2" />
+</style-scheme>

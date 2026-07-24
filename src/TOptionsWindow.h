@@ -13,11 +13,14 @@ public:
     void open();
 private:
     static void onClose(GtkButton*, gpointer data);
+    static void onThemeChanged(GtkComboBox*, gpointer data);
     static void onBrowseDownload(GtkButton*, gpointer data);
     static void onBrowseLog(GtkButton*, gpointer data);
     static void onBrowseAutocompleteSource(GtkButton*, gpointer data);
+    static void onBrowseBackground(GtkButton*, gpointer data);
     static gboolean onDelete(GtkWidget*, GdkEvent*, gpointer data);
     void save();
+    void applyThemeSelection();
     GtkWidget* window = nullptr;
     GtkWidget* nickname = nullptr;
     GtkWidget* downloadFolder = nullptr;
@@ -42,6 +45,19 @@ private:
     GtkWidget* scriptTabWidth = nullptr;
     GtkWidget* scriptUseTabs = nullptr;
     GtkWidget* scriptFontSize = nullptr;
+    GtkWidget* theme = nullptr;
+    GtkWidget* syncColors = nullptr;
+    GtkWidget* chatbarTextColor = nullptr;
+    GtkWidget* chatbarBackgroundColor = nullptr;
+    GtkWidget* chatTextColor = nullptr;
+    GtkWidget* chatBoldColor = nullptr;
+    GtkWidget* chatBackgroundColor = nullptr;
+    GtkWidget* labelColor = nullptr;
+    GtkWidget* labelBackgroundColor = nullptr;
+    GtkWidget* serverLabel = nullptr;
+    GtkWidget* playersLabel = nullptr;
+    GtkWidget* npcServerLabel = nullptr;
+    GtkWidget* backgroundImage = nullptr;
     RC::RCOptions& options;
     std::filesystem::path applicationDirectory;
     std::function<void(const RC::RCOptions&)> onSaved;

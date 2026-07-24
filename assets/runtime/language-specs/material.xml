@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<style-scheme id="material" _name="Material" version="1.0">
+  <style name="text" foreground="#eeffff" background="#263238" />
+  <style name="selection" foreground="#eeffff" background="#546e7a" />
+  <style name="line-numbers" foreground="#546e7a" background="#263238" />
+  <style name="def:comment" foreground="#546e7a" />
+  <style name="def:keyword" foreground="#c792ea" />
+  <style name="def:statement" foreground="#c792ea" />
+  <style name="def:type" foreground="#ffcb6b" />
+  <style name="def:function" foreground="#82aaff" />
+  <style name="def:string" foreground="#c3e88d" />
+  <style name="def:constant" foreground="#f78c6c" />
+  <style name="def:number" foreground="#f78c6c" />
+  <style name="def:decimal" foreground="#f78c6c" />
+  <style name="def:operator" foreground="#89ddff" />
+  <style name="def:preprocessor" foreground="#89ddff" />
+  <style name="def:identifier" foreground="#eeffff" />
+  <style name="cursor" foreground="#eeffff" />
+</style-scheme>

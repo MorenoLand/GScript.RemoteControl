@@ -12,7 +12,7 @@ struct RCConnection;
 
 class TServerList {
 public:
-    TServerList(std::function<void()> onClose, std::function<void(void*, int, const std::string&, const std::string&, const std::string&)> onConnected, std::function<void()> onServerSelected, bool darkMode, std::function<void(bool)> onDarkModeChanged);
+    TServerList(std::function<void()> onClose, std::function<void(void*, int, const std::string&, const std::string&, const std::string&)> onConnected, std::function<void()> onServerSelected, bool darkMode, const std::string& theme, std::function<void(bool, const std::string&)> onThemeChanged);
     ~TServerList();
 
     void open(const std::string& account, const std::string& password, const std::string& nickname);
@@ -54,7 +54,7 @@ private:
     std::function<void()> onCloseCallback;
     std::function<void(void*, int, const std::string&, const std::string&, const std::string&)> onConnectedCallback;
     std::function<void()> onServerSelectedCallback;
-    std::function<void(bool)> onDarkModeChangedCallback;
+    std::function<void(bool, const std::string&)> onThemeChangedCallback;
     GtkWidget* window = nullptr;
     GtkListStore* store = nullptr;
     GtkWidget* tree = nullptr;
@@ -74,5 +74,6 @@ private:
     std::string listserverHost;
     int listserverPort = 14922;
     bool darkMode = true;
+    std::string theme = "dark";
     std::vector<ServerEntry> entries;
 };

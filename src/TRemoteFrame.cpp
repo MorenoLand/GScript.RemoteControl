@@ -169,7 +169,8 @@ TRemoteFrame::TRemoteFrame(const RC::RCOptions& nextOptions, const std::filesyst
         gtk_widget_set_size_request(header, 1, 180);
         GtkWidget* fixed = gtk_fixed_new();
         graphicalFixed = fixed;
-        const std::filesystem::path background = applicationDirectory / "images" / options.background;
+        const std::filesystem::path configuredBackground(options.background);
+        const std::filesystem::path background = configuredBackground.is_absolute() ? configuredBackground : applicationDirectory / "images" / configuredBackground;
         std::string extension = background.extension().string();
         std::transform(extension.begin(), extension.end(), extension.begin(), [](unsigned char value) { return static_cast<char>(std::tolower(value)); });
         if (extension == ".webp" && (backgroundWebPAnimation = loadWebPAnimation(background)) != nullptr) {
@@ -893,6 +894,28 @@ void TRemoteFrame::applyOptions(const RC::RCOptions& previous) {
     if (fileBrowser != nullptr && options.downloadfolder != previous.downloadfolder) fileBrowser->setDownloadFolder(options.downloadfolder);
     if (chatField != nullptr) configureChatField(chatField);
     for (const auto& entry : channelFields) if (entry.second != nullptr) configureChatField(entry.second);
+    if (serverLabel != nullptr && (options.labelservers != previous.labelservers || options.colorlabel != previous.colorlabel || options.colorlabelback != previous.colorlabelback)) {
+        const std::string text = options.labelservers + " " + serverName;
+        GdkColor foreground;
+        GdkColor background;
+        gdk_color_parse(options.colorlabel.c_str(), &foreground);
+        gdk_color_parse(options.colorlabelback.c_str(), &background);
+        gtk_label_set_text(GTK_LABEL(serverLabel), text.c_str());
+        gtk_widget_modify_fg(serverLabel, GTK_STATE_NORMAL, &foreground);
+        for (GtkWidget* shadow : serverLabelShadows) if (shadow != nullptr) { gtk_label_set_text(GTK_LABEL(shadow), text.c_str()); gtk_widget_modify_fg(shadow, GTK_STATE_NORMAL, &background); }
+    }
+    if (playersLabel != nullptr && (options.labelplayers != previous.labelplayers || options.colorlabel != previous.colorlabel || options.colorlabelback != previous.colorlabelback)) {
+        RCPlayer* players = nullptr;
+        const int count = connection == nullptr ? 0 : rc_get_players(connection, &players);
+        const std::string text = options.labelplayers + " " + std::to_string(count);
+        GdkColor foreground;
+        GdkColor background;
+        gdk_color_parse(options.colorlabel.c_str(), &foreground);
+        gdk_color_parse(options.colorlabelback.c_str(), &background);
+        gtk_label_set_text(GTK_LABEL(playersLabel), text.c_str());
+        gtk_widget_modify_fg(playersLabel, GTK_STATE_NORMAL, &foreground);
+        for (GtkWidget* shadow : playersLabelShadows) if (shadow != nullptr) { gtk_label_set_text(GTK_LABEL(shadow), text.c_str()); gtk_widget_modify_fg(shadow, GTK_STATE_NORMAL, &background); }
+    }
 }
 
 void TRemoteFrame::sendServerListOptions() {

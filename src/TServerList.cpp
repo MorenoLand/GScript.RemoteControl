@@ -38,7 +38,7 @@ namespace {
 
 }
 
-TServerList::TServerList(std::function<void()> onClose, std::function<void(void*, int, const std::string&, const std::string&, const std::string&)> onConnected, std::function<void()> onServerSelected, bool nextDarkMode, std::function<void(bool)> onDarkModeChanged) : onCloseCallback(std::move(onClose)), onConnectedCallback(std::move(onConnected)), onServerSelectedCallback(std::move(onServerSelected)), onDarkModeChangedCallback(std::move(onDarkModeChanged)), darkMode(nextDarkMode) {
+TServerList::TServerList(std::function<void()> onClose, std::function<void(void*, int, const std::string&, const std::string&, const std::string&)> onConnected, std::function<void()> onServerSelected, bool nextDarkMode, const std::string& nextTheme, std::function<void(bool, const std::string&)> onThemeChanged) : onCloseCallback(std::move(onClose)), onConnectedCallback(std::move(onConnected)), onServerSelectedCallback(std::move(onServerSelected)), onThemeChangedCallback(std::move(onThemeChanged)), darkMode(nextDarkMode), theme(nextTheme) {
     listserverHost = defaultListserverHost;
 #ifdef _WIN32
     HKEY key = nullptr;
@@ -220,7 +220,7 @@ void TServerList::show() {
 }
 
 void TServerList::openListServerSettings() {
-    struct SettingsState { TServerList* serverList; GtkWidget* host; GtkWidget* port; GtkWidget* darkMode; GtkWidget* error; };
+    struct SettingsState { TServerList* serverList; GtkWidget* host; GtkWidget* port; GtkWidget* darkMode; GtkWidget* theme; GtkWidget* error; };
     GtkWidget* dialog = gtk_dialog_new_with_buttons("RC settings", GTK_WINDOW(window), GTK_DIALOG_MODAL, "Cancel", GTK_RESPONSE_CANCEL, "Apply", GTK_RESPONSE_OK, nullptr);
     gtk_window_set_default_size(GTK_WINDOW(dialog), 250, -1);
     gtk_window_set_resizable(GTK_WINDOW(dialog), false);
@@ -246,7 +246,32 @@ void TServerList::openListServerSettings() {
     GtkWidget* darkMode = gtk_check_button_new_with_label("Use dark mode");
     gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(darkMode), this->darkMode);
     gtk_box_pack_start(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), darkMode, false, false, 8);
-    auto* state = new SettingsState{this, host, port, darkMode, error};
+    GtkWidget* theme = gtk_combo_box_text_new();
+    gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(theme), "dark", "Dark");
+    gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(theme), "dracula", "Dracula");
+    gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(theme), "material", "Material");
+    gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(theme), "ayu-mirage", "Ayu Mirage");
+    gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(theme), "nord", "Nord");
+    gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(theme), "monokai", "Monokai");
+    gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(theme), "one-dark", "One Dark");
+    gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(theme), "light", "Light");
+    gtk_combo_box_set_active_id(GTK_COMBO_BOX(theme), this->theme.c_str());
+    GtkWidget* themeGrid = gtk_grid_new();
+    gtk_grid_set_column_spacing(GTK_GRID(themeGrid), 6);
+    gtk_container_set_border_width(GTK_CONTAINER(themeGrid), 8);
+    gtk_grid_attach(GTK_GRID(themeGrid), gtk_label_new("Theme:"), 0, 0, 1, 1);
+    gtk_grid_attach(GTK_GRID(themeGrid), theme, 1, 0, 1, 1);
+    gtk_box_pack_start(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), themeGrid, false, false, 0);
+    auto* state = new SettingsState{this, host, port, darkMode, theme, error};
+    g_signal_connect(theme, "changed", G_CALLBACK(+[](GtkComboBox*, gpointer data) {
+        auto* state = static_cast<SettingsState*>(data);
+        const char* selected = gtk_combo_box_get_active_id(GTK_COMBO_BOX(state->theme));
+        if (selected == nullptr) return;
+        state->serverList->theme = selected;
+        state->serverList->darkMode = state->serverList->theme != "light";
+        gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(state->darkMode), state->serverList->darkMode);
+        state->serverList->onThemeChangedCallback(state->serverList->darkMode, state->serverList->theme);
+    }), state);
     g_signal_connect(dialog, "response", G_CALLBACK(+[](GtkDialog* settings, gint response, gpointer data) {
         auto* state = static_cast<SettingsState*>(data);
         if (response != GTK_RESPONSE_OK) { gtk_widget_destroy(GTK_WIDGET(settings)); return; }
@@ -254,8 +279,9 @@ void TServerList::openListServerSettings() {
         const int port = std::atoi(gtk_entry_get_text(GTK_ENTRY(state->port)));
         if (host.empty() || port <= 0 || port > 65535) { gtk_label_set_text(GTK_LABEL(state->error), "Enter a host and port from 1 to 65535."); return; }
         state->serverList->setListServer(host, port);
-        state->serverList->darkMode = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(state->darkMode)) != FALSE;
-        state->serverList->onDarkModeChangedCallback(state->serverList->darkMode);
+        state->serverList->theme = gtk_combo_box_get_active_id(GTK_COMBO_BOX(state->theme));
+        state->serverList->darkMode = state->serverList->theme != "light" && gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(state->darkMode)) != FALSE;
+        state->serverList->onThemeChangedCallback(state->serverList->darkMode, state->serverList->theme);
         gtk_widget_destroy(GTK_WIDGET(settings));
     }), state);
     g_signal_connect(dialog, "destroy", G_CALLBACK(+[](GtkWidget*, gpointer data) { delete static_cast<SettingsState*>(data); }), state);
