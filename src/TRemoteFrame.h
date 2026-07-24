@@ -84,6 +84,8 @@ private:
     void appendChannelMessage(const std::string& channel, const std::string& message);
     void removeChannel(const std::string& channel);
     void configureChatField(GtkWidget* field);
+    struct ChatTags { GtkTextTag* alert = nullptr; GtkTextTag* bold = nullptr; GtkTextTag* invisible = nullptr; };
+    ChatTags& chatTagsFor(GtkTextBuffer* buffer);
     void applyEmotes(GtkTextBuffer* buffer, gint startOffset, const std::string& message);
     bool applyAlertTag(std::string& message, bool allowUrgency);
     void send();
@@ -151,4 +153,5 @@ private:
     const RC::RCOptions& options;
     std::filesystem::path applicationDirectory;
     std::unordered_map<std::string, GtkWidget*> channelFields;
+    std::unordered_map<GtkTextBuffer*, ChatTags> chatTags;
 };

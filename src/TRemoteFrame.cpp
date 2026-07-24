@@ -834,6 +834,7 @@ void TRemoteFrame::appendChat(const std::string& message, bool suppressUrgency) 
     std::string display = message;
     const bool alert = applyAlertTag(display, !suppressUrgency);
     GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(chatField));
+    ChatTags& tags = chatTagsFor(buffer);
     GtkTextIter end;
     gtk_text_buffer_get_end_iter(buffer, &end);
     const std::string timestamp = chatTimestamp(options);
@@ -843,14 +844,12 @@ void TRemoteFrame::appendChat(const std::string& message, bool suppressUrgency) 
     }
     const gint startOffset = gtk_text_iter_get_offset(&end);
     if (colorAlert) {
-        GtkTextTag* tag = gtk_text_buffer_create_tag(buffer, nullptr, "foreground", options.coloralert.c_str(), "weight", PANGO_WEIGHT_BOLD, nullptr);
-        gtk_text_buffer_insert_with_tags(buffer, &end, (display + "\n").c_str(), -1, tag, nullptr);
+        gtk_text_buffer_insert_with_tags(buffer, &end, (display + "\n").c_str(), -1, tags.alert, nullptr);
     } else {
         const std::size_t separator = display.find(':');
         if (separator != std::string::npos && separator > 0) {
             const std::string prefix = display.substr(0, separator + 1);
-            GtkTextTag* tag = gtk_text_buffer_create_tag(buffer, nullptr, "foreground", options.colorchatbold.c_str(), "weight", PANGO_WEIGHT_BOLD, nullptr);
-            gtk_text_buffer_insert_with_tags(buffer, &end, prefix.c_str(), -1, tag, nullptr);
+            gtk_text_buffer_insert_with_tags(buffer, &end, prefix.c_str(), -1, tags.bold, nullptr);
             GtkTextIter textStart;
             gtk_text_buffer_get_end_iter(buffer, &textStart);
             const gint textStartOffset = gtk_text_iter_get_offset(&textStart);
@@ -894,6 +893,10 @@ void TRemoteFrame::applyOptions(const RC::RCOptions& previous) {
     if (fileBrowser != nullptr && options.downloadfolder != previous.downloadfolder) fileBrowser->setDownloadFolder(options.downloadfolder);
     if (chatField != nullptr) configureChatField(chatField);
     for (const auto& entry : channelFields) if (entry.second != nullptr) configureChatField(entry.second);
+    for (const auto& entry : chatTags) {
+        g_object_set(entry.second.alert, "foreground", options.coloralert.c_str(), nullptr);
+        g_object_set(entry.second.bold, "foreground", options.colorchatbold.c_str(), nullptr);
+    }
     if (serverLabel != nullptr && (options.labelservers != previous.labelservers || options.colorlabel != previous.colorlabel || options.colorlabelback != previous.colorlabelback)) {
         const std::string text = options.labelservers + " " + serverName;
         GdkColor foreground;
@@ -938,6 +941,7 @@ void TRemoteFrame::setNCChannelVisible(bool visible) {
         GtkWidget* page = gtk_widget_get_parent(found->second);
         const int pageNumber = gtk_notebook_page_num(GTK_NOTEBOOK(notebook), page);
         if (pageNumber >= 0) gtk_notebook_remove_page(GTK_NOTEBOOK(notebook), pageNumber);
+        chatTags.erase(gtk_text_view_get_buffer(GTK_TEXT_VIEW(found->second)));
         channelFields.erase(found);
         return;
     }
@@ -983,8 +987,7 @@ void TRemoteFrame::applyEmotes(GtkTextBuffer* buffer, gint startOffset, const st
             GtkTextIter end;
             gtk_text_buffer_get_iter_at_offset(buffer, &start, startOffset + static_cast<gint>(position) + inserted);
             gtk_text_buffer_get_iter_at_offset(buffer, &end, startOffset + static_cast<gint>(position + std::char_traits<char>::length(emote.text)) + inserted);
-            GtkTextTag* hidden = gtk_text_buffer_create_tag(buffer, nullptr, "invisible", true, nullptr);
-            gtk_text_buffer_apply_tag(buffer, hidden, &start, &end);
+            gtk_text_buffer_apply_tag(buffer, chatTagsFor(buffer).invisible, &start, &end);
             gtk_text_buffer_insert_pixbuf(buffer, &start, emote.pixbuf);
             ++inserted;
             position = message.find(emote.text, position + std::char_traits<char>::length(emote.text));
@@ -1019,6 +1022,7 @@ void TRemoteFrame::appendChannelMessage(const std::string& channel, const std::s
         gtk_widget_show_all(scrolled);
     }
     GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(field));
+    ChatTags& tags = chatTagsFor(buffer);
     GtkTextIter end;
     gtk_text_buffer_get_end_iter(buffer, &end);
     const std::string timestamp = chatTimestamp(options);
@@ -1028,14 +1032,12 @@ void TRemoteFrame::appendChannelMessage(const std::string& channel, const std::s
     }
     const gint startOffset = gtk_text_iter_get_offset(&end);
     if (colorAlert) {
-        GtkTextTag* tag = gtk_text_buffer_create_tag(buffer, nullptr, "foreground", options.coloralert.c_str(), "weight", PANGO_WEIGHT_BOLD, nullptr);
-        gtk_text_buffer_insert_with_tags(buffer, &end, (display + "\n").c_str(), -1, tag, nullptr);
+        gtk_text_buffer_insert_with_tags(buffer, &end, (display + "\n").c_str(), -1, tags.alert, nullptr);
     } else {
         const std::size_t separator = display.find(':');
         if (separator != std::string::npos && separator > 0) {
             const std::string prefix = display.substr(0, separator + 1);
-            GtkTextTag* tag = gtk_text_buffer_create_tag(buffer, nullptr, "foreground", options.colorchatbold.c_str(), "weight", PANGO_WEIGHT_BOLD, nullptr);
-            gtk_text_buffer_insert_with_tags(buffer, &end, prefix.c_str(), -1, tag, nullptr);
+            gtk_text_buffer_insert_with_tags(buffer, &end, prefix.c_str(), -1, tags.bold, nullptr);
             GtkTextIter textStart;
             gtk_text_buffer_get_end_iter(buffer, &textStart);
             const gint textStartOffset = gtk_text_iter_get_offset(&textStart);
@@ -1067,7 +1069,18 @@ void TRemoteFrame::removeChannel(const std::string& channel) {
     GtkWidget* scrolled = gtk_widget_get_parent(found->second);
     const int page = scrolled == nullptr ? -1 : gtk_notebook_page_num(GTK_NOTEBOOK(notebook), scrolled);
     if (page != -1) gtk_notebook_remove_page(GTK_NOTEBOOK(notebook), page);
+    chatTags.erase(gtk_text_view_get_buffer(GTK_TEXT_VIEW(found->second)));
     channelFields.erase(found);
+}
+
+TRemoteFrame::ChatTags& TRemoteFrame::chatTagsFor(GtkTextBuffer* buffer) {
+    auto [entry, inserted] = chatTags.try_emplace(buffer);
+    if (inserted) {
+        entry->second.alert = gtk_text_buffer_create_tag(buffer, nullptr, "foreground", options.coloralert.c_str(), "weight", PANGO_WEIGHT_BOLD, nullptr);
+        entry->second.bold = gtk_text_buffer_create_tag(buffer, nullptr, "foreground", options.colorchatbold.c_str(), "weight", PANGO_WEIGHT_BOLD, nullptr);
+        entry->second.invisible = gtk_text_buffer_create_tag(buffer, nullptr, "invisible", true, nullptr);
+    }
+    return entry->second;
 }
 
 bool TRemoteFrame::applyAlertTag(std::string& message, bool allowUrgency) {
