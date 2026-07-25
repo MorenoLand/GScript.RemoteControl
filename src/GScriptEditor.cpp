@@ -1,4 +1,5 @@
 #include "GScriptEditor.h"
+#include "Theme.h"
 
 #include <gtksourceview/gtksource.h>
 #include <openssl/err.h>
@@ -327,10 +328,66 @@ namespace {
         return names;
     }
 
+    std::vector<ApiDefinition> localFunctionDefinitions(GtkWidget* editor) {
+        GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(editor));
+        GtkTextIter start;
+        GtkTextIter end;
+        gtk_text_buffer_get_bounds(buffer, &start, &end);
+        gchar* text = gtk_text_buffer_get_text(buffer, &start, &end, false);
+        std::string source = text == nullptr ? "" : text;
+        g_free(text);
+        std::vector<ApiDefinition> definitions;
+        std::set<std::string> seen;
+        std::size_t lineStart = 0;
+        while (lineStart <= source.size()) {
+            const std::size_t lineEnd = source.find('\n', lineStart);
+            const std::string line = source.substr(lineStart, lineEnd == std::string::npos ? std::string::npos : lineEnd - lineStart);
+            const std::size_t marker = line.find("function ");
+            if (marker != std::string::npos && (marker == 0 || line[marker - 1] != '/')) {
+                std::size_t nameStart = marker + 9;
+                while (nameStart < line.size() && std::isspace(static_cast<unsigned char>(line[nameStart]))) ++nameStart;
+                std::size_t nameEnd = nameStart;
+                while (nameEnd < line.size() && (std::isalnum(static_cast<unsigned char>(line[nameEnd])) || line[nameEnd] == '_' || line[nameEnd] == '$')) ++nameEnd;
+                const std::size_t open = line.find('(', nameEnd);
+                const std::size_t close = open == std::string::npos ? std::string::npos : line.find(')', open + 1);
+                if (nameEnd > nameStart && open != std::string::npos && close != std::string::npos) {
+                    ApiDefinition definition;
+                    definition.name = line.substr(nameStart, nameEnd - nameStart);
+                    if (seen.insert(lowerText(definition.name)).second) {
+                        std::size_t parameterStart = open + 1;
+                        while (parameterStart < close) {
+                            const std::size_t comma = line.find(',', parameterStart);
+                            const std::size_t parameterEnd = comma == std::string::npos || comma > close ? close : comma;
+                            std::string parameter = line.substr(parameterStart, parameterEnd - parameterStart);
+                            const std::size_t first = parameter.find_first_not_of(" \t");
+                            const std::size_t last = parameter.find_last_not_of(" \t");
+                            if (first != std::string::npos) definition.params.push_back(parameter.substr(first, last - first + 1));
+                            parameterStart = parameterEnd + 1;
+                        }
+                        definition.type = "Function";
+                        definition.scope = source.find("//#CLIENTSIDE") != std::string::npos && source.find("//#SERVERSIDE") == std::string::npos ? "clientside" : "script";
+                        definition.description = "Function defined in the current script.";
+                        definitions.push_back(std::move(definition));
+                    }
+                }
+            }
+            if (lineEnd == std::string::npos) break;
+            lineStart = lineEnd + 1;
+        }
+        return definitions;
+    }
+
     const ApiDefinition* findDefinition(const std::string& name) {
         const std::string lowerName = lowerText(name);
         const auto found = std::find_if(apiDefinitions.begin(), apiDefinitions.end(), [&lowerName](const ApiDefinition& definition) { return lowerText(definition.name) == lowerName; });
         return found == apiDefinitions.end() ? nullptr : &*found;
+    }
+
+    bool findEditorDefinition(GtkWidget* editor, const std::string& name, ApiDefinition& result) {
+        const std::string lowerName = lowerText(name);
+        for (const ApiDefinition& definition : localFunctionDefinitions(editor)) if (lowerText(definition.name) == lowerName) { result = definition; return true; }
+        if (const ApiDefinition* definition = findDefinition(name)) { result = *definition; return true; }
+        return false;
     }
 
     std::string wordAtIter(GtkTextIter iter) {
@@ -398,17 +455,17 @@ namespace {
         gtk_text_view_window_to_buffer_coords(GTK_TEXT_VIEW(editor), GTK_TEXT_WINDOW_WIDGET, x, y, &bufferX, &bufferY);
         GtkTextIter iter;
         gtk_text_view_get_iter_at_location(GTK_TEXT_VIEW(editor), &iter, bufferX, bufferY);
-        const ApiDefinition* definition = findDefinition(wordAtIter(iter));
-        if (definition == nullptr) return false;
-        std::string signature = definition->name + "(";
-        for (std::size_t index = 0; index < definition->params.size(); ++index) { if (index != 0) signature += ", "; signature += definition->params[index]; }
+        ApiDefinition definition;
+        if (!findEditorDefinition(editor, wordAtIter(iter), definition)) return false;
+        std::string signature = definition.name + "(";
+        for (std::size_t index = 0; index < definition.params.size(); ++index) { if (index != 0) signature += ", "; signature += definition.params[index]; }
         signature += ')';
         gchar* escapedSignature = g_markup_escape_text(signature.c_str(), -1);
-        gchar* escapedDescription = g_markup_escape_text(definition->description.c_str(), -1);
-        gchar* escapedExample = g_markup_escape_text(definition->example.c_str(), -1);
-        const std::string scope = upperCase(definition->scope);
-        const std::string returns = definition->returns.empty() ? "" : "Returns: " + definition->returns;
-        gchar* markup = g_strdup_printf("<b>%s</b>  <i>%s</i>\n%s%s%s%s%s", escapedSignature, scope.c_str(), returns.c_str(), definition->description.empty() ? "" : "\n", escapedDescription, definition->example.empty() ? "" : "\n\nExample:\n", escapedExample);
+        gchar* escapedDescription = g_markup_escape_text(definition.description.c_str(), -1);
+        gchar* escapedExample = g_markup_escape_text(definition.example.c_str(), -1);
+        const std::string scope = upperCase(definition.scope);
+        const std::string returns = definition.returns.empty() ? "" : "Returns: " + definition.returns;
+        gchar* markup = g_strdup_printf("<b>%s</b>  <i>%s</i>\n%s%s%s%s%s", escapedSignature, scope.c_str(), returns.c_str(), definition.description.empty() ? "" : "\n", escapedDescription, definition.example.empty() ? "" : "\n\nExample:\n", escapedExample);
         gtk_tooltip_set_markup(tooltip, markup);
         g_free(markup);
         g_free(escapedSignature);
@@ -453,7 +510,10 @@ namespace {
         if (prefix.size() < 2 && gtk_source_completion_context_get_activation(context) == GTK_SOURCE_COMPLETION_ACTIVATION_INTERACTIVE) { gtk_source_completion_context_add_proposals(context, provider, nullptr, true); return; }
         std::set<std::string> seen;
         GList* proposals = nullptr;
-        for (const ApiDefinition& definition : apiDefinitions) {
+        std::vector<ApiDefinition> definitions = localFunctionDefinitions(remote->editor);
+        definitions.insert(definitions.end(), apiDefinitions.begin(), apiDefinitions.end());
+        for (const ApiDefinition& definition : definitions) {
+            if (!seen.insert(lowerText(definition.name)).second) continue;
             if (!prefix.empty() && lowerText(definition.name).rfind(prefix, 0) != 0) continue;
             std::string label = definition.name;
             if (!definition.params.empty()) {
@@ -463,7 +523,6 @@ namespace {
             }
             GtkSourceCompletionItem* item = gtk_source_completion_item_new(label.c_str(), definition.name.c_str(), nullptr, definitionInfo(definition).c_str());
             proposals = g_list_prepend(proposals, item);
-            seen.insert(lowerText(definition.name));
         }
         for (const std::string& name : localIdentifiers(remote->editor)) {
             const std::string lowerName = lowerText(name);
@@ -480,15 +539,49 @@ namespace {
         g_list_free_full(proposals, g_object_unref);
     }
 
-    GtkWidget* remoteCompletionProviderGetInfoWidget(GtkSourceCompletionProvider*, GtkSourceCompletionProposal*) { return gtk_label_new(nullptr); }
+    GtkWidget* remoteCompletionProviderGetInfoWidget(GtkSourceCompletionProvider*, GtkSourceCompletionProposal*) {
+        GtkWidget* box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
+        gtk_style_context_add_class(gtk_widget_get_style_context(box), "remote-completion-info");
+        gtk_widget_set_size_request(box, 360, -1);
+        GtkWidget* signature = gtk_label_new(nullptr);
+        gtk_style_context_add_class(gtk_widget_get_style_context(signature), "remote-completion-signature");
+        gtk_label_set_xalign(GTK_LABEL(signature), 0.0F);
+        gtk_label_set_line_wrap(GTK_LABEL(signature), true);
+        gtk_label_set_selectable(GTK_LABEL(signature), true);
+        GtkWidget* details = gtk_label_new(nullptr);
+        gtk_style_context_add_class(gtk_widget_get_style_context(details), "remote-completion-details");
+        gtk_label_set_xalign(GTK_LABEL(details), 0.0F);
+        gtk_label_set_line_wrap(GTK_LABEL(details), true);
+        gtk_label_set_max_width_chars(GTK_LABEL(details), 64);
+        gtk_label_set_selectable(GTK_LABEL(details), true);
+        gtk_box_pack_start(GTK_BOX(box), signature, false, false, 0);
+        gtk_box_pack_start(GTK_BOX(box), details, false, false, 0);
+        g_object_set_data(G_OBJECT(box), "remote-completion-signature", signature);
+        g_object_set_data(G_OBJECT(box), "remote-completion-details", details);
+        return box;
+    }
 
     void remoteCompletionProviderUpdateInfo(GtkSourceCompletionProvider*, GtkSourceCompletionProposal* proposal, GtkSourceCompletionInfo* info) {
-        GtkWidget* label = gtk_bin_get_child(GTK_BIN(info));
-        if (label == nullptr) { label = gtk_label_new(nullptr); gtk_label_set_line_wrap(GTK_LABEL(label), true); gtk_widget_set_margin_start(label, 8); gtk_widget_set_margin_end(label, 8); gtk_widget_set_margin_top(label, 6); gtk_widget_set_margin_bottom(label, 6); gtk_container_add(GTK_CONTAINER(info), label); }
-        gchar* text = gtk_source_completion_proposal_get_info(proposal);
-        gtk_label_set_text(GTK_LABEL(label), text == nullptr ? "" : text);
-        g_free(text);
-        gtk_widget_show_all(label);
+        GtkWidget* box = gtk_bin_get_child(GTK_BIN(info));
+        if (box == nullptr) {
+            box = remoteCompletionProviderGetInfoWidget(nullptr, proposal);
+            gtk_container_add(GTK_CONTAINER(info), box);
+        }
+        GtkWidget* signature = static_cast<GtkWidget*>(g_object_get_data(G_OBJECT(box), "remote-completion-signature"));
+        GtkWidget* details = static_cast<GtkWidget*>(g_object_get_data(G_OBJECT(box), "remote-completion-details"));
+        gchar* labelText = gtk_source_completion_proposal_get_label(proposal);
+        gchar* escapedLabel = g_markup_escape_text(labelText == nullptr ? "" : labelText, -1);
+        gtk_label_set_markup(GTK_LABEL(signature), (std::string("<b>") + (escapedLabel == nullptr ? "" : escapedLabel) + "</b>").c_str());
+        g_free(escapedLabel);
+        g_free(labelText);
+        gchar* infoText = gtk_source_completion_proposal_get_info(proposal);
+        gtk_label_set_text(GTK_LABEL(details), infoText == nullptr ? "" : infoText);
+        g_free(infoText);
+        gtk_widget_set_margin_start(box, 10);
+        gtk_widget_set_margin_end(box, 10);
+        gtk_widget_set_margin_top(box, 7);
+        gtk_widget_set_margin_bottom(box, 7);
+        gtk_widget_show_all(box);
     }
 
     void remoteCompletionProviderInterfaceInit(GtkSourceCompletionProviderIface* iface) {
@@ -522,15 +615,15 @@ namespace {
         while (nameEnd > 0 && g_ascii_isspace(line[nameEnd - 1])) --nameEnd;
         std::size_t nameStart = nameEnd;
         while (nameStart > 0 && (g_ascii_isalnum(line[nameStart - 1]) || line[nameStart - 1] == '_' || line[nameStart - 1] == '$')) --nameStart;
-        const ApiDefinition* definition = findDefinition(line.substr(nameStart, nameEnd - nameStart));
-        if (definition == nullptr || definition->params.empty()) { gtk_widget_hide(state->signaturePopover); return; }
+        ApiDefinition definition;
+        if (!findEditorDefinition(editor, line.substr(nameStart, nameEnd - nameStart), definition) || definition.params.empty()) { gtk_widget_hide(state->signaturePopover); return; }
         int argument = 0;
         depth = 0;
         for (std::size_t index = open + 1; index < line.size(); ++index) { if (line[index] == '(') ++depth; else if (line[index] == ')' && depth > 0) --depth; else if (line[index] == ',' && depth == 0) ++argument; }
-        argument = std::min(argument, static_cast<int>(definition->params.size()) - 1);
-        std::string markup = "<b>" + definitionSignature(*definition) + "</b>\n";
-        for (std::size_t index = 0; index < definition->params.size(); ++index) { if (index != 0) markup += ", "; const gchar* escaped = g_markup_escape_text(definition->params[index].c_str(), -1); markup += index == static_cast<std::size_t>(argument) ? "<b><u>" + std::string(escaped) + "</u></b>" : escaped; g_free(const_cast<gchar*>(escaped)); }
-        if (!definition->description.empty()) { const gchar* escaped = g_markup_escape_text(definition->description.c_str(), -1); markup += "\n" + std::string(escaped); g_free(const_cast<gchar*>(escaped)); }
+        argument = std::min(argument, static_cast<int>(definition.params.size()) - 1);
+        std::string markup = "<b>" + definitionSignature(definition) + "</b>\n";
+        for (std::size_t index = 0; index < definition.params.size(); ++index) { if (index != 0) markup += ", "; const gchar* escaped = g_markup_escape_text(definition.params[index].c_str(), -1); markup += index == static_cast<std::size_t>(argument) ? "<b><u>" + std::string(escaped) + "</u></b>" : escaped; g_free(const_cast<gchar*>(escaped)); }
+        if (!definition.description.empty()) { const gchar* escaped = g_markup_escape_text(definition.description.c_str(), -1); markup += "\n" + std::string(escaped); g_free(const_cast<gchar*>(escaped)); }
         gtk_label_set_markup(GTK_LABEL(state->signatureLabel), markup.c_str());
         GdkRectangle rect;
         gtk_text_view_get_iter_location(GTK_TEXT_VIEW(editor), &iter, &rect);
@@ -607,6 +700,14 @@ void setGScriptEditorOptions(const RC::RCOptions& options) {
     else if (lspEnabled && apiDefinitions.empty()) startCompletionLoad();
 }
 
+void refreshGScriptEditorTheme() {
+    for (GtkWidget* editor : completionEditors) {
+        if (!GTK_SOURCE_IS_VIEW(editor)) continue;
+        GtkSourceBuffer* buffer = GTK_SOURCE_BUFFER(gtk_text_view_get_buffer(GTK_TEXT_VIEW(editor)));
+        applyRemoteControlSourceStyle(buffer);
+    }
+}
+
 void configureGScriptEditor(GtkWidget* editor) {
     if (!GTK_SOURCE_IS_VIEW(editor)) return;
     applyEditorOptions(editor);
@@ -674,6 +775,18 @@ void configureGScriptEditor(GtkWidget* editor) {
         setEditorFontSize(widget, size);
         return static_cast<gboolean>(TRUE);
     }), nullptr);
+}
+
+bool consumeEditorCtrlS(GtkWidget* editor, GdkEventKey* event) {
+    if ((event->state & GDK_CONTROL_MASK) == 0 || (event->keyval != GDK_KEY_s && event->keyval != GDK_KEY_S)) return false;
+    if (GPOINTER_TO_INT(g_object_get_data(G_OBJECT(editor), "remote-control-ctrl-s-down")) != 0) return false;
+    g_object_set_data(G_OBJECT(editor), "remote-control-ctrl-s-down", GINT_TO_POINTER(1));
+    return true;
+}
+
+gboolean releaseEditorCtrlS(GtkWidget* editor, GdkEventKey* event) {
+    if (event->keyval == GDK_KEY_s || event->keyval == GDK_KEY_S) g_object_set_data(G_OBJECT(editor), "remote-control-ctrl-s-down", GINT_TO_POINTER(0));
+    return FALSE;
 }
 
 GtkWidget* createGScriptEditorLineStatus(GtkWidget* editor) {

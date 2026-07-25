@@ -14,6 +14,8 @@ public:
 private:
     static void onClose(GtkButton*, gpointer data);
     static void onThemeChanged(GtkComboBox*, gpointer data);
+    static void onSyntaxThemeChanged(GtkComboBox*, gpointer data);
+    static void onSyncSyntaxThemeChanged(GtkToggleButton*, gpointer data);
     static void onBrowseDownload(GtkButton*, gpointer data);
     static void onBrowseLog(GtkButton*, gpointer data);
     static void onBrowseAutocompleteSource(GtkButton*, gpointer data);
@@ -21,6 +23,8 @@ private:
     static gboolean onDelete(GtkWidget*, GdkEvent*, gpointer data);
     void save();
     void applyThemeSelection();
+    void applySyntaxThemeSelection();
+    void applySyntaxThemeSync();
     GtkWidget* window = nullptr;
     GtkWidget* nickname = nullptr;
     GtkWidget* downloadFolder = nullptr;
@@ -46,6 +50,8 @@ private:
     GtkWidget* scriptUseTabs = nullptr;
     GtkWidget* scriptFontSize = nullptr;
     GtkWidget* theme = nullptr;
+    GtkWidget* syntaxTheme = nullptr;
+    GtkWidget* syncSyntaxTheme = nullptr;
     GtkWidget* syncColors = nullptr;
     GtkWidget* chatbarTextColor = nullptr;
     GtkWidget* chatbarBackgroundColor = nullptr;

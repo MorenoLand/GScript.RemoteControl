@@ -19,4 +19,14 @@
   <style name="def:number" foreground="#d19a66"/>
   <style name="def:operator" foreground="#56b6c2"/>
   <style name="def:preprocessor" foreground="#e06c75"/>
+  <style name="Comment" foreground="#5c6370" italic="true"/>
+  <style name="String" foreground="#98c379"/>
+  <style name="Decimal" foreground="#d19a66"/>
+  <style name="Keyword" foreground="#c678dd" bold="true"/>
+  <style name="Others" foreground="#e06c75"/>
+  <style name="Others 4" foreground="#abb2bf"/>
+  <style name="Others 5" foreground="#56b6c2"/>
+  <style name="Operators" foreground="#56b6c2"/>
+  <style name="Object Properties" foreground="#e5c07b"/>
+  <style name="Function" foreground="#61afef"/>
 </style-scheme>

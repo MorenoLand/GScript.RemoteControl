@@ -993,11 +993,12 @@ void TFileBrowserTree::showTextEditor(const char* path, const void* content, int
     gtk_box_pack_start(GTK_BOX(contentArea), scrolled, true, true, 0);
     addGScriptEditorLineStatus(GTK_DIALOG(dialog), editor);
     auto* state = new EditorState{connection, path, editor};
-    g_signal_connect(editor, "key-press-event", G_CALLBACK(+[](GtkWidget*, GdkEventKey* event, gpointer responseDialog) {
-        if ((event->state & GDK_CONTROL_MASK) == 0 || (event->keyval != GDK_KEY_s && event->keyval != GDK_KEY_S)) return static_cast<gboolean>(FALSE);
+    g_signal_connect(editor, "key-press-event", G_CALLBACK(+[](GtkWidget* widget, GdkEventKey* event, gpointer responseDialog) {
+        if (!consumeEditorCtrlS(widget, event)) return static_cast<gboolean>(FALSE);
         gtk_dialog_response(GTK_DIALOG(responseDialog), GTK_RESPONSE_ACCEPT);
         return static_cast<gboolean>(TRUE);
     }), dialog);
+    g_signal_connect(editor, "key-release-event", G_CALLBACK(releaseEditorCtrlS), nullptr);
     g_signal_connect(dialog, "response", G_CALLBACK(+[](GtkDialog* responseDialog, gint response, gpointer userData) {
         auto* editorState = static_cast<EditorState*>(userData);
         if (response != GTK_RESPONSE_ACCEPT) { gtk_widget_destroy(GTK_WIDGET(responseDialog)); return; }

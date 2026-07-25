@@ -238,12 +238,18 @@ TRemoteFrame::TRemoteFrame(const RC::RCOptions& nextOptions, const std::filesyst
             for (int index = 0; index < static_cast<int>(shadows->size()); ++index) {
                 const auto& offset = offsets[index];
                 GtkWidget* shadow = gtk_label_new(text.c_str());
+                gtk_widget_set_size_request(shadow, 300, -1);
+                gtk_label_set_xalign(GTK_LABEL(shadow), 0.0f);
+                gtk_label_set_single_line_mode(GTK_LABEL(shadow), true);
                 gtk_widget_modify_fg(shadow, GTK_STATE_NORMAL, &labelBackgroundColor);
                 gtk_widget_modify_font(shadow, labelFont);
                 gtk_fixed_put(GTK_FIXED(fixed), shadow, x + offset[0], y + offset[1]);
                 (*shadows)[index] = shadow;
             }
             *front = gtk_label_new(text.c_str());
+            gtk_widget_set_size_request(*front, 300, -1);
+            gtk_label_set_xalign(GTK_LABEL(*front), 0.0f);
+            gtk_label_set_single_line_mode(GTK_LABEL(*front), true);
             gtk_widget_modify_fg(*front, GTK_STATE_NORMAL, &labelColor);
             gtk_widget_modify_font(*front, labelFont);
             gtk_fixed_put(GTK_FIXED(fixed), *front, x, y);
@@ -278,15 +284,7 @@ TRemoteFrame::TRemoteFrame(const RC::RCOptions& nextOptions, const std::filesyst
     gtk_notebook_append_page(GTK_NOTEBOOK(notebook), chatScrolled, chatTab);
     gtk_notebook_set_tab_detachable(GTK_NOTEBOOK(notebook), chatScrolled, false);
     gtk_notebook_set_tab_reorderable(GTK_NOTEBOOK(notebook), chatScrolled, true);
-    GtkCssProvider* tabProvider = gtk_css_provider_new();
-    const std::string tabBackground = options.darkmode ? "#3d3d3d" : "#f5f5f5";
-    const std::string tabBorder = options.darkmode ? "#707070" : "#c4c4c4";
-    const std::string activeTabBackground = options.darkmode ? "#454545" : "#ffffff";
-    const std::string activeTabBorder = options.darkmode ? "#909090" : "#9a9a9a";
-    const std::string notebookCss = "#RemoteFrame notebook, #RemoteFrame notebook > header, #RemoteFrame notebook > header.top, #RemoteFrame notebook > header.top > tabs { margin: 0; padding: 0; border: 0; background-color: transparent; background-image: none; box-shadow: none; } #RemoteFrame notebook > header.top > tabs { padding-left: 6px; } #RemoteFrame notebook > header, #RemoteFrame notebook > header.top, #RemoteFrame notebook > header.top > tabs { min-height: 0; } #RemoteFrame notebook > stack, #RemoteFrame notebook > stack > scrolledwindow, #RemoteFrame notebook > stack > scrolledwindow > viewport { margin: 0; padding: 0; border: 0; background-color: " + options.colorchatback + "; } #RemoteFrame notebook > header.top > tabs > tab { min-height: 0; min-width: 0; margin: 0 1px 0 0; padding: 3px 7px; background-image: none; background-color: " + tabBackground + "; border: 1px solid " + tabBorder + "; border-bottom: none; border-radius: 3px 3px 0 0; } #RemoteFrame notebook > header.top > tabs > tab:checked { background-color: " + activeTabBackground + "; border-color: " + activeTabBorder + "; } #RemoteFrame notebook > header.top > tabs > tab label { min-width: 0; margin: 0; padding: 0; font-size: 12px; }";
-    gtk_css_provider_load_from_data(tabProvider, notebookCss.c_str(), -1, nullptr);
-    gtk_style_context_add_provider_for_screen(gdk_screen_get_default(), GTK_STYLE_PROVIDER(tabProvider), GTK_STYLE_PROVIDER_PRIORITY_USER + 1);
-    g_object_unref(tabProvider);
+    refreshNotebookTheme();
     if (graphicalContainer != nullptr) {
         gtk_widget_set_halign(notebook, GTK_ALIGN_FILL);
         gtk_widget_set_valign(notebook, GTK_ALIGN_FILL);
@@ -382,6 +380,7 @@ TRemoteFrame::~TRemoteFrame() {
     if (eventSource != 0) g_source_remove(eventSource);
     if (backgroundAnimationSource != 0) g_source_remove(backgroundAnimationSource);
     if (window != nullptr) gtk_widget_destroy(window);
+    if (notebookTabProvider != nullptr) { gtk_style_context_remove_provider_for_screen(gdk_screen_get_default(), GTK_STYLE_PROVIDER(notebookTabProvider)); g_object_unref(notebookTabProvider); }
     if (backgroundPixbuf != nullptr) g_object_unref(backgroundPixbuf);
     if (backgroundAnimationIter != nullptr) g_object_unref(backgroundAnimationIter);
     if (backgroundAnimation != nullptr) g_object_unref(backgroundAnimation);
@@ -891,8 +890,7 @@ void TRemoteFrame::applyOptions(const RC::RCOptions& previous) {
     if (playerList != nullptr && options.attachaway != previous.attachaway) playerList->setAttachAway(options.attachaway);
     if (options.separatenc != previous.separatenc) setNCChannelVisible(options.separatenc);
     if (fileBrowser != nullptr && options.downloadfolder != previous.downloadfolder) fileBrowser->setDownloadFolder(options.downloadfolder);
-    if (chatField != nullptr) configureChatField(chatField);
-    for (const auto& entry : channelFields) if (entry.second != nullptr) configureChatField(entry.second);
+    refreshTheme();
     for (const auto& entry : chatTags) {
         g_object_set(entry.second.alert, "foreground", options.coloralert.c_str(), nullptr);
         g_object_set(entry.second.bold, "foreground", options.colorchatbold.c_str(), nullptr);
@@ -919,6 +917,31 @@ void TRemoteFrame::applyOptions(const RC::RCOptions& previous) {
         gtk_widget_modify_fg(playersLabel, GTK_STATE_NORMAL, &foreground);
         for (GtkWidget* shadow : playersLabelShadows) if (shadow != nullptr) { gtk_label_set_text(GTK_LABEL(shadow), text.c_str()); gtk_widget_modify_fg(shadow, GTK_STATE_NORMAL, &background); }
     }
+}
+
+void TRemoteFrame::refreshTheme() {
+    refreshNotebookTheme();
+    if (chatField != nullptr) configureChatField(chatField);
+    for (const auto& entry : channelFields) if (entry.second != nullptr) configureChatField(entry.second);
+    refreshGScriptEditorTheme();
+}
+void TRemoteFrame::updateThemeOptions(const RC::RCOptions& nextOptions) {
+    options = nextOptions;
+    refreshTheme();
+}
+
+void TRemoteFrame::refreshNotebookTheme() {
+    GdkScreen* screen = gdk_screen_get_default();
+    if (notebookTabProvider != nullptr) { gtk_style_context_remove_provider_for_screen(screen, GTK_STYLE_PROVIDER(notebookTabProvider)); g_object_unref(notebookTabProvider); notebookTabProvider = nullptr; }
+    if (screen == nullptr || notebook == nullptr) return;
+    notebookTabProvider = gtk_css_provider_new();
+    const std::string tabBackground = options.darkmode ? "#3d3d3d" : "#f5f5f5";
+    const std::string tabBorder = options.darkmode ? "#707070" : "#c4c4c4";
+    const std::string activeTabBackground = options.darkmode ? "#454545" : "#ffffff";
+    const std::string activeTabBorder = options.darkmode ? "#909090" : "#9a9a9a";
+    const std::string notebookCss = "#RemoteFrame notebook, #RemoteFrame notebook > header, #RemoteFrame notebook > header.top, #RemoteFrame notebook > header.top > tabs { margin: 0; padding: 0; border: 0; background-color: transparent; background-image: none; box-shadow: none; } #RemoteFrame notebook > header.top > tabs { padding-left: 6px; } #RemoteFrame notebook > header, #RemoteFrame notebook > header.top, #RemoteFrame notebook > header.top > tabs { min-height: 0; } #RemoteFrame notebook > stack, #RemoteFrame notebook > stack > scrolledwindow, #RemoteFrame notebook > stack > scrolledwindow > viewport { margin: 0; padding: 0; border: 0; background-color: " + options.colorchatback + "; } #RemoteFrame notebook > header.top > tabs > tab { min-height: 0; min-width: 0; margin: 0 1px 0 0; padding: 3px 7px; background-image: none; background-color: " + tabBackground + "; border: 1px solid " + tabBorder + "; border-bottom: none; border-radius: 3px 3px 0 0; } #RemoteFrame notebook > header.top > tabs > tab:checked { background-color: " + activeTabBackground + "; border-color: " + activeTabBorder + "; } #RemoteFrame notebook > header.top > tabs > tab label { min-width: 0; margin: 0; padding: 0; font-size: 12px; }";
+    gtk_css_provider_load_from_data(notebookTabProvider, notebookCss.c_str(), -1, nullptr);
+    gtk_style_context_add_provider_for_screen(screen, GTK_STYLE_PROVIDER(notebookTabProvider), GTK_STYLE_PROVIDER_PRIORITY_USER + 1);
 }
 
 void TRemoteFrame::sendServerListOptions() {
@@ -969,11 +992,14 @@ void TRemoteFrame::configureChatField(GtkWidget* field) {
     PangoFontDescription* chatFont = pango_font_description_from_string(("Sans " + std::to_string(options.chatfontsize)).c_str());
     gtk_widget_modify_font(field, chatFont);
     pango_font_description_free(chatFont);
+    GtkStyleContext* context = gtk_widget_get_style_context(field);
+    GtkCssProvider* oldProvider = static_cast<GtkCssProvider*>(g_object_get_data(G_OBJECT(field), "remote-chat-provider"));
+    if (oldProvider != nullptr) gtk_style_context_remove_provider(context, GTK_STYLE_PROVIDER(oldProvider));
     GtkCssProvider* provider = gtk_css_provider_new();
     const std::string css = "textview, textview text { background-color: " + options.colorchatback + "; color: " + options.colorchat + "; }";
     gtk_css_provider_load_from_data(provider, css.c_str(), -1, nullptr);
-    gtk_style_context_add_provider(gtk_widget_get_style_context(field), GTK_STYLE_PROVIDER(provider), GTK_STYLE_PROVIDER_PRIORITY_USER);
-    g_object_unref(provider);
+    gtk_style_context_add_provider(context, GTK_STYLE_PROVIDER(provider), GTK_STYLE_PROVIDER_PRIORITY_USER);
+    g_object_set_data_full(G_OBJECT(field), "remote-chat-provider", provider, g_object_unref);
 }
 
 void TRemoteFrame::applyEmotes(GtkTextBuffer* buffer, gint startOffset, const std::string& message) {

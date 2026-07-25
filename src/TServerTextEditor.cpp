@@ -24,11 +24,12 @@ TServerTextEditor::TServerTextEditor(Kind nextKind, const char* title) : kind(ne
     gtk_text_view_set_monospace(GTK_TEXT_VIEW(text), true);
     addEditorFindShortcut(text);
     addEditorGoToLineShortcut(text);
-    g_signal_connect(text, "key-press-event", G_CALLBACK(+[](GtkWidget*, GdkEventKey* event, gpointer data) {
-        if ((event->state & GDK_CONTROL_MASK) == 0 || (event->keyval != GDK_KEY_s && event->keyval != GDK_KEY_S)) return static_cast<gboolean>(FALSE);
+    g_signal_connect(text, "key-press-event", G_CALLBACK(+[](GtkWidget* widget, GdkEventKey* event, gpointer data) {
+        if (!consumeEditorCtrlS(widget, event)) return static_cast<gboolean>(FALSE);
         static_cast<TServerTextEditor*>(data)->save();
         return static_cast<gboolean>(TRUE);
     }), this);
+    g_signal_connect(text, "key-release-event", G_CALLBACK(releaseEditorCtrlS), nullptr);
     gtk_container_add(GTK_CONTAINER(scrolled), text);
     gtk_box_pack_start(GTK_BOX(root), scrolled, true, true, 0);
     GtkWidget* bottom = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 5);

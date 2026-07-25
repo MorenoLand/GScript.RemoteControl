@@ -1,6 +1,7 @@
 #pragma once
 
 #include <gtk/gtk.h>
+#include "RCOptions.h"
 #include <array>
 #include <filesystem>
 #include <functional>
@@ -8,8 +9,6 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
-
-namespace RC { struct RCOptions; }
 
 class TPlayerList;
 class TFileBrowserTree;
@@ -33,6 +32,8 @@ public:
     void toggleVisibility();
     bool openLatestPrivateMessage();
     bool isNCAuthenticated() const;
+    void refreshTheme();
+    void updateThemeOptions(const RC::RCOptions& nextOptions);
 
 private:
     static void onSend(GtkButton*, gpointer data);
@@ -78,6 +79,7 @@ private:
     void appendChat(const std::string& message, bool suppressUrgency = false);
     void appendChatLog(const std::string& message) const;
     void applyOptions(const RC::RCOptions& previous);
+    void refreshNotebookTheme();
     void sendServerListOptions();
     void updateMassPMAcceptance();
     void setNCChannelVisible(bool visible);
@@ -103,6 +105,7 @@ private:
     GtkWidget* chatField = nullptr;
     GtkWidget* chatScrolled = nullptr;
     GtkWidget* notebook = nullptr;
+    GtkCssProvider* notebookTabProvider = nullptr;
     GtkWidget* graphicalFixed = nullptr;
     GtkWidget* backgroundImage = nullptr;
     GtkWidget* editField = nullptr;
@@ -150,7 +153,7 @@ private:
     TAccountsWindow* accountsWindow = nullptr;
     TOptionsWindow* optionsWindow = nullptr;
     TNPCList* npcList = nullptr;
-    const RC::RCOptions& options;
+    RC::RCOptions options;
     std::filesystem::path applicationDirectory;
     std::unordered_map<std::string, GtkWidget*> channelFields;
     std::unordered_map<GtkTextBuffer*, ChatTags> chatTags;

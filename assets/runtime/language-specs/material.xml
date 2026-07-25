@@ -16,4 +16,14 @@
   <style name="def:preprocessor" foreground="#89ddff" />
   <style name="def:identifier" foreground="#eeffff" />
   <style name="cursor" foreground="#eeffff" />
+  <style name="Comment" foreground="#546e7a" />
+  <style name="String" foreground="#c3e88d" />
+  <style name="Decimal" foreground="#f78c6c" />
+  <style name="Keyword" foreground="#c792ea" />
+  <style name="Others" foreground="#89ddff" />
+  <style name="Others 4" foreground="#ffcb6b" />
+  <style name="Others 5" foreground="#89ddff" />
+  <style name="Operators" foreground="#89ddff" />
+  <style name="Object Properties" foreground="#ffcb6b" />
+  <style name="Function" foreground="#82aaff" />
 </style-scheme>

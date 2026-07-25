@@ -39,10 +39,14 @@ namespace {
     void themeColors(const std::string& theme, RC::RCOptions& options) {
         if (theme == "dracula") { options.coloredit = "#f8f8f2"; options.coloreditback = "#282a36"; options.colorchat = "#f8f8f2"; options.colorchatbold = "#50fa7b"; options.colorchatback = "#282a36"; options.colorlabel = "#50fa7b"; options.colorlabelback = "#282a36"; }
         else if (theme == "material") { options.coloredit = "#eeffff"; options.coloreditback = "#263238"; options.colorchat = "#eeffff"; options.colorchatbold = "#80cbc4"; options.colorchatback = "#263238"; options.colorlabel = "#80cbc4"; options.colorlabelback = "#263238"; }
-        else if (theme == "ayu-mirage") { options.coloredit = "#cbccc6"; options.coloreditback = "#1f2430"; options.colorchat = "#cbccc6"; options.colorchatbold = "#ffcc66"; options.colorchatback = "#1f2430"; options.colorlabel = "#ffcc66"; options.colorlabelback = "#1f2430"; }
+        else if (theme == "ayu-mirage") { options.coloredit = "#cccac2"; options.coloreditback = "#242936"; options.colorchat = "#cccac2"; options.colorchatbold = "#ffcc66"; options.colorchatback = "#242936"; options.colorlabel = "#ffcc66"; options.colorlabelback = "#242936"; }
         else if (theme == "nord") { options.coloredit = "#eceff4"; options.coloreditback = "#2e3440"; options.colorchat = "#eceff4"; options.colorchatbold = "#88c0d0"; options.colorchatback = "#2e3440"; options.colorlabel = "#88c0d0"; options.colorlabelback = "#2e3440"; }
         else if (theme == "monokai") { options.coloredit = "#f8f8f2"; options.coloreditback = "#1e1f1c"; options.colorchat = "#f8f8f2"; options.colorchatbold = "#a6e22e"; options.colorchatback = "#1e1f1c"; options.colorlabel = "#a6e22e"; options.colorlabelback = "#1e1f1c"; }
         else if (theme == "one-dark") { options.coloredit = "#abb2bf"; options.coloreditback = "#282c34"; options.colorchat = "#abb2bf"; options.colorchatbold = "#61afef"; options.colorchatback = "#282c34"; options.colorlabel = "#61afef"; options.colorlabelback = "#282c34"; }
+        else if (theme == "tokyo-night") { options.coloredit = "#c0caf5"; options.coloreditback = "#1a1b26"; options.colorchat = "#c0caf5"; options.colorchatbold = "#7aa2f7"; options.colorchatback = "#1a1b26"; options.colorlabel = "#7aa2f7"; options.colorlabelback = "#1a1b26"; }
+        else if (theme == "gruvbox") { options.coloredit = "#ebdbb2"; options.coloreditback = "#282828"; options.colorchat = "#ebdbb2"; options.colorchatbold = "#fabd2f"; options.colorchatback = "#282828"; options.colorlabel = "#fabd2f"; options.colorlabelback = "#282828"; }
+        else if (theme == "solarized") { options.coloredit = "#839496"; options.coloreditback = "#002b36"; options.colorchat = "#839496"; options.colorchatbold = "#b58900"; options.colorchatback = "#002b36"; options.colorlabel = "#b58900"; options.colorlabelback = "#002b36"; }
+        else if (theme == "catppuccin") { options.coloredit = "#cdd6f4"; options.coloreditback = "#1e1e2e"; options.colorchat = "#cdd6f4"; options.colorchatbold = "#cba6f7"; options.colorchatback = "#1e1e2e"; options.colorlabel = "#cba6f7"; options.colorlabelback = "#1e1e2e"; }
         else if (theme == "light") { options.coloredit = "#202020"; options.coloreditback = "#ffffff"; options.colorchat = "#202020"; options.colorchatbold = "#008000"; options.colorchatback = "#ffffff"; options.colorlabel = "#008000"; options.colorlabelback = "#ffffff"; }
         else { options.coloredit = "#00ff00"; options.coloreditback = "#1e1e1e"; options.colorchat = "#d4d4d4"; options.colorchatbold = "#00C000"; options.colorchatback = "#1e1e1e"; options.colorlabel = "#00C000"; options.colorlabelback = "#1e1e1e"; }
     }
@@ -101,6 +105,26 @@ TOptionsWindow::TOptionsWindow(RC::RCOptions& nextOptions, const std::filesystem
     autocompleteSource = addEntry(GTK_GRID(scriptGrid), "Autocomplete source:", options.autocompletesource, 2);
     GtkWidget* autocompleteBrowse = gtk_button_new_with_label("Browse");
     gtk_grid_attach(GTK_GRID(scriptGrid), autocompleteBrowse, 2, 2, 1, 1);
+    syntaxTheme = gtk_combo_box_text_new();
+    gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(syntaxTheme), "language-spec", "Language spec");
+    gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(syntaxTheme), "dracula", "Dracula");
+    gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(syntaxTheme), "material", "Material");
+    gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(syntaxTheme), "ayu-mirage", "Ayu Mirage");
+    gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(syntaxTheme), "nord", "Nord");
+    gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(syntaxTheme), "monokai", "Monokai");
+    gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(syntaxTheme), "one-dark", "One Dark");
+    gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(syntaxTheme), "tokyo-night", "Tokyo Night");
+    gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(syntaxTheme), "gruvbox", "Gruvbox");
+    gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(syntaxTheme), "solarized", "Solarized Dark");
+    gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(syntaxTheme), "catppuccin", "Catppuccin Mocha");
+    gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(syntaxTheme), "light", "Light");
+    gtk_combo_box_set_active_id(GTK_COMBO_BOX(syntaxTheme), options.syntaxtheme.c_str());
+    gtk_grid_attach(GTK_GRID(scriptGrid), gtk_label_new("Syntax theme:"), 0, 3, 1, 1);
+    gtk_grid_attach(GTK_GRID(scriptGrid), syntaxTheme, 1, 3, 1, 1);
+    syncSyntaxTheme = gtk_check_button_new_with_label("Sync syntax theme with UI theme");
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(syncSyntaxTheme), options.syncsyntaxtheme);
+    gtk_grid_attach(GTK_GRID(scriptGrid), syncSyntaxTheme, 1, 4, 2, 1);
+    gtk_widget_set_sensitive(syntaxTheme, !options.syncsyntaxtheme);
     gtk_box_pack_start(GTK_BOX(script), scriptGrid, false, false, 4);
     GtkWidget* customization = gtk_box_new(GTK_ORIENTATION_VERTICAL, 5);
     gtk_container_set_border_width(GTK_CONTAINER(customization), 5);
@@ -128,6 +152,10 @@ TOptionsWindow::TOptionsWindow(RC::RCOptions& nextOptions, const std::filesystem
     gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(theme), "nord", "Nord");
     gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(theme), "monokai", "Monokai");
     gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(theme), "one-dark", "One Dark");
+    gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(theme), "tokyo-night", "Tokyo Night");
+    gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(theme), "gruvbox", "Gruvbox");
+    gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(theme), "solarized", "Solarized Dark");
+    gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(theme), "catppuccin", "Catppuccin Mocha");
     gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(theme), "light", "Light");
     gtk_combo_box_set_active_id(GTK_COMBO_BOX(theme), options.theme.c_str());
     gtk_grid_attach(GTK_GRID(customizationGrid), gtk_label_new("Theme:"), 0, 11, 1, 1);
@@ -149,6 +177,8 @@ TOptionsWindow::TOptionsWindow(RC::RCOptions& nextOptions, const std::filesystem
     gtk_box_pack_start(GTK_BOX(root), buttons, false, false, 5);
     g_signal_connect(close, "clicked", G_CALLBACK(onClose), this);
     g_signal_connect(theme, "changed", G_CALLBACK(onThemeChanged), this);
+    g_signal_connect(syntaxTheme, "changed", G_CALLBACK(onSyntaxThemeChanged), this);
+    g_signal_connect(syncSyntaxTheme, "toggled", G_CALLBACK(onSyncSyntaxThemeChanged), this);
     g_signal_connect(downloadBrowse, "clicked", G_CALLBACK(onBrowseDownload), this);
     g_signal_connect(logBrowse, "clicked", G_CALLBACK(onBrowseLog), this);
     g_signal_connect(autocompleteBrowse, "clicked", G_CALLBACK(onBrowseAutocompleteSource), this);
@@ -159,6 +189,8 @@ TOptionsWindow::~TOptionsWindow() { if (window != nullptr) gtk_widget_destroy(wi
 void TOptionsWindow::open() { gtk_widget_show_all(window); gtk_window_present(GTK_WINDOW(window)); }
 void TOptionsWindow::onClose(GtkButton*, gpointer data) { TOptionsWindow* window = static_cast<TOptionsWindow*>(data); window->save(); gtk_widget_hide(window->window); }
 void TOptionsWindow::onThemeChanged(GtkComboBox*, gpointer data) { static_cast<TOptionsWindow*>(data)->applyThemeSelection(); }
+void TOptionsWindow::onSyntaxThemeChanged(GtkComboBox*, gpointer data) { static_cast<TOptionsWindow*>(data)->applySyntaxThemeSelection(); }
+void TOptionsWindow::onSyncSyntaxThemeChanged(GtkToggleButton*, gpointer data) { static_cast<TOptionsWindow*>(data)->applySyntaxThemeSync(); }
 void TOptionsWindow::onBrowseDownload(GtkButton*, gpointer data) {
     TOptionsWindow* optionsWindow = static_cast<TOptionsWindow*>(data);
     GtkWidget* dialog = gtk_file_chooser_dialog_new("Download folder", GTK_WINDOW(optionsWindow->window), GTK_FILE_CHOOSER_ACTION_SELECT_FOLDER, "Cancel", GTK_RESPONSE_CANCEL, "Select", GTK_RESPONSE_ACCEPT, nullptr);
@@ -206,13 +238,39 @@ void TOptionsWindow::save() {
     const RC::RCOptions previous = options;
     options.nickname = gtk_entry_get_text(GTK_ENTRY(nickname)); options.downloadfolder = gtk_entry_get_text(GTK_ENTRY(downloadFolder)); options.chatlogfile = gtk_entry_get_text(GTK_ENTRY(logFile)); options.chatfontsize = std::clamp(std::atoi(gtk_entry_get_text(GTK_ENTRY(chatFontSize))), 1, 1000);
     if (const char* selectedTheme = gtk_combo_box_get_active_id(GTK_COMBO_BOX(theme))) options.theme = selectedTheme;
-    options.darkmode = options.theme != "light"; options.synccolors = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(syncColors));
+    if (const char* selectedSyntaxTheme = gtk_combo_box_get_active_id(GTK_COMBO_BOX(syntaxTheme))) options.syntaxtheme = selectedSyntaxTheme;
+    options.darkmode = options.theme != "light"; options.syncsyntaxtheme = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(syncSyntaxTheme)); options.synccolors = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(syncColors));
+    if (options.syncsyntaxtheme) {
+        options.syntaxtheme = options.theme == "dark" ? "language-spec" : options.theme;
+        gtk_combo_box_set_active_id(GTK_COMBO_BOX(syntaxTheme), options.syntaxtheme.c_str());
+    }
     options.nomassmessages = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(ignoreMass)); options.nomassifclienton = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(ignoreMassClient)); options.attachaway = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(attachAway)); options.globalpms = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(globalPMs)); options.buddytracking = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(buddies)); options.separatenc = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(separateNC)); options.rctimestamps = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(timestamps)); options.newpmalerts = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(pmAlerts)); options.logrcchat = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(logChat)); options.syntaxhighlighting = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(syntax)); options.autoindenting = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(autoIndent)); options.smarthomeend = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(smartHomeEnd)); options.showbrackets = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(brackets)); options.showlinenumbers = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(lineNumbers)); options.lsp = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(lsp)); options.scripttabwidth = std::clamp(std::atoi(gtk_entry_get_text(GTK_ENTRY(scriptTabWidth))), 1, 1000); options.scriptusetabs = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(scriptUseTabs)); options.scriptfontsize = std::clamp(std::atoi(gtk_entry_get_text(GTK_ENTRY(scriptFontSize))), 1, 1000); options.autocompletesource = gtk_entry_get_text(GTK_ENTRY(autocompleteSource));
     options.coloredit = colorValue(chatbarTextColor); options.coloreditback = colorValue(chatbarBackgroundColor); options.colorchat = colorValue(chatTextColor); options.colorchatbold = colorValue(chatBoldColor); options.colorchatback = colorValue(chatBackgroundColor); options.colorlabel = colorValue(labelColor); options.colorlabelback = colorValue(labelBackgroundColor); options.labelservers = gtk_entry_get_text(GTK_ENTRY(serverLabel)); options.labelplayers = gtk_entry_get_text(GTK_ENTRY(playersLabel)); options.labelnpcserver = gtk_entry_get_text(GTK_ENTRY(npcServerLabel)); options.background = gtk_entry_get_text(GTK_ENTRY(backgroundImage));
     setGScriptEditorOptions(options);
     applyRemoteControlTheme(options.theme, options.darkmode);
+    setRemoteControlSyntaxTheme(options.syntaxtheme);
+    refreshGScriptEditorTheme();
     RC::saveRCOptions(options, applicationDirectory);
     onSaved(previous);
+}
+void TOptionsWindow::applySyntaxThemeSelection() {
+    const char* selected = gtk_combo_box_get_active_id(GTK_COMBO_BOX(syntaxTheme));
+    if (selected == nullptr || options.syntaxtheme == selected) return;
+    options.syntaxtheme = selected;
+    setRemoteControlSyntaxTheme(options.syntaxtheme);
+    refreshGScriptEditorTheme();
+    RC::saveRCOptions(options, applicationDirectory);
+}
+void TOptionsWindow::applySyntaxThemeSync() {
+    options.syncsyntaxtheme = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(syncSyntaxTheme));
+    gtk_widget_set_sensitive(syntaxTheme, !options.syncsyntaxtheme);
+    if (options.syncsyntaxtheme) {
+        options.syntaxtheme = options.theme == "dark" ? "language-spec" : options.theme;
+        gtk_combo_box_set_active_id(GTK_COMBO_BOX(syntaxTheme), options.syntaxtheme.c_str());
+        setRemoteControlSyntaxTheme(options.syntaxtheme);
+        refreshGScriptEditorTheme();
+    }
+    RC::saveRCOptions(options, applicationDirectory);
 }
 void TOptionsWindow::applyThemeSelection() {
     const char* selectedTheme = gtk_combo_box_get_active_id(GTK_COMBO_BOX(theme));
@@ -220,6 +278,11 @@ void TOptionsWindow::applyThemeSelection() {
     const RC::RCOptions previous = options;
     options.theme = selectedTheme;
     options.darkmode = options.theme != "light";
+    if (gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(syncSyntaxTheme))) {
+        options.syntaxtheme = options.theme == "dark" ? "language-spec" : options.theme;
+        gtk_combo_box_set_active_id(GTK_COMBO_BOX(syntaxTheme), options.syntaxtheme.c_str());
+        setRemoteControlSyntaxTheme(options.syntaxtheme);
+    }
     if (gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(syncColors))) {
         themeColors(options.theme, options);
         GdkRGBA color{};
@@ -229,6 +292,7 @@ void TOptionsWindow::applyThemeSelection() {
     }
     setGScriptEditorOptions(options);
     applyRemoteControlTheme(options.theme, options.darkmode);
+    refreshGScriptEditorTheme();
     RC::saveRCOptions(options, applicationDirectory);
     onSaved(previous);
 }

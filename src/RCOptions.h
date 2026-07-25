@@ -21,6 +21,8 @@ namespace RC {
         bool graphicalmenu = true;
         bool darkmode = true;
         std::string theme = "dark";
+        std::string syntaxtheme = "language-spec";
+        bool syncsyntaxtheme = true;
         bool synccolors = true;
         int chatfontsize = 9;
         bool globalpms = true;

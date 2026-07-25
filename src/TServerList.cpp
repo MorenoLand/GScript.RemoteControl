@@ -254,6 +254,10 @@ void TServerList::openListServerSettings() {
     gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(theme), "nord", "Nord");
     gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(theme), "monokai", "Monokai");
     gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(theme), "one-dark", "One Dark");
+    gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(theme), "tokyo-night", "Tokyo Night");
+    gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(theme), "gruvbox", "Gruvbox");
+    gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(theme), "solarized", "Solarized Dark");
+    gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(theme), "catppuccin", "Catppuccin Mocha");
     gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(theme), "light", "Light");
     gtk_combo_box_set_active_id(GTK_COMBO_BOX(theme), this->theme.c_str());
     GtkWidget* themeGrid = gtk_grid_new();

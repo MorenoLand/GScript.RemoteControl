@@ -52,6 +52,8 @@ namespace RC {
             else if (key == "graphicalmenu") options.graphicalmenu = isTrue(value);
             else if (key == "darkmode") options.darkmode = isTrue(value);
             else if (key == "theme") options.theme = value;
+            else if (key == "syntaxtheme") options.syntaxtheme = value;
+            else if (key == "syncsyntaxtheme") options.syncsyntaxtheme = isTrue(value);
             else if (key == "synccolors") options.synccolors = isTrue(value);
             else if (key == "nomassmessages") options.nomassmessages = isTrue(value);
             else if (key == "nomassifclienton") options.nomassifclienton = isTrue(value);
@@ -116,6 +118,8 @@ namespace RC {
         writeBool(stream, "graphicalmenu", options.graphicalmenu);
         writeBool(stream, "darkmode", options.darkmode);
         writeString(stream, "theme", options.theme);
+        writeString(stream, "syntaxtheme", options.syntaxtheme);
+        writeBool(stream, "syncsyntaxtheme", options.syncsyntaxtheme);
         writeBool(stream, "synccolors", options.synccolors);
         stream << "chatfontsize=" << options.chatfontsize << '\n';
         writeBool(stream, "globalpms", options.globalpms);
