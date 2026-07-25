@@ -33,6 +33,7 @@ namespace RC {
         bool smarthomeend = true;
         bool showbrackets = true;
         bool showlinenumbers = true;
+        bool minimap = false;
         bool lsp = true;
         std::string autocompletesource = "https://api.gscript.dev/";
         bool separatenc = false;

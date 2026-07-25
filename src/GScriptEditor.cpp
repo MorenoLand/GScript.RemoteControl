@@ -19,8 +19,10 @@ namespace {
 
     int tabWidth = 2;
     int scriptFontSize = 10;
+    constexpr gint minimapFontSize = 3;
     bool useTabs = false;
     bool showLineNumbers = true;
+    bool showMinimap = false;
     bool syntaxHighlighting = true;
     bool autoIndenting = true;
     bool smartHomeEnd = true;
@@ -661,6 +663,16 @@ namespace {
         gtk_source_buffer_set_highlight_matching_brackets(buffer, showBrackets);
         gtk_source_buffer_set_highlight_matching_brackets(buffer, showBrackets);
         setEditorFontSize(editor, scriptFontSize);
+        GtkWidget* map = static_cast<GtkWidget*>(g_object_get_data(G_OBJECT(editor), "remote-control-minimap"));
+        GtkWidget* strip = static_cast<GtkWidget*>(g_object_get_data(G_OBJECT(editor), "remote-control-minimap-strip"));
+        if (map) {
+            gtk_source_map_set_view(GTK_SOURCE_MAP(map), showMinimap ? GTK_SOURCE_VIEW(editor) : nullptr);
+            setEditorFontSize(map, minimapFontSize);
+            if (showMinimap) {
+                gtk_widget_show(map);
+                if (strip) gtk_widget_show(strip);
+            } else if (strip) gtk_widget_hide(strip);
+        }
     }
 
 }
@@ -688,6 +700,7 @@ void setGScriptEditorOptions(const RC::RCOptions& options) {
     scriptFontSize = std::max(6, options.scriptfontsize);
     useTabs = options.scriptusetabs;
     showLineNumbers = options.showlinenumbers;
+    showMinimap = options.minimap;
     syntaxHighlighting = options.syntaxhighlighting;
     autoIndenting = options.autoindenting;
     smartHomeEnd = options.smarthomeend;
@@ -698,6 +711,85 @@ void setGScriptEditorOptions(const RC::RCOptions& options) {
     completionSource = options.autocompletesource.empty() ? "https://api.gscript.dev/" : options.autocompletesource;
     if (sourceChanged || (!wasLspEnabled && lspEnabled)) { apiDefinitions.clear(); if (lspEnabled) startCompletionLoad(); }
     else if (lspEnabled && apiDefinitions.empty()) startCompletionLoad();
+}
+
+struct MinimapStrip { GtkBin parent; };
+struct MinimapStripClass { GtkBinClass parentClass; };
+G_DEFINE_TYPE(MinimapStrip, minimap_strip, GTK_TYPE_BIN)
+
+constexpr gint minimapWidth = 120;
+
+static void minimap_strip_get_preferred_width(GtkWidget*, gint* minimum, gint* natural) {
+    if (minimum) *minimum = minimapWidth;
+    if (natural) *natural = minimapWidth;
+}
+
+static void minimap_strip_get_preferred_width_for_height(GtkWidget*, gint, gint* minimum, gint* natural) {
+    if (minimum) *minimum = minimapWidth;
+    if (natural) *natural = minimapWidth;
+}
+
+static void minimap_strip_class_init(MinimapStripClass* klass) {
+    GTK_WIDGET_CLASS(klass)->get_preferred_width = minimap_strip_get_preferred_width;
+    GTK_WIDGET_CLASS(klass)->get_preferred_width_for_height = minimap_strip_get_preferred_width_for_height;
+}
+
+static void minimap_strip_init(MinimapStrip*) {}
+
+static void updateMinimapViewportIndicator(GtkWidget* scrolled) {
+    GtkWidget* map = static_cast<GtkWidget*>(g_object_get_data(G_OBJECT(scrolled), "remote-control-minimap"));
+    if (!map) return;
+    GtkAdjustment* adjustment = gtk_scrolled_window_get_vadjustment(GTK_SCROLLED_WINDOW(scrolled));
+    const bool documentFits = gtk_adjustment_get_upper(adjustment) <= gtk_adjustment_get_page_size(adjustment) + 0.5;
+    GtkStyleContext* context = gtk_widget_get_style_context(map);
+    if (documentFits) gtk_style_context_add_class(context, "remote-control-minimap-no-scrubber");
+    else gtk_style_context_remove_class(context, "remote-control-minimap-no-scrubber");
+}
+
+static void onMinimapAdjustmentChanged(GtkAdjustment*, gpointer userData) { updateMinimapViewportIndicator(GTK_WIDGET(userData)); }
+static void onMinimapSizeAllocated(GtkWidget* widget, GtkAllocation*, gpointer) { updateMinimapViewportIndicator(widget); }
+
+GtkWidget* wrapGScriptEditor(GtkWidget* editor, GtkWidget* scrolled) {
+    GtkWidget* row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+    gtk_box_pack_start(GTK_BOX(row), scrolled, true, true, 0);
+    GtkWidget* map = gtk_source_map_new();
+    GtkWidget* strip = GTK_WIDGET(g_object_new(minimap_strip_get_type(), nullptr));
+    gtk_widget_set_name(map, "remote-control-minimap");
+    gtk_widget_set_name(strip, "remote-control-minimap-strip");
+    gtk_widget_set_size_request(map, minimapWidth, -1);
+    gtk_widget_set_size_request(strip, minimapWidth, -1);
+    if (showMinimap) gtk_source_map_set_view(GTK_SOURCE_MAP(map), GTK_SOURCE_VIEW(editor));
+    gtk_text_view_set_editable(GTK_TEXT_VIEW(map), false);
+    gtk_text_view_set_cursor_visible(GTK_TEXT_VIEW(map), false);
+    gtk_text_view_set_monospace(GTK_TEXT_VIEW(map), true);
+    gtk_source_view_set_show_line_numbers(GTK_SOURCE_VIEW(map), false);
+    gtk_source_view_set_show_line_marks(GTK_SOURCE_VIEW(map), false);
+    gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(map), GTK_WRAP_CHAR);
+    gtk_text_view_set_left_margin(GTK_TEXT_VIEW(map), 0);
+    gtk_text_view_set_right_margin(GTK_TEXT_VIEW(map), 0);
+    gtk_widget_set_hexpand(strip, false);
+    gtk_widget_set_halign(strip, GTK_ALIGN_START);
+    gtk_widget_set_hexpand(map, false);
+    gtk_widget_set_halign(map, GTK_ALIGN_START);
+    setEditorFontSize(map, minimapFontSize);
+    gtk_widget_set_no_show_all(map, true);
+    g_object_set_data(G_OBJECT(editor), "remote-control-minimap", map);
+    g_object_set_data(G_OBJECT(editor), "remote-control-minimap-strip", strip);
+    g_object_set_data(G_OBJECT(scrolled), "remote-control-minimap", map);
+    GtkCssProvider* minimapStyle = gtk_css_provider_new();
+    gtk_css_provider_load_from_data(minimapStyle, "#remote-control-minimap .scrubber { min-height: 6px; max-height: 24px; } #remote-control-minimap.remote-control-minimap-no-scrubber .scrubber { background-image: none; background-color: transparent; border-color: transparent; box-shadow: none; opacity: 0; }", -1, nullptr);
+    gtk_style_context_add_provider(gtk_widget_get_style_context(map), GTK_STYLE_PROVIDER(minimapStyle), GTK_STYLE_PROVIDER_PRIORITY_USER);
+    g_object_unref(minimapStyle);
+    GtkAdjustment* adjustment = gtk_scrolled_window_get_vadjustment(GTK_SCROLLED_WINDOW(scrolled));
+    g_signal_connect(adjustment, "changed", G_CALLBACK(onMinimapAdjustmentChanged), scrolled);
+    g_signal_connect(scrolled, "size-allocate", G_CALLBACK(onMinimapSizeAllocated), nullptr);
+    gtk_container_add(GTK_CONTAINER(strip), map);
+    gtk_box_pack_end(GTK_BOX(row), strip, false, false, 0);
+    if (showMinimap) {
+        gtk_widget_show(map);
+        gtk_widget_show(strip);
+    } else gtk_widget_hide(strip);
+    return row;
 }
 
 void refreshGScriptEditorTheme() {

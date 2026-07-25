@@ -75,6 +75,7 @@ namespace RC {
             else if (key == "smarthomeend") options.smarthomeend = isTrue(value);
             else if (key == "showbrackets") options.showbrackets = isTrue(value);
             else if (key == "showlinenumbers") options.showlinenumbers = isTrue(value);
+            else if (key == "minimap") options.minimap = isTrue(value);
             else if (key == "lsp") options.lsp = isTrue(value);
             else if (key == "autocompletesource") options.autocompletesource = value;
             else if (key == "scripttabwidth") options.scripttabwidth = std::stoi(value);
@@ -130,6 +131,7 @@ namespace RC {
         writeBool(stream, "smarthomeend", options.smarthomeend);
         writeBool(stream, "showbrackets", options.showbrackets);
         writeBool(stream, "showlinenumbers", options.showlinenumbers);
+        writeBool(stream, "minimap", options.minimap);
         writeBool(stream, "lsp", options.lsp);
         writeString(stream, "autocompletesource", options.autocompletesource);
         writeBool(stream, "separatenc", options.separatenc);

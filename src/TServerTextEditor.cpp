@@ -31,7 +31,7 @@ TServerTextEditor::TServerTextEditor(Kind nextKind, const char* title) : kind(ne
     }), this);
     g_signal_connect(text, "key-release-event", G_CALLBACK(releaseEditorCtrlS), nullptr);
     gtk_container_add(GTK_CONTAINER(scrolled), text);
-    gtk_box_pack_start(GTK_BOX(root), scrolled, true, true, 0);
+    gtk_box_pack_start(GTK_BOX(root), wrapGScriptEditor(text, scrolled), true, true, 0);
     GtkWidget* bottom = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 5);
     GtkWidget* lineStatus = createGScriptEditorLineStatus(text);
     gtk_box_pack_start(GTK_BOX(bottom), lineStatus, false, false, 0);

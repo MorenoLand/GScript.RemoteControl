@@ -9,6 +9,7 @@
 #include <gtk/gtk.h>
 
 void configureGScriptEditor(GtkWidget* editor);
+GtkWidget* wrapGScriptEditor(GtkWidget* editor, GtkWidget* scrolled);
 bool consumeEditorCtrlS(GtkWidget* editor, GdkEventKey* event);
 gboolean releaseEditorCtrlS(GtkWidget* editor, GdkEventKey* event);
 GtkWidget* createGScriptEditorLineStatus(GtkWidget* editor);

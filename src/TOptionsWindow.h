@@ -44,6 +44,7 @@ private:
     GtkWidget* smartHomeEnd = nullptr;
     GtkWidget* brackets = nullptr;
     GtkWidget* lineNumbers = nullptr;
+    GtkWidget* minimap = nullptr;
     GtkWidget* lsp = nullptr;
     GtkWidget* autocompleteSource = nullptr;
     GtkWidget* scriptTabWidth = nullptr;
