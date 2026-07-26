@@ -1,0 +1,226 @@
+#pragma once
+
+#include <algorithm>
+#include <cstdlib>
+#include <gtk/gtk.h>
+#include <string>
+
+#include "TEditorFormat.h"
+
+inline std::string editorLastFindText;
+
+struct EditorFindState {
+    GtkWidget* editor = nullptr;
+    GtkWidget* dialog = nullptr;
+    GtkWidget* findEntry = nullptr;
+    GtkWidget* replaceLabel = nullptr;
+    GtkWidget* replaceEntry = nullptr;
+    GtkWidget* replaceNext = nullptr;
+    GtkWidget* replaceAll = nullptr;
+};
+
+inline void rememberEditorFind(EditorFindState* state) {
+    const char* query = gtk_entry_get_text(GTK_ENTRY(state->findEntry));
+    if (query != nullptr) editorLastFindText = query;
+}
+
+inline void selectEditorFindMatch(EditorFindState* state, bool previous) {
+    rememberEditorFind(state);
+    if (editorLastFindText.empty()) return;
+    GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(state->editor));
+    GtkTextIter start;
+    GtkTextIter matchStart;
+    GtkTextIter matchEnd;
+    GtkTextIter selectionStart;
+    GtkTextIter selectionEnd;
+    const bool selected = gtk_text_buffer_get_selection_bounds(buffer, &selectionStart, &selectionEnd);
+    if (selected) start = previous ? selectionStart : selectionEnd;
+    else gtk_text_buffer_get_iter_at_mark(buffer, &start, gtk_text_buffer_get_insert(buffer));
+    gboolean found = previous ? gtk_text_iter_backward_search(&start, editorLastFindText.c_str(), GTK_TEXT_SEARCH_CASE_INSENSITIVE, &matchStart, &matchEnd, nullptr) : gtk_text_iter_forward_search(&start, editorLastFindText.c_str(), GTK_TEXT_SEARCH_CASE_INSENSITIVE, &matchStart, &matchEnd, nullptr);
+    if (!found) {
+        if (previous) gtk_text_buffer_get_end_iter(buffer, &start);
+        else gtk_text_buffer_get_start_iter(buffer, &start);
+        found = previous ? gtk_text_iter_backward_search(&start, editorLastFindText.c_str(), GTK_TEXT_SEARCH_CASE_INSENSITIVE, &matchStart, &matchEnd, nullptr) : gtk_text_iter_forward_search(&start, editorLastFindText.c_str(), GTK_TEXT_SEARCH_CASE_INSENSITIVE, &matchStart, &matchEnd, nullptr);
+    }
+    if (!found) return;
+    gtk_text_buffer_select_range(buffer, &matchStart, &matchEnd);
+    gtk_text_view_scroll_to_iter(GTK_TEXT_VIEW(state->editor), &matchStart, 0.2, false, 0.0, 0.0);
+}
+
+inline bool editorFindSelectionMatches(EditorFindState* state) {
+    GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(state->editor));
+    GtkTextIter start;
+    GtkTextIter end;
+    if (!gtk_text_buffer_get_selection_bounds(buffer, &start, &end)) return false;
+    gchar* selected = gtk_text_buffer_get_text(buffer, &start, &end, false);
+    const char* query = gtk_entry_get_text(GTK_ENTRY(state->findEntry));
+    gchar* selectedFold = g_utf8_casefold(selected == nullptr ? "" : selected, -1);
+    gchar* queryFold = g_utf8_casefold(query == nullptr ? "" : query, -1);
+    const bool matches = g_strcmp0(selectedFold, queryFold) == 0;
+    g_free(selected); g_free(selectedFold); g_free(queryFold);
+    return matches;
+}
+
+inline void replaceEditorFindNext(EditorFindState* state) {
+    rememberEditorFind(state);
+    if (editorLastFindText.empty()) return;
+    if (!editorFindSelectionMatches(state)) selectEditorFindMatch(state, false);
+    if (!editorFindSelectionMatches(state)) return;
+    GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(state->editor));
+    GtkTextIter start;
+    GtkTextIter end;
+    gtk_text_buffer_get_selection_bounds(buffer, &start, &end);
+    const char* replacement = gtk_entry_get_text(GTK_ENTRY(state->replaceEntry));
+    gtk_text_buffer_begin_user_action(buffer);
+    gtk_text_buffer_delete(buffer, &start, &end);
+    gtk_text_buffer_insert(buffer, &start, replacement == nullptr ? "" : replacement, -1);
+    gtk_text_buffer_end_user_action(buffer);
+    selectEditorFindMatch(state, false);
+}
+
+inline void replaceEditorFindAll(EditorFindState* state) {
+    rememberEditorFind(state);
+    if (editorLastFindText.empty()) return;
+    GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(state->editor));
+    GtkTextIter search;
+    GtkTextIter matchStart;
+    GtkTextIter matchEnd;
+    gtk_text_buffer_get_start_iter(buffer, &search);
+    const char* replacement = gtk_entry_get_text(GTK_ENTRY(state->replaceEntry));
+    int replaced = 0;
+    gtk_text_buffer_begin_user_action(buffer);
+    while (gtk_text_iter_forward_search(&search, editorLastFindText.c_str(), GTK_TEXT_SEARCH_CASE_INSENSITIVE, &matchStart, &matchEnd, nullptr)) {
+        gtk_text_buffer_delete(buffer, &matchStart, &matchEnd);
+        gtk_text_buffer_insert(buffer, &matchStart, replacement == nullptr ? "" : replacement, -1);
+        search = matchStart;
+        ++replaced;
+    }
+    gtk_text_buffer_end_user_action(buffer);
+    if (replaced > 0) {
+        gtk_text_buffer_place_cursor(buffer, &search);
+        gtk_text_view_scroll_to_iter(GTK_TEXT_VIEW(state->editor), &search, 0.2, false, 0.0, 0.0);
+    }
+}
+
+inline EditorFindState* editorFindState(GtkWidget* editor) {
+    EditorFindState* state = static_cast<EditorFindState*>(g_object_get_data(G_OBJECT(editor), "editor-find-state"));
+    if (state != nullptr) return state;
+    state = new EditorFindState();
+    state->editor = editor;
+    state->dialog = gtk_dialog_new();
+    gtk_window_set_title(GTK_WINDOW(state->dialog), "Find and Replace");
+    gtk_window_set_transient_for(GTK_WINDOW(state->dialog), GTK_WINDOW(gtk_widget_get_toplevel(editor)));
+    gtk_window_set_default_size(GTK_WINDOW(state->dialog), 420, -1);
+    GtkWidget* grid = gtk_grid_new();
+    gtk_grid_set_row_spacing(GTK_GRID(grid), 6);
+    gtk_grid_set_column_spacing(GTK_GRID(grid), 6);
+    gtk_container_set_border_width(GTK_CONTAINER(grid), 8);
+    GtkWidget* findLabel = gtk_label_new("Find:");
+    state->findEntry = gtk_entry_new();
+    state->replaceLabel = gtk_label_new("Replace:");
+    state->replaceEntry = gtk_entry_new();
+    gtk_widget_set_hexpand(state->findEntry, true);
+    gtk_widget_set_hexpand(state->replaceEntry, true);
+    gtk_grid_attach(GTK_GRID(grid), findLabel, 0, 0, 1, 1);
+    gtk_grid_attach(GTK_GRID(grid), state->findEntry, 1, 0, 1, 1);
+    gtk_grid_attach(GTK_GRID(grid), state->replaceLabel, 0, 1, 1, 1);
+    gtk_grid_attach(GTK_GRID(grid), state->replaceEntry, 1, 1, 1, 1);
+    gtk_box_pack_start(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(state->dialog))), grid, false, false, 0);
+    gtk_dialog_add_button(GTK_DIALOG(state->dialog), "Close", GTK_RESPONSE_CLOSE);
+    gtk_dialog_add_button(GTK_DIALOG(state->dialog), "Previous", 1);
+    gtk_dialog_add_button(GTK_DIALOG(state->dialog), "Find Next", 2);
+    state->replaceNext = gtk_dialog_add_button(GTK_DIALOG(state->dialog), "Replace Next", 3);
+    state->replaceAll = gtk_dialog_add_button(GTK_DIALOG(state->dialog), "Replace All", 4);
+    g_signal_connect(state->dialog, "response", G_CALLBACK(+[](GtkDialog* dialog, gint response, gpointer data) {
+        EditorFindState* find = static_cast<EditorFindState*>(data);
+        if (response == GTK_RESPONSE_CLOSE || response == GTK_RESPONSE_DELETE_EVENT) gtk_widget_hide(GTK_WIDGET(dialog));
+        else if (response == 1) selectEditorFindMatch(find, true);
+        else if (response == 2) selectEditorFindMatch(find, false);
+        else if (response == 3) replaceEditorFindNext(find);
+        else if (response == 4) replaceEditorFindAll(find);
+    }), state);
+    g_signal_connect(state->dialog, "delete-event", G_CALLBACK(+[](GtkWidget* dialog, GdkEvent*, gpointer) { gtk_widget_hide(dialog); return static_cast<gboolean>(TRUE); }), nullptr);
+    g_signal_connect(state->findEntry, "activate", G_CALLBACK(+[](GtkEntry*, gpointer data) { selectEditorFindMatch(static_cast<EditorFindState*>(data), false); }), state);
+    g_signal_connect(state->replaceEntry, "activate", G_CALLBACK(+[](GtkEntry*, gpointer data) { replaceEditorFindNext(static_cast<EditorFindState*>(data)); }), state);
+    g_object_set_data_full(G_OBJECT(editor), "editor-find-state", state, +[](gpointer data) { EditorFindState* find = static_cast<EditorFindState*>(data); if (find->dialog != nullptr) gtk_widget_destroy(find->dialog); delete find; });
+    return state;
+}
+
+inline void openEditorFind(GtkWidget* editor, bool replace = false) {
+    EditorFindState* state = editorFindState(editor);
+    if (gtk_entry_get_text_length(GTK_ENTRY(state->findEntry)) == 0 && !editorLastFindText.empty()) gtk_entry_set_text(GTK_ENTRY(state->findEntry), editorLastFindText.c_str());
+    gtk_widget_show_all(state->dialog);
+    gtk_widget_set_visible(state->replaceLabel, replace);
+    gtk_widget_set_visible(state->replaceEntry, replace);
+    gtk_widget_set_visible(state->replaceNext, replace);
+    gtk_widget_set_visible(state->replaceAll, replace);
+    gtk_window_present(GTK_WINDOW(state->dialog));
+    gtk_widget_grab_focus(state->findEntry);
+}
+
+inline void editorFind(GtkButton*, gpointer data) { openEditorFind(GTK_WIDGET(data)); }
+
+inline void openEditorGoToLine(GtkWidget* editor) {
+    GtkTextIter current;
+    GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(editor));
+    gtk_text_buffer_get_iter_at_mark(buffer, &current, gtk_text_buffer_get_insert(buffer));
+    GtkWidget* dialog = gtk_dialog_new_with_buttons("Go to line", GTK_WINDOW(gtk_widget_get_toplevel(editor)), static_cast<GtkDialogFlags>(0), "Cancel", GTK_RESPONSE_CANCEL, "Go", GTK_RESPONSE_ACCEPT, nullptr);
+    GtkWidget* entry = gtk_entry_new();
+    gtk_entry_set_input_purpose(GTK_ENTRY(entry), GTK_INPUT_PURPOSE_DIGITS);
+    gtk_entry_set_text(GTK_ENTRY(entry), std::to_string(gtk_text_iter_get_line(&current) + 1).c_str());
+    gtk_widget_set_size_request(entry, 120, -1);
+    gtk_box_pack_start(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), entry, false, false, 8);
+    g_object_set_data(G_OBJECT(dialog), "line-entry", entry);
+    g_signal_connect(dialog, "response", G_CALLBACK(+[](GtkDialog* responseDialog, gint response, gpointer userData) {
+        if (response == GTK_RESPONSE_ACCEPT) {
+            GtkWidget* lineEntry = static_cast<GtkWidget*>(g_object_get_data(G_OBJECT(responseDialog), "line-entry"));
+            GtkTextBuffer* textBuffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(userData));
+            const long requested = std::strtol(gtk_entry_get_text(GTK_ENTRY(lineEntry)), nullptr, 10);
+            const int lineCount = gtk_text_buffer_get_line_count(textBuffer);
+            const int line = std::clamp(static_cast<int>(requested) - 1, 0, std::max(0, lineCount - 1));
+            GtkTextIter target;
+            gtk_text_buffer_get_iter_at_line(textBuffer, &target, line);
+            gtk_text_buffer_place_cursor(textBuffer, &target);
+            gtk_text_view_scroll_to_iter(GTK_TEXT_VIEW(userData), &target, 0.2, false, 0.0, 0.0);
+        }
+        gtk_widget_destroy(GTK_WIDGET(responseDialog));
+    }), editor);
+    gtk_widget_show_all(dialog);
+}
+
+inline void editorGoToLine(GtkButton*, gpointer data) { openEditorGoToLine(GTK_WIDGET(data)); }
+
+inline gboolean editorFindKey(GtkWidget*, GdkEventKey* event, gpointer data) {
+    if ((event->state & GDK_CONTROL_MASK) == 0) return FALSE;
+    if (event->keyval == GDK_KEY_f || event->keyval == GDK_KEY_F) openEditorFind(GTK_WIDGET(data), false);
+    else if (event->keyval == GDK_KEY_h || event->keyval == GDK_KEY_H) openEditorFind(GTK_WIDGET(data), true);
+    else return FALSE;
+    return TRUE;
+}
+
+inline gboolean editorGoToLineKey(GtkWidget*, GdkEventKey* event, gpointer data) {
+    if ((event->state & GDK_CONTROL_MASK) == 0 || (event->keyval != GDK_KEY_g && event->keyval != GDK_KEY_G)) return FALSE;
+    openEditorGoToLine(GTK_WIDGET(data));
+    return TRUE;
+}
+
+inline void addEditorFindShortcut(GtkWidget* editor) { g_signal_connect(editor, "key-press-event", G_CALLBACK(editorFindKey), editor); }
+inline void addEditorGoToLineShortcut(GtkWidget* editor) { g_signal_connect(editor, "key-press-event", G_CALLBACK(editorGoToLineKey), editor); }
+
+inline void addEditorFindButton(GtkWidget* dialog, GtkWidget* editor) {
+    GtkWidget* goToLineButton = gtk_button_new_with_label("Go to line");
+    GtkWidget* formatButton = createEditorFormatButton(editor);
+    GtkWidget* button = gtk_button_new_with_label("Find");
+    gtk_widget_set_tooltip_text(goToLineButton, "Go to line (Ctrl+G)");
+    gtk_widget_set_tooltip_text(button, "Find (Ctrl+F) / Replace (Ctrl+H)");
+    gtk_container_add(GTK_CONTAINER(gtk_dialog_get_action_area(GTK_DIALOG(dialog))), goToLineButton);
+    gtk_container_add(GTK_CONTAINER(gtk_dialog_get_action_area(GTK_DIALOG(dialog))), formatButton);
+    gtk_container_add(GTK_CONTAINER(gtk_dialog_get_action_area(GTK_DIALOG(dialog))), button);
+    g_signal_connect(goToLineButton, "clicked", G_CALLBACK(editorGoToLine), editor);
+    g_signal_connect(button, "clicked", G_CALLBACK(editorFind), editor);
+    addEditorFindShortcut(editor);
+    addEditorGoToLineShortcut(editor);
+    gtk_widget_show(goToLineButton);
+    gtk_widget_show(formatButton);
+    gtk_widget_show(button);
+}

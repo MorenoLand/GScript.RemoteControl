@@ -11,6 +11,7 @@ public:
     TFileBrowserTree();
     ~TFileBrowserTree();
     void open(void* connection);
+    void openFolder(void* connection, const std::string& folder);
     void setDownloadFolder(const std::string& folder);
 private:
     static void onRefresh(GtkButton*, gpointer data);
@@ -19,9 +20,10 @@ private:
     static gboolean onFileButtonPress(GtkWidget*, GdkEventButton*, gpointer data);
 #ifdef _WIN32
     static gboolean onFileButtonRelease(GtkWidget*, GdkEventButton*, gpointer data);
-    static gboolean onFileMotion(GtkWidget*, GdkEventMotion*, gpointer data);
     void startNativeDrag(GtkWidget* widget);
 #endif
+    static gboolean onFileMotion(GtkWidget*, GdkEventMotion*, gpointer data);
+    static gboolean onFileLeave(GtkWidget*, GdkEventCrossing*, gpointer data);
     static void onFileDragBegin(GtkWidget*, GdkDragContext*, gpointer data);
     static void onFileDragEnd(GtkWidget*, GdkDragContext*, gpointer data);
     static void onFileDragDataGet(GtkWidget*, GdkDragContext*, GtkSelectionData*, guint, guint, gpointer data);
@@ -47,6 +49,10 @@ private:
     void appendLog(const char* message);
     void showTextEditor(const char* path, const void* content, int length);
     void showItemMenu(GtkWidget* view, GdkEventButton* event, bool folder);
+    void clearPreviewCache();
+    void hidePreview();
+    void showPreview(const std::string& path, int rootX, int rootY);
+    void cachePreview(const std::string& path, const void* content, int length);
     GtkWidget* window = nullptr;
     GtkWidget* folderPath = nullptr;
     GtkTreeStore* folders = nullptr;
@@ -54,6 +60,9 @@ private:
     GtkWidget* folderView = nullptr;
     GtkWidget* fileView = nullptr;
     GtkCellRenderer* fileNameRenderer = nullptr;
+    GtkWidget* previewWindow = nullptr;
+    GtkWidget* previewImage = nullptr;
+    GtkWidget* previewLabel = nullptr;
     GtkWidget* log = nullptr;
     GdkPixbuf* closedFolderIcon = nullptr;
     GdkPixbuf* openFolderIcon = nullptr;
@@ -76,9 +85,17 @@ private:
     std::string downloadFolder;
     std::vector<std::string> pendingDragSelectionPaths;
     std::unordered_map<std::string, std::string> pendingDragDownloads;
+    std::unordered_map<std::string, std::string> pendingPreviewDownloads;
+    std::unordered_map<std::string, int> pendingUserDownloads;
+    std::unordered_map<std::string, GdkPixbuf*> previewCache;
+    std::vector<std::string> previewCacheOrder;
     std::vector<std::string> completedDragDownloads;
     std::vector<std::string> pendingDragLocalPaths;
     std::string dragStagingFolder;
+    std::string previewFolder;
+    std::string hoveredPreviewPath;
+    int previewRootX = 0;
+    int previewRootY = 0;
 #ifdef _WIN32
     guint nativeDragButton = 0;
     gint nativeDragX = 0;

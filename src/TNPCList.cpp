@@ -1,10 +1,11 @@
 #include "TNPCList.h"
-#include "Backup.h"
-#include "EditorFind.h"
-#include "GScriptEditor.h"
+#include "TBackup.h"
+#include "TEditorFind.h"
+#include "TGScriptEditor.h"
+#include "TScriptEditorTracking.h"
 #include "TScriptList.h"
-#include "Theme.h"
-#include "TreeSearch.h"
+#include "TTheme.h"
+#include "TTreeSearch.h"
 
 #include <grclib.h>
 #include <gtksourceview/gtksource.h>
@@ -245,6 +246,7 @@ void TNPCList::showScriptEditor(const char* name, int id, const char* script) {
     addEditorFindButton(dialog, editor);
     gtk_text_view_set_monospace(GTK_TEXT_VIEW(editor), true);
     gtk_text_buffer_set_text(GTK_TEXT_BUFFER(sourceBuffer), script, -1);
+    trackScriptEditor(dialog, GTK_TEXT_BUFFER(sourceBuffer), "NPC: " + std::string(name), script);
     const std::string backupName = name != nullptr && *name != '\0' ? "npc" + std::string(name) : std::to_string(id);
     backupEditorText("npcscript", backupName, script, false);
     g_object_unref(sourceBuffer);
@@ -276,6 +278,7 @@ void TNPCList::showScriptEditor(const char* name, int id, const char* script) {
             backupEditorText("npcscript", editorState->backupName, updated == nullptr ? "" : updated, true);
             rc_update_npc(editorState->connection, editorState->id, updated);
             g_free(updated);
+            markScriptEditorSaved(buffer);
         } else gtk_widget_destroy(GTK_WIDGET(responseDialog));
     }), state);
     g_signal_connect(dialog, "destroy", G_CALLBACK(+[](GtkWidget*, gpointer data) { delete static_cast<EditorState*>(data); }), state);

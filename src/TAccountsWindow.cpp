@@ -1,5 +1,5 @@
 #include "TAccountsWindow.h"
-#include "TreeSearch.h"
+#include "TTreeSearch.h"
 
 #include <grclib.h>
 #include <IEnums.h>

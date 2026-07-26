@@ -1,9 +1,9 @@
 #include "TPlayerList.h"
-#include "Backup.h"
-#include "EditorFind.h"
-#include "GScriptEditor.h"
+#include "TBackup.h"
+#include "TEditorFind.h"
+#include "TGScriptEditor.h"
 #include "TLocalBanWindow.h"
-#include "Theme.h"
+#include "TTheme.h"
 
 #include <grclib.h>
 #include <IEnums.h>
@@ -750,7 +750,7 @@ void TPlayerList::handlePlayerAttributes(const char* account, const char*, const
     gtk_box_pack_start(GTK_BOX(chestsPage), chestHeader, false, false, 0);
     GtkWidget* chestScroll = gtk_scrolled_window_new(nullptr, nullptr);
     gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(chestScroll), GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
-    state->chestStore = gtk_list_store_new(1, G_TYPE_STRING);
+    state->chestStore = gtk_list_store_new(2, G_TYPE_STRING, G_TYPE_STRING);
     state->chests = gtk_tree_view_new_with_model(GTK_TREE_MODEL(state->chestStore));
     GtkCellRenderer* chestRenderer = gtk_cell_renderer_text_new();
     gtk_tree_view_append_column(GTK_TREE_VIEW(state->chests), gtk_tree_view_column_new_with_attributes("", chestRenderer, "text", 0, nullptr));
@@ -777,8 +777,9 @@ void TPlayerList::handlePlayerAttributes(const char* account, const char*, const
         if (line == "[Weapons]") { section = "Weapons"; continue; }
         if (line == "[Script Flags]") { section = "Script Flags"; continue; }
         if (!line.empty() && line.front() == '[') { section.clear(); continue; }
-        if (line.empty() || line.find(':') != std::string::npos) continue;
-        if (section == "Chests") { GtkTreeIter row; gtk_list_store_append(state->chestStore, &row); gtk_list_store_set(state->chestStore, &row, 0, line.c_str(), -1); continue; }
+        if (line.empty()) continue;
+        if (section == "Chests") { const size_t first = line.find(':'); const size_t second = first == std::string::npos ? std::string::npos : line.find(':', first + 1); const std::string filename = second == std::string::npos ? line : line.substr(second + 1); GtkTreeIter row; gtk_list_store_append(state->chestStore, &row); gtk_list_store_set(state->chestStore, &row, 0, filename.c_str(), 1, line.c_str(), -1); continue; }
+        if (line.find(':') != std::string::npos) continue;
         GtkWidget* target = section == "Weapons" ? state->weaponList : section == "Script Flags" ? state->flags : nullptr;
         if (target != nullptr) { GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(target)); GtkTextIter end; gtk_text_buffer_get_end_iter(buffer, &end); gtk_text_buffer_insert(buffer, &end, (line + "\n").c_str(), -1); }
     }
@@ -807,7 +808,7 @@ void TPlayerList::handlePlayerAttributes(const char* account, const char*, const
             text << "[Chests]\n";
             GtkTreeIter chest;
             gboolean hasChest = gtk_tree_model_get_iter_first(GTK_TREE_MODEL(state->chestStore), &chest);
-            while (hasChest) { gchar* chestName = nullptr; gtk_tree_model_get(GTK_TREE_MODEL(state->chestStore), &chest, 0, &chestName, -1); text << (chestName == nullptr ? "" : chestName) << '\n'; g_free(chestName); hasChest = gtk_tree_model_iter_next(GTK_TREE_MODEL(state->chestStore), &chest); }
+            while (hasChest) { gchar* chestName = nullptr; gtk_tree_model_get(GTK_TREE_MODEL(state->chestStore), &chest, 1, &chestName, -1); text << (chestName == nullptr ? "" : chestName) << '\n'; g_free(chestName); hasChest = gtk_tree_model_iter_next(GTK_TREE_MODEL(state->chestStore), &chest); }
             text << '\n';
             const struct { const char* title; GtkWidget* field; } lists[] = {{"Weapons", state->weaponList}, {"Script Flags", state->flags}};
             for (const auto& list : lists) { GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(list.field)); GtkTextIter start; GtkTextIter end; gtk_text_buffer_get_bounds(buffer, &start, &end); gchar* content = gtk_text_buffer_get_text(buffer, &start, &end, false); text << '[' << list.title << "]\n" << (content == nullptr ? "" : content) << '\n'; g_free(content); }
@@ -1116,6 +1117,7 @@ void TPlayerList::refresh() {
     gtk_tree_store_clear(store);
     RCPlayer* players = nullptr;
     const int count = rc_get_players(connection, &players);
+    std::vector<int> activePlayerIds;
     GtkTreeIter admins;
     GtkTreeIter playersGroup;
     gtk_tree_store_append(store, &admins, nullptr);
@@ -1123,6 +1125,7 @@ void TPlayerList::refresh() {
     gtk_tree_store_append(store, &playersGroup, nullptr);
     gtk_tree_store_set(store, &playersGroup, PlayerIconColumn, channelIcon, PlayerNickColumn, "Players", PlayerIdColumn, 0, PlayerOrderColumn, 1, -1);
     for (int index = 0; index < count; ++index) {
+        activePlayerIds.push_back(players[index].id);
         auto [player, inserted] = serverPlayersById.try_emplace(players[index].id, players[index].id);
         player->second.setIdentity(players[index].account, players[index].nick, players[index].level);
         GtkTreeIter row;
@@ -1130,6 +1133,17 @@ void TPlayerList::refresh() {
         gtk_tree_store_append(store, &row, admin ? &admins : &playersGroup);
         const auto pm = pmTypes.find(players[index].id);
         gtk_tree_store_set(store, &row, PlayerIconColumn, pm != pmTypes.end() && pmIconsVisible ? pmIconFor(pm->second) : onlineIcon, PlayerNickColumn, players[index].nick == nullptr ? "" : players[index].nick, PlayerAccountColumn, players[index].account == nullptr ? "" : players[index].account, PlayerLevelColumn, players[index].level == nullptr ? "" : players[index].level, PlayerIdColumn, players[index].id, PlayerOrderColumn, static_cast<int>(index) + 2, -1);
+    }
+    int retainedOrder = count + 2;
+    for (const auto& [playerId, identity] : pmPlayers) {
+        if (std::find(activePlayerIds.begin(), activePlayerIds.end(), playerId) != activePlayerIds.end()) continue;
+        const std::string& account = identity.first;
+        const std::string& nick = identity.second.empty() ? identity.first : identity.second;
+        if (account.empty() && nick.empty()) continue;
+        GtkTreeIter row;
+        gtk_tree_store_append(store, &row, &playersGroup);
+        const auto pm = pmTypes.find(playerId);
+        gtk_tree_store_set(store, &row, PlayerIconColumn, pm != pmTypes.end() && pmIconsVisible ? pmIconFor(pm->second) : onlineIcon, PlayerNickColumn, nick.c_str(), PlayerAccountColumn, account.c_str(), PlayerLevelColumn, "Offline", PlayerIdColumn, playerId, PlayerOrderColumn, retainedOrder++, -1);
     }
     rc_request_pm_server_list(connection);
     rc_request_pm_guild_list(connection);
@@ -1178,6 +1192,7 @@ std::string TPlayerList::notePrivateMessage(int playerId, const char* account, c
     pmTypes[playerId] = type == nullptr ? "normal" : type;
     pmIconsVisible = true;
     if (pmBlinkSource == 0) pmBlinkSource = g_timeout_add(500, onPMBlink, this);
+    refresh();
     updatePMIcons();
     return nickText.empty() || nickText == accountText ? accountText : nickText + " (" + accountText + ")";
 }
@@ -1267,7 +1282,7 @@ void TPlayerList::markPrivateMessageRead(int playerId) {
         pmIconsVisible = true;
     }
     clearPrivateMessageAlert();
-    updatePMIcons();
+    refresh();
 }
 
 void TPlayerList::clearPrivateMessageAlert() {

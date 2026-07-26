@@ -1,9 +1,10 @@
 #include "TScriptList.h"
-#include "Backup.h"
-#include "EditorFind.h"
-#include "GScriptEditor.h"
-#include "Theme.h"
-#include "TreeSearch.h"
+#include "TBackup.h"
+#include "TEditorFind.h"
+#include "TGScriptEditor.h"
+#include "TScriptEditorTracking.h"
+#include "TTheme.h"
+#include "TTreeSearch.h"
 
 #include <grclib.h>
 #include <gtksourceview/gtksource.h>
@@ -181,6 +182,7 @@ void TScriptList::showEditor(const char* name, const char* script) {
     addEditorFindButton(dialog, editor);
     gtk_text_view_set_monospace(GTK_TEXT_VIEW(editor), true);
     gtk_text_buffer_set_text(GTK_TEXT_BUFFER(sourceBuffer), script, -1);
+    trackScriptEditor(dialog, GTK_TEXT_BUFFER(sourceBuffer), (type == "weapons" ? "Weapon/GUI Script: " : "Class: ") + std::string(name), script);
     backupEditorText(type == "weapons" ? "weapon" : "class", name, script, false);
     g_object_unref(sourceBuffer);
     GtkWidget* scrolled = gtk_scrolled_window_new(nullptr, nullptr);
@@ -212,6 +214,7 @@ void TScriptList::showEditor(const char* name, const char* script) {
             if (editorState->weapon) rc_update_weapon(editorState->connection, editorState->name.c_str(), "", updated);
             else rc_update_class(editorState->connection, editorState->name.c_str(), updated);
             g_free(updated);
+            markScriptEditorSaved(editorBuffer);
         } else gtk_widget_destroy(GTK_WIDGET(responseDialog));
     }), state);
     g_signal_connect(dialog, "destroy", G_CALLBACK(+[](GtkWidget*, gpointer data) { delete static_cast<EditorState*>(data); }), state);

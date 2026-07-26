@@ -1,5 +1,5 @@
 #include "TToallsWindow.h"
-#include "Debug.h"
+#include "TDebug.h"
 
 #include <grclib.h>
 

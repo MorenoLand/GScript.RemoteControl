@@ -1,11 +1,12 @@
-#include "RCOptions.h"
-#include "Backup.h"
-#include "Debug.h"
-#include "GScriptEditor.h"
+#include "TRCOptions.h"
+#include "TBackup.h"
+#include "TDebug.h"
+#include "TGScriptEditor.h"
 #include "TRemoteFrame.h"
-#include "Theme.h"
+#include "TTheme.h"
 #include "TServerList.h"
 #include "TStartFrame.h"
+#include "TMcpServer.h"
 
 #include <algorithm>
 #include <array>
@@ -293,7 +294,7 @@ namespace {
         const char* text = dracula ? "#f8f8f2" : material ? "#eeffff" : ayuMirage ? "#cccac2" : nord ? "#eceff4" : monokai ? "#f8f8f2" : oneDark ? "#abb2bf" : tokyoNight ? "#c0caf5" : gruvbox ? "#ebdbb2" : solarized ? "#839496" : catppuccin ? "#cdd6f4" : "#dddddd";
         const char* accent = dracula ? "#bd93f9" : material ? "#80cbc4" : ayuMirage ? "#ffcc66" : nord ? "#88c0d0" : monokai ? "#a6e22e" : oneDark ? "#61afef" : tokyoNight ? "#7aa2f7" : gruvbox ? "#fabd2f" : solarized ? "#b58900" : catppuccin ? "#cba6f7" : "#00ff00";
         const char* border = dracula ? "#6272a4" : material ? "#546e7a" : ayuMirage ? "#4b5263" : nord ? "#4c566a" : monokai ? "#75715e" : oneDark ? "#3e4451" : tokyoNight ? "#3b4261" : gruvbox ? "#665c54" : solarized ? "#586e75" : catppuccin ? "#585b70" : "#555555";
-        const std::string css = std::string("window, dialog, .background { background-color: ") + background + "; color: " + text + "; } label, checkbutton label, button label { color: " + std::string(text) + "; } entry { background-image: none; background-color: " + editor + "; color: " + text + "; caret-color: " + accent + "; border: 1px solid " + border + "; } entry:disabled { background-color: " + surface + "; color: #c1c1c1; } textview, textview text { background-color: " + editor + "; color: " + text + "; caret-color: " + accent + "; } combobox button, button { background-image: none; background-color: " + surface + "; color: " + text + "; border: 1px solid " + border + "; } button:hover, combobox button:hover { background-image: none; background-color: " + surface + "; } button:active, combobox button:active { background-image: none; background-color: " + editor + "; } button:disabled { background-image: none; background-color: " + surface + "; color: #828282; } checkbutton { color: " + text + "; } frame, expander { background-color: transparent; } separator, paned separator { background-color: " + border + "; min-height: 1px; min-width: 1px; } treeview.view, treeview.view header button { background-color: " + editor + "; color: " + text + "; border-color: " + border + "; } treeview.view:selected { background-color: " + surface + "; color: #ffffff; } #remote-control-minimap, #remote-control-minimap.view { min-width: 56px; max-width: 56px; background-color: " + editor + "; color: " + text + "; border-left: 1px solid " + border + "; } #remote-control-minimap .scrubber, #remote-control-minimap.scrubber { background-color: alpha(" + accent + ", 0.24); border: 1px solid alpha(" + accent + ", 0.72); } filechooser box, filechooser .path-bar, filechooser .path-bar button, filechooser .pathbar, filechooser .pathbar button { background-image: none; background-color: " + background + "; color: " + text + "; } filechooser placessidebar, filechooser placessidebar viewport, filechooser placessidebar list, filechooser placessidebar row, filechooser .sidebar, filechooser .sidebar viewport, filechooser .sidebar list, filechooser .sidebar row { background-color: " + editor + "; color: " + text + "; } filechooser placessidebar row:selected, filechooser .sidebar row:selected { background-color: " + surface + "; color: #ffffff; } menubar, menu { background-color: " + surface + "; color: " + text + "; } menuitem { color: " + text + "; } notebook, notebook > header, notebook > header > tabs, notebook > stack { background-color: transparent; border: none; box-shadow: none; outline: none; padding: 0; } scrolledwindow, viewport { background-color: transparent; border: none; box-shadow: none; outline: none; padding: 0; } notebook > header, notebook > header > tabs { min-height: 0; } notebook > header > tabs > tab { background-image: none; background-color: " + surface + "; border: 1px solid " + border + "; border-bottom: none; border-radius: 4px 4px 0 0; margin-right: 2px; padding: 2px 5px; } notebook > header > tabs > tab:checked { background-color: " + background + "; border-color: " + accent + "; } .gtk-source-completion, .gtk-source-completion-content, .gtk-source-completion-list { background-color: " + editor + "; color: " + text + "; border: 1px solid " + border + "; border-radius: 6px; } .gtk-source-completion-list { padding: 3px; } .gtk-source-completion-row { color: " + text + "; border-radius: 4px; padding: 4px 8px; } .gtk-source-completion-row:hover { background-color: " + surface + "; } .gtk-source-completion-row:selected { background-color: " + accent + "; color: " + editor + "; } .gtk-source-completion-info, .remote-completion-info { background-color: " + surface + "; color: " + text + "; border: 1px solid " + border + "; border-radius: 7px; padding: 8px 10px; } .remote-completion-signature { color: " + accent + "; font-weight: bold; } .remote-completion-details { color: " + text + "; margin-top: 4px; }";
+        const std::string css = std::string("window, dialog, .background { background-color: ") + background + "; color: " + text + "; } label, checkbutton label, button label { color: " + std::string(text) + "; } entry { background-image: none; background-color: " + editor + "; color: " + text + "; caret-color: " + accent + "; border: 1px solid " + border + "; } entry:disabled { background-color: " + surface + "; color: #c1c1c1; } textview, textview text { background-color: " + editor + "; color: " + text + "; caret-color: " + accent + "; } combobox button, button { background-image: none; background-color: " + surface + "; color: " + text + "; border: 1px solid " + border + "; } button:hover, combobox button:hover { background-image: none; background-color: " + surface + "; } button:active, combobox button:active { background-image: none; background-color: " + editor + "; } button:disabled { background-image: none; background-color: " + surface + "; color: #828282; } checkbutton { color: " + text + "; } frame, expander { background-color: transparent; } separator, paned separator { background-color: " + border + "; min-height: 1px; min-width: 1px; } treeview.view, treeview.view header button { background-color: " + editor + "; color: " + text + "; border-color: " + border + "; } treeview.view:selected { background-color: " + surface + "; color: #ffffff; } #remote-control-minimap, #remote-control-minimap.view { min-width: 120px; max-width: 120px; background-color: " + editor + "; color: " + text + "; border-left: 1px solid " + border + "; } #remote-control-minimap-marker { background-color: alpha(" + accent + ", 0.24); border: 1px solid alpha(" + accent + ", 0.72); } #remote-control-minimap .scrubber, #remote-control-minimap.scrubber { background-color: alpha(" + accent + ", 0.24); border: 1px solid alpha(" + accent + ", 0.72); } filechooser box, filechooser .path-bar, filechooser .path-bar button, filechooser .pathbar, filechooser .pathbar button { background-image: none; background-color: " + background + "; color: " + text + "; } filechooser placessidebar, filechooser placessidebar viewport, filechooser placessidebar list, filechooser placessidebar row, filechooser .sidebar, filechooser .sidebar viewport, filechooser .sidebar list, filechooser .sidebar row { background-color: " + editor + "; color: " + text + "; } filechooser placessidebar row:selected, filechooser .sidebar row:selected { background-color: " + surface + "; color: #ffffff; } menubar, menu { background-color: " + surface + "; color: " + text + "; } menuitem { color: " + text + "; } notebook, notebook > header, notebook > header > tabs, notebook > stack { background-color: transparent; border: none; box-shadow: none; outline: none; padding: 0; } scrolledwindow, viewport { background-color: transparent; border: none; box-shadow: none; outline: none; padding: 0; } notebook > header, notebook > header > tabs { min-height: 0; } notebook > header > tabs > tab { background-image: none; background-color: " + surface + "; border: 1px solid " + border + "; border-bottom: none; border-radius: 4px 4px 0 0; margin-right: 2px; padding: 2px 5px; } notebook > header > tabs > tab:checked { background-color: " + background + "; border-color: " + accent + "; } .gtk-source-completion, .gtk-source-completion-content, .gtk-source-completion-list { background-color: " + editor + "; color: " + text + "; border: 1px solid " + border + "; border-radius: 6px; } .gtk-source-completion-list { padding: 3px; } .gtk-source-completion-row { color: " + text + "; border-radius: 4px; padding: 4px 8px; } .gtk-source-completion-row:hover { background-color: " + surface + "; } .gtk-source-completion-row:selected { background-color: " + accent + "; color: " + editor + "; } .gtk-source-completion-info, .remote-completion-info { background-color: " + surface + "; color: " + text + "; border: 1px solid " + border + "; border-radius: 7px; padding: 8px 10px; } .remote-completion-signature { color: " + accent + "; font-weight: bold; } .remote-completion-details { color: " + text + "; margin-top: 4px; }";
         gtk_css_provider_load_from_data(provider, css.c_str(), -1, nullptr);
         gtk_style_context_add_provider_for_screen(gdk_screen_get_default(), GTK_STYLE_PROVIDER(provider), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
         darkThemeProvider = provider;
@@ -316,6 +317,7 @@ void remote_control_clear_pm_tray_alert() { clearTrayPMAlert(); }
 void remote_control_set_tray_label(const char* serverName, int playerCount) { setTrayTooltip(serverName, playerCount); }
 
 int main(int argc, char** argv) {
+    const bool mcpMode = std::find_if(argv + 1, argv + argc, [](const char* value) { return std::string(value) == "--mcp"; }) != argv + argc;
 #ifdef _WIN32
     bool debugMode = false;
     int argumentCount = 1;
@@ -349,6 +351,7 @@ int main(int argc, char** argv) {
     RC::RCOptions options;
     copySyntaxFiles(applicationDirectory);
     RC::loadRCOptions(options, applicationDirectory);
+    if (mcpMode) return runMcpServer(options, applicationDirectory);
     setGScriptEditorCacheDirectory(applicationDirectory / "cache");
     setGScriptEditorOptions(options);
     applyRemoteControlTheme(options.theme, options.darkmode);
@@ -413,6 +416,7 @@ int main(int argc, char** argv) {
         remoteFrame.reset();
         startFrame->show();
     };
+    startMcpGuiBridge(options, applicationDirectory, [&remoteFrame] { return remoteFrame ? remoteFrame->currentServerName() : std::string(); }, [&remoteFrame] { return remoteFrame != nullptr && remoteFrame->isConnected(); });
 #ifdef _WIN32
     frame.show();
     if (GdkWindow* startWindow = frame.nativeWindow()) {
@@ -424,6 +428,7 @@ int main(int argc, char** argv) {
     frame.show();
 #endif
     gtk_main();
+    stopMcpGuiBridge();
 #ifdef _WIN32
     if (serverListHotkeyWindow != nullptr) {
         UnregisterHotKey(serverListHotkeyWindow, ServerListHotkeyId);

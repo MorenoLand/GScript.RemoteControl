@@ -1,7 +1,7 @@
 #include "TFileBrowserTree.h"
-#include "EditorFind.h"
-#include "GScriptEditor.h"
-#include "Theme.h"
+#include "TEditorFind.h"
+#include "TGScriptEditor.h"
+#include "TTheme.h"
 
 #include <grclib.h>
 #include <gtksourceview/gtksource.h>
@@ -15,6 +15,7 @@
 #endif
 
 #include <string>
+#include <algorithm>
 #include <cstring>
 #include <functional>
 #include <memory>
@@ -57,6 +58,15 @@ namespace {
 
     bool pathMatches(const std::string& expected, const std::string& received) {
         return expected == received || received.ends_with("/" + expected) || expected.ends_with("/" + received);
+    }
+
+    bool isPreviewImage(const std::string& path) {
+        const std::size_t dot = path.find_last_of('.');
+        if (dot == std::string::npos) return false;
+        gchar* lower = g_ascii_strdown(path.c_str() + dot, -1);
+        const std::string extension = lower == nullptr ? "" : lower;
+        g_free(lower);
+        return extension == ".png" || extension == ".jpg" || extension == ".jpeg" || extension == ".gif" || extension == ".webp" || extension == ".bmp" || extension == ".ico";
     }
 
 #ifdef _WIN32
@@ -292,10 +302,12 @@ TFileBrowserTree::TFileBrowserTree() {
     GtkTargetEntry fileTarget[] = {{const_cast<gchar*>("application/x-remote-control-file-path"), GTK_TARGET_SAME_APP, 1}, {const_cast<gchar*>("text/uri-list"), 0, 2}};
     gtk_drag_source_set(fileView, GDK_BUTTON1_MASK, fileTarget, G_N_ELEMENTS(fileTarget), static_cast<GdkDragAction>(GDK_ACTION_COPY | GDK_ACTION_MOVE));
 #else
-    gtk_widget_add_events(fileView, static_cast<GdkEventMask>(GDK_BUTTON_RELEASE_MASK | GDK_POINTER_MOTION_MASK));
+    gtk_widget_add_events(fileView, GDK_BUTTON_RELEASE_MASK);
     g_signal_connect(fileView, "button-release-event", G_CALLBACK(onFileButtonRelease), this);
-    g_signal_connect(fileView, "motion-notify-event", G_CALLBACK(onFileMotion), this);
 #endif
+    gtk_widget_add_events(fileView, static_cast<GdkEventMask>(GDK_POINTER_MOTION_MASK | GDK_LEAVE_NOTIFY_MASK));
+    g_signal_connect(fileView, "motion-notify-event", G_CALLBACK(onFileMotion), this);
+    g_signal_connect(fileView, "leave-notify-event", G_CALLBACK(onFileLeave), this);
     gtk_drag_dest_set(folderView, static_cast<GtkDestDefaults>(GTK_DEST_DEFAULT_MOTION | GTK_DEST_DEFAULT_DROP), dropTargets, G_N_ELEMENTS(dropTargets), static_cast<GdkDragAction>(GDK_ACTION_COPY | GDK_ACTION_MOVE));
     gtk_drag_dest_set(fileView, static_cast<GtkDestDefaults>(GTK_DEST_DEFAULT_MOTION | GTK_DEST_DEFAULT_DROP), dropTargets, G_N_ELEMENTS(dropTargets), static_cast<GdkDragAction>(GDK_ACTION_COPY | GDK_ACTION_MOVE));
     g_signal_connect(fileView, "drag-begin", G_CALLBACK(onFileDragBegin), this);
@@ -305,12 +317,28 @@ TFileBrowserTree::TFileBrowserTree() {
     g_signal_connect(fileView, "drag-data-received", G_CALLBACK(onDropDataReceived), this);
     g_signal_connect(closeButton, "clicked", G_CALLBACK(onRefresh), this);
     g_signal_connect(window, "delete-event", G_CALLBACK(onDelete), this);
+    previewWindow = gtk_window_new(GTK_WINDOW_POPUP);
+    gtk_window_set_transient_for(GTK_WINDOW(previewWindow), GTK_WINDOW(window));
+    gtk_window_set_type_hint(GTK_WINDOW(previewWindow), GDK_WINDOW_TYPE_HINT_TOOLTIP);
+    GtkWidget* previewFrame = gtk_frame_new(nullptr);
+    gtk_frame_set_shadow_type(GTK_FRAME(previewFrame), GTK_SHADOW_OUT);
+    gtk_container_add(GTK_CONTAINER(previewWindow), previewFrame);
+    GtkWidget* previewBox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 5);
+    gtk_container_set_border_width(GTK_CONTAINER(previewBox), 8);
+    gtk_container_add(GTK_CONTAINER(previewFrame), previewBox);
+    previewImage = gtk_image_new();
+    previewLabel = gtk_label_new("");
+    gtk_label_set_ellipsize(GTK_LABEL(previewLabel), PANGO_ELLIPSIZE_MIDDLE);
+    gtk_label_set_max_width_chars(GTK_LABEL(previewLabel), 48);
+    gtk_box_pack_start(GTK_BOX(previewBox), previewImage, true, true, 0);
+    gtk_box_pack_start(GTK_BOX(previewBox), previewLabel, false, false, 0);
     externalWatchId = g_timeout_add(2500, watchExternalFile, this);
 }
 
 TFileBrowserTree::~TFileBrowserTree() {
     if (externalWatchId != 0) g_source_remove(externalWatchId);
     if (inlineRenameId != 0) g_source_remove(inlineRenameId);
+    clearPreviewCache();
     for (const std::string& path : pendingDragLocalPaths) g_remove(path.c_str());
     for (const std::string& path : completedDragDownloads) g_remove(path.c_str());
     if (!dragStagingFolder.empty()) g_rmdir(dragStagingFolder.c_str());
@@ -320,6 +348,7 @@ TFileBrowserTree::~TFileBrowserTree() {
     if (nwFileIcon != nullptr) g_object_unref(nwFileIcon);
     if (scriptFileIcon != nullptr) g_object_unref(scriptFileIcon);
     if (gmapFileIcon != nullptr) g_object_unref(gmapFileIcon);
+    if (previewWindow != nullptr) gtk_widget_destroy(previewWindow);
     if (window != nullptr) gtk_widget_destroy(window);
     if (folders != nullptr) g_object_unref(folders);
     if (files != nullptr) g_object_unref(files);
@@ -336,13 +365,23 @@ void TFileBrowserTree::open(void* nextConnection) {
     refresh();
 }
 
+void TFileBrowserTree::openFolder(void* nextConnection, const std::string& folder) {
+    open(nextConnection);
+    currentFolder = folder;
+    if (!currentFolder.empty() && currentFolder.back() != '/') currentFolder += '/';
+    gtk_list_store_clear(files);
+    hidePreview();
+    gtk_label_set_text(GTK_LABEL(folderPath), (std::string("Current Folder: ") + currentFolder).c_str());
+    if (!rc_filebrowser_cd(connection, currentFolder.c_str())) appendLog(rc_last_error(connection));
+}
+
 void TFileBrowserTree::setDownloadFolder(const std::string& folder) { downloadFolder = folder; }
 
-void TFileBrowserTree::onRefresh(GtkButton*, gpointer data) { gtk_widget_hide(static_cast<TFileBrowserTree*>(data)->window); }
+void TFileBrowserTree::onRefresh(GtkButton*, gpointer data) { TFileBrowserTree* browser = static_cast<TFileBrowserTree*>(data); browser->hidePreview(); gtk_widget_hide(browser->window); }
 void TFileBrowserTree::onFolders(int, void* data) { static_cast<TFileBrowserTree*>(data)->refreshFolders(); }
 void TFileBrowserTree::onFiles(const char* folder, int count, void* data) { static_cast<TFileBrowserTree*>(data)->refreshFiles(folder, count); }
 void TFileBrowserTree::onMessage(const char* message, void* data) { static_cast<TFileBrowserTree*>(data)->appendLog(message == nullptr ? "" : message); }
-gboolean TFileBrowserTree::onDelete(GtkWidget*, GdkEvent*, gpointer data) { gtk_widget_hide(static_cast<TFileBrowserTree*>(data)->window); return true; }
+gboolean TFileBrowserTree::onDelete(GtkWidget*, GdkEvent*, gpointer data) { TFileBrowserTree* browser = static_cast<TFileBrowserTree*>(data); browser->hidePreview(); gtk_widget_hide(browser->window); return true; }
 
 void TFileBrowserTree::onFolderSelected(GtkTreeSelection* selection, gpointer data) {
     TFileBrowserTree* browser = static_cast<TFileBrowserTree*>(data);
@@ -355,6 +394,7 @@ void TFileBrowserTree::onFolderSelected(GtkTreeSelection* selection, gpointer da
         if (!folderPath.empty() && folderPath.back() != '/') folderPath += '/';
         browser->currentFolder = folderPath;
         gtk_list_store_clear(browser->files);
+        browser->hidePreview();
         gtk_label_set_text(GTK_LABEL(browser->folderPath), (std::string("Current Folder: ") + folderPath).c_str());
         if (!rc_filebrowser_cd(browser->connection, folderPath.c_str())) browser->appendLog(rc_last_error(browser->connection));
         g_free(folder);
@@ -431,17 +471,90 @@ gboolean TFileBrowserTree::onFileButtonRelease(GtkWidget*, GdkEventButton* event
     if (browser->nativeDragButton == event->button) browser->nativeDragButton = 0;
     return false;
 }
+#endif
 
 gboolean TFileBrowserTree::onFileMotion(GtkWidget* widget, GdkEventMotion* event, gpointer data) {
     TFileBrowserTree* browser = static_cast<TFileBrowserTree*>(data);
-    if (browser->nativeDragButton == 0) return false;
-    if (!gtk_drag_check_threshold(widget, browser->nativeDragX, browser->nativeDragY, static_cast<gint>(event->x), static_cast<gint>(event->y))) return true;
-    if (browser->inlineRenameId != 0) { g_source_remove(browser->inlineRenameId); browser->inlineRenameId = 0; browser->pendingInlineRenamePath.clear(); }
-    browser->startNativeDrag(widget);
-    browser->nativeDragButton = 0;
-    return true;
+#ifdef _WIN32
+    if (browser->nativeDragButton != 0) {
+        if (!gtk_drag_check_threshold(widget, browser->nativeDragX, browser->nativeDragY, static_cast<gint>(event->x), static_cast<gint>(event->y))) return true;
+        if (browser->inlineRenameId != 0) { g_source_remove(browser->inlineRenameId); browser->inlineRenameId = 0; browser->pendingInlineRenamePath.clear(); }
+        browser->hidePreview();
+        browser->startNativeDrag(widget);
+        browser->nativeDragButton = 0;
+        return true;
+    }
+#endif
+    GtkTreePath* path = nullptr;
+    if (!gtk_tree_view_get_path_at_pos(GTK_TREE_VIEW(widget), static_cast<gint>(event->x), static_cast<gint>(event->y), &path, nullptr, nullptr, nullptr)) { browser->hidePreview(); return false; }
+    GtkTreeIter row;
+    gchar* remotePath = nullptr;
+    if (gtk_tree_model_get_iter(GTK_TREE_MODEL(browser->files), &row, path)) gtk_tree_model_get(GTK_TREE_MODEL(browser->files), &row, FilePathColumn, &remotePath, -1);
+    gtk_tree_path_free(path);
+    browser->hoveredPreviewPath = remotePath == nullptr ? "" : remotePath;
+    g_free(remotePath);
+    browser->previewRootX = static_cast<int>(event->x_root);
+    browser->previewRootY = static_cast<int>(event->y_root);
+    browser->showPreview(browser->hoveredPreviewPath, browser->previewRootX, browser->previewRootY);
+    return false;
 }
 
+gboolean TFileBrowserTree::onFileLeave(GtkWidget*, GdkEventCrossing*, gpointer data) {
+    static_cast<TFileBrowserTree*>(data)->hidePreview();
+    return false;
+}
+
+void TFileBrowserTree::clearPreviewCache() {
+    hidePreview();
+    for (const auto& item : previewCache) g_object_unref(item.second);
+    previewCache.clear();
+    previewCacheOrder.clear();
+}
+
+void TFileBrowserTree::hidePreview() {
+    hoveredPreviewPath.clear();
+    if (previewWindow != nullptr) gtk_widget_hide(previewWindow);
+}
+
+void TFileBrowserTree::showPreview(const std::string& path, int rootX, int rootY) {
+    const auto iterator = previewCache.find(path);
+    if (iterator == previewCache.end()) { if (previewWindow != nullptr) gtk_widget_hide(previewWindow); return; }
+    gtk_image_set_from_pixbuf(GTK_IMAGE(previewImage), iterator->second);
+    gchar* basename = g_path_get_basename(path.c_str());
+    gtk_label_set_text(GTK_LABEL(previewLabel), basename == nullptr ? path.c_str() : basename);
+    g_free(basename);
+    gtk_widget_show_all(previewWindow);
+    int width = 0, height = 0;
+    gtk_window_get_size(GTK_WINDOW(previewWindow), &width, &height);
+    GdkScreen* screen = gtk_widget_get_screen(fileView);
+    const int x = std::max(0, std::min(rootX + 18, gdk_screen_get_width(screen) - width - 8));
+    const int y = std::max(0, std::min(rootY + 18, gdk_screen_get_height(screen) - height - 8));
+    gtk_window_move(GTK_WINDOW(previewWindow), x, y);
+}
+
+void TFileBrowserTree::cachePreview(const std::string& path, const void* content, int length) {
+    GdkPixbufLoader* loader = gdk_pixbuf_loader_new();
+    g_signal_connect(loader, "size-prepared", G_CALLBACK(+[](GdkPixbufLoader* value, int width, int height, gpointer) {
+        const double scale = std::min(1.0, std::min(360.0 / std::max(1, width), 260.0 / std::max(1, height)));
+        gdk_pixbuf_loader_set_size(value, std::max(1, static_cast<int>(width * scale)), std::max(1, static_cast<int>(height * scale)));
+    }), nullptr);
+    GError* error = nullptr;
+    const bool loaded = gdk_pixbuf_loader_write(loader, static_cast<const guchar*>(content), length, &error) && gdk_pixbuf_loader_close(loader, &error);
+    GdkPixbuf* pixbuf = loaded ? gdk_pixbuf_loader_get_pixbuf(loader) : nullptr;
+    if (pixbuf != nullptr) {
+        g_object_ref(pixbuf);
+        const auto existing = previewCache.find(path);
+        if (existing != previewCache.end()) g_object_unref(existing->second);
+        else previewCacheOrder.push_back(path);
+        previewCache[path] = pixbuf;
+        while (previewCacheOrder.size() > 50) { const std::string oldest = previewCacheOrder.front(); previewCacheOrder.erase(previewCacheOrder.begin()); g_object_unref(previewCache[oldest]); previewCache.erase(oldest); }
+        if (hoveredPreviewPath == path) showPreview(path, previewRootX, previewRootY);
+    }
+    if (error != nullptr) g_error_free(error);
+    g_object_unref(loader);
+}
+
+#ifdef _WIN32
 void TFileBrowserTree::startNativeDrag(GtkWidget* widget) {
     for (const std::string& path : pendingDragLocalPaths) g_remove(path.c_str());
     for (const std::string& path : completedDragDownloads) g_remove(path.c_str());
@@ -755,7 +868,10 @@ void TFileBrowserTree::showItemMenu(GtkWidget* view, GdkEventButton* event, bool
 
 void TFileBrowserTree::onDownload(GtkMenuItem*, gpointer data) {
     FileMenuItem* item = static_cast<FileMenuItem*>(data);
-    for (const std::string& path : item->paths) if (!rc_filebrowser_download(item->browser->connection, path.c_str())) item->browser->appendLog(rc_last_error(item->browser->connection));
+    for (const std::string& path : item->paths) {
+        ++item->browser->pendingUserDownloads[path];
+        if (!rc_filebrowser_download(item->browser->connection, path.c_str())) { if (--item->browser->pendingUserDownloads[path] == 0) item->browser->pendingUserDownloads.erase(path); item->browser->appendLog(rc_last_error(item->browser->connection)); }
+    }
 }
 
 void TFileBrowserTree::onEditAsText(GtkMenuItem*, gpointer data) {
@@ -856,6 +972,14 @@ void TFileBrowserTree::onFileReceived(const char* path, const void* content, int
     TFileBrowserTree* browser = static_cast<TFileBrowserTree*>(data);
     if (path == nullptr || content == nullptr || length < 0) return;
     const std::string receivedPath(path);
+    bool previewResponse = false;
+    for (auto iterator = browser->pendingPreviewDownloads.begin(); iterator != browser->pendingPreviewDownloads.end(); ++iterator) {
+        if (!pathMatches(iterator->first, receivedPath)) continue;
+        if (iterator->second == browser->previewFolder) browser->cachePreview(iterator->first, content, length);
+        browser->pendingPreviewDownloads.erase(iterator);
+        previewResponse = true;
+        break;
+    }
     for (auto iterator = browser->pendingDragDownloads.begin(); iterator != browser->pendingDragDownloads.end(); ++iterator) {
         if (!pathMatches(iterator->first, receivedPath)) continue;
         GError* error = nullptr;
@@ -912,6 +1036,14 @@ void TFileBrowserTree::onFileReceived(const char* path, const void* content, int
         browser->showTextEditor(path, content, length);
         return;
     }
+    bool userDownload = false;
+    for (auto iterator = browser->pendingUserDownloads.begin(); iterator != browser->pendingUserDownloads.end(); ++iterator) {
+        if (!pathMatches(iterator->first, receivedPath)) continue;
+        if (--iterator->second == 0) browser->pendingUserDownloads.erase(iterator);
+        userDownload = true;
+        break;
+    }
+    if (previewResponse && !userDownload) return;
     if (browser->downloadFolder.empty()) {
         browser->appendLog("Specify a download folder in RC Options first.");
         return;
@@ -1036,6 +1168,7 @@ void TFileBrowserTree::refreshFiles(const char* folder, int count) {
     gtk_tree_sortable_set_sort_column_id(GTK_TREE_SORTABLE(files), GTK_TREE_SORTABLE_UNSORTED_SORT_COLUMN_ID, GTK_SORT_ASCENDING);
     gtk_list_store_clear(files);
     currentFolder = responseFolder;
+    if (previewFolder != responseFolder) { clearPreviewCache(); previewFolder = responseFolder; }
     gtk_label_set_text(GTK_LABEL(folderPath), (std::string("Current Folder: ") + responseFolder).c_str());
     for (int index = 0; index < entryCount; ++index) {
         GtkTreeIter row;
@@ -1043,6 +1176,11 @@ void TFileBrowserTree::refreshFiles(const char* folder, int count) {
         const std::string modified = formatModified(entries[index].modified);
         const std::string size = entries[index].size == 0 ? "" : std::to_string(entries[index].size);
         gtk_list_store_set(files, &row, FileIconColumn, fileIcon(entries[index], textFileIcon, nwFileIcon, scriptFileIcon, gmapFileIcon), FilePathColumn, entries[index].path == nullptr ? "" : entries[index].path, FileRightsColumn, entries[index].rights == nullptr ? "" : entries[index].rights, FileSizeColumn, size.c_str(), FileModifiedColumn, modified.c_str(), FileSizeSortColumn, entries[index].size, FileModifiedSortColumn, entries[index].modified, -1);
+        const std::string path = entries[index].path == nullptr ? "" : entries[index].path;
+        if (isPreviewImage(path) && previewCache.size() + pendingPreviewDownloads.size() < 50 && previewCache.find(path) == previewCache.end() && pendingPreviewDownloads.find(path) == pendingPreviewDownloads.end()) {
+            pendingPreviewDownloads[path] = responseFolder;
+            if (!rc_filebrowser_download(connection, path.c_str())) pendingPreviewDownloads.erase(path);
+        }
     }
     gtk_tree_sortable_set_sort_column_id(GTK_TREE_SORTABLE(files), FilePathColumn, GTK_SORT_ASCENDING);
     rc_free_filebrowser_files(entries, entryCount);

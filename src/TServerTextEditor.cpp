@@ -1,8 +1,8 @@
 #include "TServerTextEditor.h"
-#include "Theme.h"
-#include "Backup.h"
-#include "EditorFind.h"
-#include "GScriptEditor.h"
+#include "TTheme.h"
+#include "TBackup.h"
+#include "TEditorFind.h"
+#include "TGScriptEditor.h"
 
 #include <grclib.h>
 #include <gtksourceview/gtksource.h>
@@ -40,12 +40,14 @@ TServerTextEditor::TServerTextEditor(Kind nextKind, const char* title) : kind(ne
     gtk_box_pack_start(GTK_BOX(bottom), spacer, true, true, 0);
     GtkWidget* saveButton = gtk_button_new_with_label("Apply");
     GtkWidget* goToLineButton = gtk_button_new_with_label("Go to line");
+    GtkWidget* formatButton = createEditorFormatButton(text);
     GtkWidget* findButton = gtk_button_new_with_label("Find");
     gtk_widget_set_tooltip_text(goToLineButton, "Go to line (Ctrl+G)");
-    gtk_widget_set_tooltip_text(findButton, "Find (Ctrl+F)");
+    gtk_widget_set_tooltip_text(findButton, "Find (Ctrl+F) / Replace (Ctrl+H)");
     GtkWidget* closeButton = gtk_button_new_with_label("Close");
     GtkWidget* actions = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 5);
     gtk_box_pack_start(GTK_BOX(actions), goToLineButton, false, false, 0);
+    gtk_box_pack_start(GTK_BOX(actions), formatButton, false, false, 0);
     gtk_box_pack_start(GTK_BOX(actions), findButton, false, false, 0);
     gtk_box_pack_start(GTK_BOX(actions), saveButton, false, false, 0);
     gtk_box_pack_start(GTK_BOX(actions), closeButton, false, false, 0);

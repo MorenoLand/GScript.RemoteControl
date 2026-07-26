@@ -1,4 +1,4 @@
-#include "RCOptions.h"
+#include "TRCOptions.h"
 
 #include <algorithm>
 #include <cctype>
@@ -61,6 +61,7 @@ namespace RC {
             else if (key == "nohtmlimages") options.nohtmlimages = isTrue(value);
             else if (key == "attachaway") options.attachaway = isTrue(value);
             else if (key == "logrcchat") options.logrcchat = isTrue(value);
+            else if (key == "separatefindresults") options.separatefindresults = isTrue(value);
             else if (key == "separatenc") options.separatenc = isTrue(value);
             else if (key == "rctimestamps") options.rctimestamps = isTrue(value);
             else if (key == "chatlogfile") options.chatlogfile = value;
@@ -70,6 +71,7 @@ namespace RC {
             else if (key == "buddytracking") options.buddytracking = isTrue(value);
             else if (key == "showbuddies") options.showbuddies = isTrue(value);
             else if (key == "newpmalerts") options.newpmalerts = isTrue(value);
+            else if (key == "notificationsounds") options.notificationsounds = isTrue(value);
             else if (key == "syntaxhighlighting") options.syntaxhighlighting = isTrue(value);
             else if (key == "autoindenting") options.autoindenting = isTrue(value);
             else if (key == "smarthomeend") options.smarthomeend = isTrue(value);
@@ -77,10 +79,17 @@ namespace RC {
             else if (key == "showlinenumbers") options.showlinenumbers = isTrue(value);
             else if (key == "minimap") options.minimap = isTrue(value);
             else if (key == "lsp") options.lsp = isTrue(value);
+            else if (key == "scriptdiagnostics") options.scriptdiagnostics = isTrue(value);
             else if (key == "autocompletesource") options.autocompletesource = value;
             else if (key == "scripttabwidth") options.scripttabwidth = std::stoi(value);
             else if (key == "scriptusetabs") options.scriptusetabs = isTrue(value);
             else if (key == "scriptfontsize") options.scriptfontsize = std::stoi(value);
+            else if (key == "formatindentwidth") options.formatindentwidth = std::stoi(value);
+            else if (key == "formatusetabs") options.formatusetabs = isTrue(value);
+            else if (key == "formattrimtrailing") options.formattrimtrailing = isTrue(value);
+            else if (key == "removelinecomments") options.removelinecomments = isTrue(value);
+            else if (key == "removeblockcomments") options.removeblockcomments = isTrue(value);
+            else if (key == "preserveclientside") options.preserveclientside = isTrue(value);
             else if (key == "webbrowsers") options.webbrowsers = splitCommaText(value);
             else if (key == "background") options.background = value;
             else if (key == "timestampformat") options.timestampformat = value.empty() ? "[%I:%M %p]" : value;
@@ -96,6 +105,17 @@ namespace RC {
             else if (key == "labelservers") options.labelservers = value;
             else if (key == "labelplayers") options.labelplayers = value;
             else if (key == "labelnpcserver") options.labelnpcserver = value;
+            else if (key == "mcpenabled") options.mcpenabled = isTrue(value);
+            else if (key == "mcpread") options.mcpread = isTrue(value);
+            else if (key == "mcpwrite") options.mcpwrite = isTrue(value);
+            else if (key == "mcpadmin") options.mcpadmin = isTrue(value);
+            else if (key == "mcpapprove") options.mcpapprove = isTrue(value);
+            else if (key == "mcpaudit") options.mcpaudit = isTrue(value);
+            else if (key == "mcpapproveweapon") options.mcpapproveweapon = isTrue(value);
+            else if (key == "mcpapproveclass") options.mcpapproveclass = isTrue(value);
+            else if (key == "mcpapprovenpc") options.mcpapprovenpc = isTrue(value);
+            else if (key == "mcpfileroots") options.mcpfileroots = value;
+            else if (key == "mcpserverscope") options.mcpserverscope = value;
             else for (std::size_t index = 0; index < buttonImageNames.size(); ++index) {
                 if (key == "icon" + buttonImageNames[index]) options.buttonimagefiles[index] = value;
                 else if (key == "icon" + buttonImageNames[index] + "pressed") options.buttonimagefilespressed[index] = value;
@@ -113,6 +133,7 @@ namespace RC {
         writeBool(stream, "nohtmlimages", options.nohtmlimages);
         writeBool(stream, "attachaway", options.attachaway);
         writeBool(stream, "logrcchat", options.logrcchat);
+        writeBool(stream, "separatefindresults", options.separatefindresults);
         writeString(stream, "chatlogfile", options.chatlogfile);
         writeString(stream, "downloadfolder", options.downloadfolder);
         writeBool(stream, "dontsavepassword", options.dontsavepassword);
@@ -133,13 +154,21 @@ namespace RC {
         writeBool(stream, "showlinenumbers", options.showlinenumbers);
         writeBool(stream, "minimap", options.minimap);
         writeBool(stream, "lsp", options.lsp);
+        writeBool(stream, "scriptdiagnostics", options.scriptdiagnostics);
         writeString(stream, "autocompletesource", options.autocompletesource);
         writeBool(stream, "separatenc", options.separatenc);
         writeBool(stream, "rctimestamps", options.rctimestamps);
         writeBool(stream, "newpmalerts", options.newpmalerts);
+        writeBool(stream, "notificationsounds", options.notificationsounds);
         stream << "scripttabwidth=" << options.scripttabwidth << '\n';
         writeBool(stream, "scriptusetabs", options.scriptusetabs);
         stream << "scriptfontsize=" << options.scriptfontsize << '\n';
+        stream << "formatindentwidth=" << options.formatindentwidth << '\n';
+        writeBool(stream, "formatusetabs", options.formatusetabs);
+        writeBool(stream, "formattrimtrailing", options.formattrimtrailing);
+        writeBool(stream, "removelinecomments", options.removelinecomments);
+        writeBool(stream, "removeblockcomments", options.removeblockcomments);
+        writeBool(stream, "preserveclientside", options.preserveclientside);
         writeString(stream, "webbrowsers", joinCommaText(options.webbrowsers));
         writeString(stream, "background", options.background);
         writeString(stream, "timestampformat", options.timestampformat);
@@ -159,6 +188,17 @@ namespace RC {
         writeString(stream, "labelservers", options.labelservers);
         writeString(stream, "labelplayers", options.labelplayers);
         writeString(stream, "labelnpcserver", options.labelnpcserver);
+        writeBool(stream, "mcpenabled", options.mcpenabled);
+        writeBool(stream, "mcpread", options.mcpread);
+        writeBool(stream, "mcpwrite", options.mcpwrite);
+        writeBool(stream, "mcpadmin", options.mcpadmin);
+        writeBool(stream, "mcpapprove", options.mcpapprove);
+        writeBool(stream, "mcpaudit", options.mcpaudit);
+        writeBool(stream, "mcpapproveweapon", options.mcpapproveweapon);
+        writeBool(stream, "mcpapproveclass", options.mcpapproveclass);
+        writeBool(stream, "mcpapprovenpc", options.mcpapprovenpc);
+        writeString(stream, "mcpfileroots", options.mcpfileroots);
+        writeString(stream, "mcpserverscope", options.mcpserverscope);
     }
 
 }

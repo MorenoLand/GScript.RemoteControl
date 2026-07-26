@@ -1,7 +1,7 @@
 #include "TServerList.h"
-#include "Debug.h"
-#include "ErrorWindow.h"
-#include "TreeSearch.h"
+#include "TDebug.h"
+#include "TErrorWindow.h"
+#include "TTreeSearch.h"
 
 #include <grclib.h>
 

@@ -1,4 +1,4 @@
-#include "RCOptions.h"
+#include "TRCOptions.h"
 
 #include <cassert>
 #include <filesystem>
@@ -12,6 +12,7 @@ int main() {
     assert(options.graphicalmenu);
     assert(options.chatfontsize == 9);
     assert(options.syntaxhighlighting);
+    assert(options.scriptdiagnostics);
     assert(options.scripttabwidth == 2);
     assert(options.scriptfontsize == 10);
     assert(options.background == "rc_graalonline2.jpg");
@@ -21,5 +22,12 @@ int main() {
     assert(options.coloredit == "#00ff00");
     assert(options.labelservers == "Server:");
     assert(options.labelplayers == "Players:");
+    const std::filesystem::path saved = std::filesystem::current_path() / "mcp-options-test";
+    options.mcpapproveweapon = true; options.mcpapproveclass = true; options.mcpapprovenpc = true;
+    RC::saveRCOptions(options, saved);
+    RC::RCOptions restored;
+    RC::loadRCOptions(restored, saved);
+    assert(restored.mcpapproveweapon && restored.mcpapproveclass && restored.mcpapprovenpc);
+    std::filesystem::remove_all(saved);
     return 0;
 }

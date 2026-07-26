@@ -1,6 +1,6 @@
 #pragma once
 
-#include "RCOptions.h"
+#include "TRCOptions.h"
 
 #include <gtk/gtk.h>
 #include <filesystem>
@@ -16,6 +16,8 @@ private:
     static void onThemeChanged(GtkComboBox*, gpointer data);
     static void onSyntaxThemeChanged(GtkComboBox*, gpointer data);
     static void onSyncSyntaxThemeChanged(GtkToggleButton*, gpointer data);
+    static void onLiveEditorOptionChanged(GtkWidget*, gpointer data);
+    static gboolean onLiveEditorOptionFocusOut(GtkWidget*, GdkEventFocus*, gpointer data);
     static void onBrowseDownload(GtkButton*, gpointer data);
     static void onBrowseLog(GtkButton*, gpointer data);
     static void onBrowseAutocompleteSource(GtkButton*, gpointer data);
@@ -38,7 +40,9 @@ private:
     GtkWidget* separateNC = nullptr;
     GtkWidget* timestamps = nullptr;
     GtkWidget* pmAlerts = nullptr;
+    GtkWidget* notificationSounds = nullptr;
     GtkWidget* logChat = nullptr;
+    GtkWidget* separateFindResults = nullptr;
     GtkWidget* syntax = nullptr;
     GtkWidget* autoIndent = nullptr;
     GtkWidget* smartHomeEnd = nullptr;
@@ -46,10 +50,17 @@ private:
     GtkWidget* lineNumbers = nullptr;
     GtkWidget* minimap = nullptr;
     GtkWidget* lsp = nullptr;
+    GtkWidget* scriptDiagnostics = nullptr;
     GtkWidget* autocompleteSource = nullptr;
     GtkWidget* scriptTabWidth = nullptr;
     GtkWidget* scriptUseTabs = nullptr;
     GtkWidget* scriptFontSize = nullptr;
+    GtkWidget* formatIndentWidth = nullptr;
+    GtkWidget* formatUseTabs = nullptr;
+    GtkWidget* formatTrimTrailing = nullptr;
+    GtkWidget* removeLineComments = nullptr;
+    GtkWidget* removeBlockComments = nullptr;
+    GtkWidget* preserveClientside = nullptr;
     GtkWidget* theme = nullptr;
     GtkWidget* syntaxTheme = nullptr;
     GtkWidget* syncSyntaxTheme = nullptr;
@@ -65,7 +76,19 @@ private:
     GtkWidget* playersLabel = nullptr;
     GtkWidget* npcServerLabel = nullptr;
     GtkWidget* backgroundImage = nullptr;
+    GtkWidget* mcpEnabled = nullptr;
+    GtkWidget* mcpRead = nullptr;
+    GtkWidget* mcpWrite = nullptr;
+    GtkWidget* mcpAdmin = nullptr;
+    GtkWidget* mcpApprove = nullptr;
+    GtkWidget* mcpAudit = nullptr;
+    GtkWidget* mcpApproveWeapon = nullptr;
+    GtkWidget* mcpApproveClass = nullptr;
+    GtkWidget* mcpApproveNpc = nullptr;
+    GtkWidget* mcpFileRoots = nullptr;
+    GtkWidget* mcpServerScope = nullptr;
     RC::RCOptions& options;
     std::filesystem::path applicationDirectory;
     std::function<void(const RC::RCOptions&)> onSaved;
+    bool saving = false;
 };

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <gtk/gtk.h>
-#include "RCOptions.h"
+#include "TRCOptions.h"
 #include <array>
 #include <filesystem>
 #include <functional>
@@ -32,7 +32,10 @@ public:
     void toggleVisibility();
     bool openLatestPrivateMessage();
     bool isNCAuthenticated() const;
+    const std::string& currentServerName() const;
+    bool isConnected() const;
     void refreshTheme();
+    void reloadBackground();
     void updateThemeOptions(const RC::RCOptions& nextOptions);
 
 private:
@@ -61,6 +64,7 @@ private:
     static void onLocalNPCData(const char* level, const char* content, void* data);
     static gboolean onEditKey(GtkWidget*, GdkEventKey*, gpointer data);
     static gboolean onWindowKey(GtkWidget*, GdkEventKey*, gpointer data);
+    static gboolean onFindResultClick(GtkWidget*, GdkEventButton*, gpointer data);
     static gboolean onDelete(GtkWidget*, GdkEvent*, gpointer data);
     static gboolean onConfigure(GtkWidget*, GdkEventConfigure*, gpointer data);
     static gboolean onWindowState(GtkWidget*, GdkEventWindowState*, gpointer data);
@@ -84,10 +88,14 @@ private:
     void updateMassPMAcceptance();
     void setNCChannelVisible(bool visible);
     void appendChannelMessage(const std::string& channel, const std::string& message);
+    void beginFindResults(const std::string& base);
+    bool appendFindResult(const std::string& message);
     void removeChannel(const std::string& channel);
     void configureChatField(GtkWidget* field);
     struct ChatTags { GtkTextTag* alert = nullptr; GtkTextTag* bold = nullptr; GtkTextTag* invisible = nullptr; };
     ChatTags& chatTagsFor(GtkTextBuffer* buffer);
+    void applyChatUrls(GtkTextBuffer* buffer, gint startOffset, gint endOffset);
+    static gboolean onChatLinkClick(GtkWidget* widget, GdkEventButton* event, gpointer data);
     void applyEmotes(GtkTextBuffer* buffer, gint startOffset, const std::string& message);
     bool applyAlertTag(std::string& message, bool allowUrgency);
     void send();
@@ -111,8 +119,10 @@ private:
     GtkWidget* editField = nullptr;
     GtkWidget* serverLabel = nullptr;
     GtkWidget* playersLabel = nullptr;
+    GtkWidget* npcServerLabel = nullptr;
     std::array<GtkWidget*, 8> serverLabelShadows{};
     std::array<GtkWidget*, 8> playersLabelShadows{};
+    std::array<GtkWidget*, 8> npcServerLabelShadows{};
     std::array<GtkWidget*, 12> graphicalButtons{};
     GdkPixbuf* kappaEmote = nullptr;
     GdkPixbuf* pmNormalEmote = nullptr;
@@ -156,5 +166,7 @@ private:
     RC::RCOptions options;
     std::filesystem::path applicationDirectory;
     std::unordered_map<std::string, GtkWidget*> channelFields;
+    std::string findResultBase;
+    GtkWidget* findResultsField = nullptr;
     std::unordered_map<GtkTextBuffer*, ChatTags> chatTags;
 };

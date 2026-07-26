@@ -15,6 +15,7 @@ namespace RC {
         bool nohtmlimages = false;
         bool attachaway = true;
         bool logrcchat = false;
+        bool separatefindresults = true;
         std::string chatlogfile = ".\\logs\\log.txt";
         std::string downloadfolder = ".\\Downloads\\";
         bool dontsavepassword = false;
@@ -35,13 +36,21 @@ namespace RC {
         bool showlinenumbers = true;
         bool minimap = false;
         bool lsp = true;
+        bool scriptdiagnostics = true;
         std::string autocompletesource = "https://api.gscript.dev/";
         bool separatenc = false;
         bool rctimestamps = true;
         bool newpmalerts = true;
+        bool notificationsounds = true;
         int scripttabwidth = 2;
         bool scriptusetabs = false;
         int scriptfontsize = 10;
+        int formatindentwidth = 2;
+        bool formatusetabs = false;
+        bool formattrimtrailing = true;
+        bool removelinecomments = true;
+        bool removeblockcomments = true;
+        bool preserveclientside = true;
         std::vector<std::string> webbrowsers = {"firefox", "mozilla", "konqueror", "netscape"};
         std::string background = "rc_graalonline2.jpg";
         std::string timestampformat = "[%I:%M %p]";
@@ -59,6 +68,17 @@ namespace RC {
         std::string labelservers = "Server:";
         std::string labelplayers = "Players:";
         std::string labelnpcserver;
+        bool mcpenabled = false;
+        bool mcpread = true;
+        bool mcpwrite = false;
+        bool mcpadmin = false;
+        bool mcpapprove = true;
+        bool mcpaudit = true;
+        bool mcpapproveweapon = false;
+        bool mcpapproveclass = false;
+        bool mcpapprovenpc = false;
+        std::string mcpfileroots = ".";
+        std::string mcpserverscope;
     };
 
     void loadRCOptions(RCOptions& options, const std::filesystem::path& applicationDirectory);

@@ -1,5 +1,7 @@
-#include "GScriptEditor.h"
-#include "Theme.h"
+#include "TGScriptEditor.h"
+#include "TEditorFormat.h"
+#include "TGS2Diagnostics.h"
+#include "TTheme.h"
 
 #include <gtksourceview/gtksource.h>
 #include <openssl/err.h>
@@ -7,6 +9,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <memory>
@@ -14,6 +17,8 @@
 #include <string>
 #include <thread>
 #include <vector>
+
+void ensureGScriptEditorMinimap(GtkWidget* editor);
 
 namespace {
 
@@ -28,6 +33,7 @@ namespace {
     bool smartHomeEnd = true;
     bool showBrackets = true;
     bool lspEnabled = true;
+    bool scriptDiagnosticsEnabled = true;
     std::string completionSource = "https://api.gscript.dev/";
     std::filesystem::path completionCacheFile;
     unsigned int completionRequest = 0;
@@ -38,7 +44,13 @@ namespace {
     typedef struct _RemoteCompletionProviderClass { GObjectClass parentClass; } RemoteCompletionProviderClass;
     struct EditorCompletionState { GtkWidget* editor; RemoteCompletionProvider* provider; GtkWidget* signaturePopover; GtkWidget* signatureLabel; };
     std::vector<EditorCompletionState> editorCompletionStates;
+    struct EditorSelection { GtkTextMark* anchor; GtkTextMark* caret; };
+    struct EditorMultiSelectionState { GtkWidget* editor; GtkTextTag* tag; std::vector<EditorSelection> selections; bool applying; };
+    std::vector<std::unique_ptr<EditorMultiSelectionState>> multiSelectionStates;
+    struct EditorDiagnosticsState { GtkWidget* editor; GtkTextTag* errorTag; GtkTextTag* warningTag; GtkTextTag* infoTag; guint timeout; std::string source; std::vector<GS2Diagnostic> diagnostics; };
+    std::vector<std::unique_ptr<EditorDiagnosticsState>> diagnosticsStates;
     struct CompletionPayload { unsigned int request; std::vector<ApiDefinition> definitions; };
+    static gboolean refreshEditorScrollbars(gpointer data);
 
     GType remoteCompletionProvider_get_type();
     #define REMOTE_TYPE_COMPLETION_PROVIDER (remoteCompletionProvider_get_type())
@@ -49,6 +61,297 @@ namespace {
         gtk_widget_override_font(editor, font);
         pango_font_description_free(font);
         g_object_set_data(G_OBJECT(editor), "script-font-size", GINT_TO_POINTER(size));
+    }
+
+    EditorDiagnosticsState* diagnosticsState(GtkWidget* editor) {
+        const auto state = std::find_if(diagnosticsStates.begin(), diagnosticsStates.end(), [editor](const auto& value) { return value->editor == editor; });
+        return state == diagnosticsStates.end() ? nullptr : state->get();
+    }
+
+    void clearEditorDiagnostics(EditorDiagnosticsState* state) {
+        if (state->timeout != 0) { g_source_remove(state->timeout); state->timeout = 0; }
+        GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(state->editor));
+        GtkTextIter start;
+        GtkTextIter end;
+        gtk_text_buffer_get_bounds(buffer, &start, &end);
+        gtk_text_buffer_remove_tag(buffer, state->errorTag, &start, &end);
+        gtk_text_buffer_remove_tag(buffer, state->warningTag, &start, &end);
+        gtk_text_buffer_remove_tag(buffer, state->infoTag, &start, &end);
+        state->source.clear();
+        state->diagnostics.clear();
+    }
+
+    void runEditorDiagnostics(EditorDiagnosticsState* state) {
+        clearEditorDiagnostics(state);
+        if (!scriptDiagnosticsEnabled) return;
+        GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(state->editor));
+        GtkTextIter bufferStart;
+        GtkTextIter bufferEnd;
+        gtk_text_buffer_get_bounds(buffer, &bufferStart, &bufferEnd);
+        gchar* text = gtk_text_buffer_get_text(buffer, &bufferStart, &bufferEnd, false);
+        state->source = text;
+        g_free(text);
+        std::vector<GS2ApiFunction> enabledApiFunctions;
+        if (lspEnabled) for (const ApiDefinition& definition : apiDefinitions) enabledApiFunctions.push_back(gs2ApiFunction(definition.name, definition.params));
+        state->diagnostics = analyzeGS2(state->source, enabledApiFunctions, !lspEnabled || !apiDefinitions.empty());
+        for (const GS2Diagnostic& diagnostic : state->diagnostics) {
+            const std::size_t startByte = std::min(diagnostic.start, state->source.size());
+            const std::size_t endByte = std::min(diagnostic.end, state->source.size());
+            const gint startOffset = static_cast<gint>(g_utf8_pointer_to_offset(state->source.c_str(), state->source.c_str() + startByte));
+            const gint endOffset = static_cast<gint>(g_utf8_pointer_to_offset(state->source.c_str(), state->source.c_str() + endByte));
+            GtkTextIter start;
+            GtkTextIter end;
+            gtk_text_buffer_get_iter_at_offset(buffer, &start, startOffset);
+            gtk_text_buffer_get_iter_at_offset(buffer, &end, std::max(startOffset + 1, endOffset));
+            GtkTextTag* tag = diagnostic.severity == GS2DiagnosticSeverity::Error ? state->errorTag : diagnostic.severity == GS2DiagnosticSeverity::Warning ? state->warningTag : state->infoTag;
+            gtk_text_buffer_apply_tag(buffer, tag, &start, &end);
+        }
+    }
+
+    gboolean runScheduledEditorDiagnostics(gpointer data) {
+        EditorDiagnosticsState* state = static_cast<EditorDiagnosticsState*>(data);
+        state->timeout = 0;
+        runEditorDiagnostics(state);
+        return G_SOURCE_REMOVE;
+    }
+
+    void scheduleEditorDiagnostics(EditorDiagnosticsState* state) {
+        if (state->timeout != 0) g_source_remove(state->timeout);
+        state->timeout = g_timeout_add(180, runScheduledEditorDiagnostics, state);
+    }
+
+    bool showDiagnosticTooltip(GtkWidget* editor, const GtkTextIter& iter, GtkTooltip* tooltip) {
+        EditorDiagnosticsState* state = diagnosticsState(editor);
+        if (state == nullptr || state->diagnostics.empty()) return false;
+        const gint offset = gtk_text_iter_get_offset(&iter);
+        std::string messages;
+        for (const GS2Diagnostic& diagnostic : state->diagnostics) {
+            const gint start = static_cast<gint>(g_utf8_pointer_to_offset(state->source.c_str(), state->source.c_str() + std::min(diagnostic.start, state->source.size())));
+            const gint end = static_cast<gint>(g_utf8_pointer_to_offset(state->source.c_str(), state->source.c_str() + std::min(diagnostic.end, state->source.size())));
+            if (offset < start || offset > std::max(start, end)) continue;
+            if (!messages.empty()) messages += '\n';
+            messages += diagnostic.severity == GS2DiagnosticSeverity::Error ? "Script analysis — Error: " : diagnostic.severity == GS2DiagnosticSeverity::Warning ? "Script analysis — Warning: " : "Script analysis — Info: ";
+            messages += diagnostic.message;
+        }
+        if (messages.empty()) return false;
+        gtk_tooltip_set_text(tooltip, messages.c_str());
+        return true;
+    }
+
+    EditorMultiSelectionState* multiSelectionState(GtkWidget* editor) {
+        const auto state = std::find_if(multiSelectionStates.begin(), multiSelectionStates.end(), [editor](const auto& value) { return value->editor == editor; });
+        return state == multiSelectionStates.end() ? nullptr : state->get();
+    }
+
+    void refreshMultiSelections(EditorMultiSelectionState* state) {
+        GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(state->editor));
+        GtkTextIter begin;
+        GtkTextIter end;
+        gtk_text_buffer_get_bounds(buffer, &begin, &end);
+        gtk_text_buffer_remove_tag(buffer, state->tag, &begin, &end);
+        for (const EditorSelection& selection : state->selections) {
+            GtkTextIter anchor;
+            GtkTextIter caret;
+            gtk_text_buffer_get_iter_at_mark(buffer, &anchor, selection.anchor);
+            gtk_text_buffer_get_iter_at_mark(buffer, &caret, selection.caret);
+            if (gtk_text_iter_compare(&anchor, &caret) > 0) std::swap(anchor, caret);
+            if (!gtk_text_iter_equal(&anchor, &caret)) gtk_text_buffer_apply_tag(buffer, state->tag, &anchor, &caret);
+        }
+        gtk_widget_queue_draw(state->editor);
+    }
+
+    void clearMultiSelections(EditorMultiSelectionState* state) {
+        GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(state->editor));
+        for (const EditorSelection& selection : state->selections) {
+            gtk_text_buffer_delete_mark(buffer, selection.anchor);
+            gtk_text_buffer_delete_mark(buffer, selection.caret);
+        }
+        state->selections.clear();
+        refreshMultiSelections(state);
+    }
+
+    void addMultiSelection(EditorMultiSelectionState* state, const GtkTextIter& anchor, const GtkTextIter& caret) {
+        GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(state->editor));
+        GtkTextIter primaryAnchor;
+        GtkTextIter primaryCaret;
+        gtk_text_buffer_get_iter_at_mark(buffer, &primaryAnchor, gtk_text_buffer_get_selection_bound(buffer));
+        gtk_text_buffer_get_iter_at_mark(buffer, &primaryCaret, gtk_text_buffer_get_insert(buffer));
+        if (gtk_text_iter_equal(&primaryAnchor, &anchor) && gtk_text_iter_equal(&primaryCaret, &caret)) return;
+        for (const EditorSelection& selection : state->selections) {
+            GtkTextIter existingAnchor;
+            GtkTextIter existingCaret;
+            gtk_text_buffer_get_iter_at_mark(buffer, &existingAnchor, selection.anchor);
+            gtk_text_buffer_get_iter_at_mark(buffer, &existingCaret, selection.caret);
+            if (gtk_text_iter_equal(&existingAnchor, &anchor) && gtk_text_iter_equal(&existingCaret, &caret)) return;
+        }
+        state->selections.push_back({gtk_text_buffer_create_mark(buffer, nullptr, &anchor, true), gtk_text_buffer_create_mark(buffer, nullptr, &caret, false)});
+        refreshMultiSelections(state);
+    }
+
+    gboolean drawMultiSelections(GtkWidget* editor, cairo_t* cairo, gpointer data) {
+        EditorMultiSelectionState* state = static_cast<EditorMultiSelectionState*>(data);
+        if (state->selections.empty()) return FALSE;
+        GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(editor));
+        GdkRGBA color{};
+        gtk_style_context_get_color(gtk_widget_get_style_context(editor), GTK_STATE_FLAG_SELECTED, &color);
+        gdk_cairo_set_source_rgba(cairo, &color);
+        cairo_set_line_width(cairo, 1.5);
+        for (const EditorSelection& selection : state->selections) {
+            GtkTextIter anchor;
+            GtkTextIter caret;
+            gtk_text_buffer_get_iter_at_mark(buffer, &anchor, selection.anchor);
+            gtk_text_buffer_get_iter_at_mark(buffer, &caret, selection.caret);
+            if (!gtk_text_iter_equal(&anchor, &caret)) continue;
+            GdkRectangle location{};
+            gtk_text_view_get_iter_location(GTK_TEXT_VIEW(editor), &caret, &location);
+            gint x = 0;
+            gint y = 0;
+            gtk_text_view_buffer_to_window_coords(GTK_TEXT_VIEW(editor), GTK_TEXT_WINDOW_WIDGET, location.x, location.y, &x, &y);
+            cairo_move_to(cairo, x + 0.5, y);
+            cairo_line_to(cairo, x + 0.5, y + location.height);
+        }
+        cairo_stroke(cairo);
+        return FALSE;
+    }
+
+    bool replaceMultiSelections(EditorMultiSelectionState* state, const std::string& text, int eraseDirection) {
+        if (state->selections.empty()) return false;
+        GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(state->editor));
+        struct Operation { GtkTextMark* anchor; GtkTextMark* caret; gint offset; };
+        std::vector<Operation> operations;
+        GtkTextIter primaryAnchor;
+        GtkTextIter primaryCaret;
+        gtk_text_buffer_get_iter_at_mark(buffer, &primaryAnchor, gtk_text_buffer_get_selection_bound(buffer));
+        gtk_text_buffer_get_iter_at_mark(buffer, &primaryCaret, gtk_text_buffer_get_insert(buffer));
+        GtkTextMark* primaryAnchorMark = gtk_text_buffer_create_mark(buffer, nullptr, &primaryAnchor, true);
+        GtkTextMark* primaryCaretMark = gtk_text_buffer_create_mark(buffer, nullptr, &primaryCaret, false);
+        operations.push_back({primaryAnchorMark, primaryCaretMark, std::max(gtk_text_iter_get_offset(&primaryAnchor), gtk_text_iter_get_offset(&primaryCaret))});
+        for (const EditorSelection& selection : state->selections) {
+            GtkTextIter anchor;
+            GtkTextIter caret;
+            gtk_text_buffer_get_iter_at_mark(buffer, &anchor, selection.anchor);
+            gtk_text_buffer_get_iter_at_mark(buffer, &caret, selection.caret);
+            operations.push_back({selection.anchor, selection.caret, std::max(gtk_text_iter_get_offset(&anchor), gtk_text_iter_get_offset(&caret))});
+        }
+        std::sort(operations.begin(), operations.end(), [](const Operation& left, const Operation& right) { return left.offset > right.offset; });
+        state->applying = true;
+        gtk_text_buffer_begin_user_action(buffer);
+        for (const Operation& operation : operations) {
+            GtkTextIter anchor;
+            GtkTextIter caret;
+            gtk_text_buffer_get_iter_at_mark(buffer, &anchor, operation.anchor);
+            gtk_text_buffer_get_iter_at_mark(buffer, &caret, operation.caret);
+            GtkTextIter start = anchor;
+            GtkTextIter end = caret;
+            if (gtk_text_iter_compare(&start, &end) > 0) std::swap(start, end);
+            if (gtk_text_iter_equal(&start, &end)) {
+                if (eraseDirection < 0) gtk_text_iter_backward_cursor_position(&start);
+                else if (eraseDirection > 0) gtk_text_iter_forward_cursor_position(&end);
+            }
+            if (!gtk_text_iter_equal(&start, &end)) gtk_text_buffer_delete(buffer, &start, &end);
+            if (!text.empty()) gtk_text_buffer_insert(buffer, &start, text.c_str(), static_cast<gint>(text.size()));
+            gtk_text_buffer_move_mark(buffer, operation.anchor, &start);
+            gtk_text_buffer_move_mark(buffer, operation.caret, &start);
+        }
+        gtk_text_buffer_end_user_action(buffer);
+        gtk_text_buffer_get_iter_at_mark(buffer, &primaryCaret, primaryCaretMark);
+        gtk_text_buffer_select_range(buffer, &primaryCaret, &primaryCaret);
+        gtk_text_buffer_delete_mark(buffer, primaryAnchorMark);
+        gtk_text_buffer_delete_mark(buffer, primaryCaretMark);
+        state->applying = false;
+        refreshMultiSelections(state);
+        return true;
+    }
+
+    bool addAdjacentCaret(EditorMultiSelectionState* state, int direction, bool extend) {
+        GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(state->editor));
+        GtkTextIter source;
+        gtk_text_buffer_get_iter_at_mark(buffer, &source, gtk_text_buffer_get_insert(buffer));
+        for (const EditorSelection& selection : state->selections) {
+            GtkTextIter candidate;
+            gtk_text_buffer_get_iter_at_mark(buffer, &candidate, selection.caret);
+            if ((direction > 0 && gtk_text_iter_get_line(&candidate) > gtk_text_iter_get_line(&source)) || (direction < 0 && gtk_text_iter_get_line(&candidate) < gtk_text_iter_get_line(&source))) source = candidate;
+        }
+        const gint column = gtk_text_iter_get_line_offset(&source);
+        if (direction > 0 ? !gtk_text_iter_forward_line(&source) : !gtk_text_iter_backward_line(&source)) return true;
+        gtk_text_iter_set_line_offset(&source, std::min(column, gtk_text_iter_get_chars_in_line(&source)));
+        GtkTextIter anchor = source;
+        if (extend) {
+            gtk_text_buffer_get_iter_at_mark(buffer, &anchor, gtk_text_buffer_get_selection_bound(buffer));
+            if (!state->selections.empty()) gtk_text_buffer_get_iter_at_mark(buffer, &anchor, state->selections.back().anchor);
+        }
+        addMultiSelection(state, anchor, source);
+        return true;
+    }
+
+    bool selectNextOccurrence(EditorMultiSelectionState* state) {
+        GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(state->editor));
+        GtkTextIter start;
+        GtkTextIter end;
+        if (!gtk_text_buffer_get_selection_bounds(buffer, &start, &end)) {
+            gtk_text_buffer_get_iter_at_mark(buffer, &start, gtk_text_buffer_get_insert(buffer));
+            end = start;
+            if (!gtk_text_iter_starts_word(&start)) gtk_text_iter_backward_word_start(&start);
+            if (!gtk_text_iter_ends_word(&end)) gtk_text_iter_forward_word_end(&end);
+            if (gtk_text_iter_equal(&start, &end)) return true;
+            gtk_text_buffer_select_range(buffer, &start, &end);
+        }
+        gchar* selected = gtk_text_buffer_get_text(buffer, &start, &end, false);
+        GtkTextIter search = end;
+        for (const EditorSelection& selection : state->selections) {
+            GtkTextIter caret;
+            gtk_text_buffer_get_iter_at_mark(buffer, &caret, selection.caret);
+            if (gtk_text_iter_compare(&caret, &search) > 0) search = caret;
+        }
+        GtkTextIter matchStart;
+        GtkTextIter matchEnd;
+        gboolean found = gtk_text_iter_forward_search(&search, selected, GTK_TEXT_SEARCH_TEXT_ONLY, &matchStart, &matchEnd, nullptr);
+        if (!found) {
+            gtk_text_buffer_get_start_iter(buffer, &search);
+            found = gtk_text_iter_forward_search(&search, selected, GTK_TEXT_SEARCH_TEXT_ONLY, &matchStart, &matchEnd, &start);
+        }
+        if (found) addMultiSelection(state, matchStart, matchEnd);
+        g_free(selected);
+        return true;
+    }
+
+    gboolean multiSelectionButtonPress(GtkWidget* editor, GdkEventButton* event, gpointer data) {
+        EditorMultiSelectionState* state = static_cast<EditorMultiSelectionState*>(data);
+        if (event->button != 1) return FALSE;
+        if ((event->state & GDK_MOD1_MASK) == 0) { clearMultiSelections(state); return FALSE; }
+        gint bufferX = 0;
+        gint bufferY = 0;
+        gtk_text_view_window_to_buffer_coords(GTK_TEXT_VIEW(editor), GTK_TEXT_WINDOW_WIDGET, static_cast<gint>(event->x), static_cast<gint>(event->y), &bufferX, &bufferY);
+        GtkTextIter caret;
+        gtk_text_view_get_iter_at_location(GTK_TEXT_VIEW(editor), &caret, bufferX, bufferY);
+        GtkTextIter anchor = caret;
+        if ((event->state & GDK_SHIFT_MASK) != 0 && !state->selections.empty()) {
+            GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(editor));
+            gtk_text_buffer_move_mark(buffer, state->selections.back().caret, &caret);
+            refreshMultiSelections(state);
+            return TRUE;
+        }
+        addMultiSelection(state, anchor, caret);
+        return TRUE;
+    }
+
+    gboolean multiSelectionKeyPress(GtkWidget*, GdkEventKey* event, gpointer data) {
+        EditorMultiSelectionState* state = static_cast<EditorMultiSelectionState*>(data);
+        const bool control = (event->state & GDK_CONTROL_MASK) != 0;
+        const bool alt = (event->state & GDK_MOD1_MASK) != 0;
+        if (event->keyval == GDK_KEY_Escape && !state->selections.empty()) { clearMultiSelections(state); return TRUE; }
+        if (control && alt && (event->keyval == GDK_KEY_Up || event->keyval == GDK_KEY_Down)) return addAdjacentCaret(state, event->keyval == GDK_KEY_Down ? 1 : -1, (event->state & GDK_SHIFT_MASK) != 0);
+        if (control && !alt && (event->keyval == GDK_KEY_d || event->keyval == GDK_KEY_D)) return selectNextOccurrence(state);
+        if (state->selections.empty() || control || alt) return FALSE;
+        if (event->keyval == GDK_KEY_BackSpace) return replaceMultiSelections(state, "", -1);
+        if (event->keyval == GDK_KEY_Delete || event->keyval == GDK_KEY_KP_Delete) return replaceMultiSelections(state, "", 1);
+        if (event->keyval == GDK_KEY_Return || event->keyval == GDK_KEY_KP_Enter) return replaceMultiSelections(state, "\n", 0);
+        if (event->keyval == GDK_KEY_Tab || event->keyval == GDK_KEY_ISO_Left_Tab) return replaceMultiSelections(state, useTabs ? "\t" : std::string(tabWidth, ' '), 0);
+        const gunichar character = gdk_keyval_to_unicode(event->keyval);
+        if (character == 0 || g_unichar_iscntrl(character)) return FALSE;
+        gchar encoded[7]{};
+        const gint length = g_unichar_to_utf8(character, encoded);
+        return replaceMultiSelections(state, std::string(encoded, length), 0);
     }
 
     void skipWhitespace(const std::string& text, std::size_t& position) {
@@ -267,7 +570,10 @@ namespace {
 
     gboolean applyCompletionText(gpointer data) {
         const auto* payload = static_cast<CompletionPayload*>(data);
-        if (payload->request == completionRequest && !payload->definitions.empty()) apiDefinitions = payload->definitions;
+        if (payload->request == completionRequest && !payload->definitions.empty()) {
+            apiDefinitions = payload->definitions;
+            for (const auto& state : diagnosticsStates) if (scriptDiagnosticsEnabled) runEditorDiagnostics(state.get());
+        }
         return G_SOURCE_REMOVE;
     }
 
@@ -457,6 +763,7 @@ namespace {
         gtk_text_view_window_to_buffer_coords(GTK_TEXT_VIEW(editor), GTK_TEXT_WINDOW_WIDGET, x, y, &bufferX, &bufferY);
         GtkTextIter iter;
         gtk_text_view_get_iter_at_location(GTK_TEXT_VIEW(editor), &iter, bufferX, bufferY);
+        if (showDiagnosticTooltip(editor, iter, tooltip)) return true;
         ApiDefinition definition;
         if (!findEditorDefinition(editor, wordAtIter(iter), definition)) return false;
         std::string signature = definition.name + "(";
@@ -665,14 +972,24 @@ namespace {
         setEditorFontSize(editor, scriptFontSize);
         GtkWidget* map = static_cast<GtkWidget*>(g_object_get_data(G_OBJECT(editor), "remote-control-minimap"));
         GtkWidget* strip = static_cast<GtkWidget*>(g_object_get_data(G_OBJECT(editor), "remote-control-minimap-strip"));
+        if (showMinimap && map == nullptr) {
+            ensureGScriptEditorMinimap(editor);
+            map = static_cast<GtkWidget*>(g_object_get_data(G_OBJECT(editor), "remote-control-minimap"));
+            strip = static_cast<GtkWidget*>(g_object_get_data(G_OBJECT(editor), "remote-control-minimap-strip"));
+        }
         if (map) {
             gtk_source_map_set_view(GTK_SOURCE_MAP(map), showMinimap ? GTK_SOURCE_VIEW(editor) : nullptr);
             setEditorFontSize(map, minimapFontSize);
             if (showMinimap) {
                 gtk_widget_show(map);
                 if (strip) gtk_widget_show(strip);
-            } else if (strip) gtk_widget_hide(strip);
+            } else {
+                gtk_widget_hide(map);
+                if (strip) gtk_widget_hide(strip);
+            }
         }
+        GtkWidget* scrolled = static_cast<GtkWidget*>(g_object_get_data(G_OBJECT(editor), "remote-control-editor-scrolled"));
+        if (scrolled != nullptr) g_idle_add(refreshEditorScrollbars, scrolled);
     }
 
 }
@@ -694,6 +1011,7 @@ void requestGScriptHelp(const std::string& query, std::function<void(std::vector
 }
 
 void setGScriptEditorOptions(const RC::RCOptions& options) {
+    setEditorFormatOptions(options);
     const bool wasLspEnabled = lspEnabled;
     const bool sourceChanged = completionSource != options.autocompletesource;
     tabWidth = std::max(1, options.scripttabwidth);
@@ -706,11 +1024,16 @@ void setGScriptEditorOptions(const RC::RCOptions& options) {
     smartHomeEnd = options.smarthomeend;
     showBrackets = options.showbrackets;
     lspEnabled = options.lsp;
+    scriptDiagnosticsEnabled = options.scriptdiagnostics;
     for (GtkWidget* editor : completionEditors) applyEditorOptions(editor);
     if (wasLspEnabled != lspEnabled) for (GtkWidget* editor : completionEditors) setCompletionProvider(editor, lspEnabled);
     completionSource = options.autocompletesource.empty() ? "https://api.gscript.dev/" : options.autocompletesource;
     if (sourceChanged || (!wasLspEnabled && lspEnabled)) { apiDefinitions.clear(); if (lspEnabled) startCompletionLoad(); }
     else if (lspEnabled && apiDefinitions.empty()) startCompletionLoad();
+    for (const auto& state : diagnosticsStates) {
+        if (scriptDiagnosticsEnabled) runEditorDiagnostics(state.get());
+        else clearEditorDiagnostics(state.get());
+    }
 }
 
 struct MinimapStrip { GtkBin parent; };
@@ -738,22 +1061,36 @@ static void minimap_strip_init(MinimapStrip*) {}
 
 static void updateMinimapViewportIndicator(GtkWidget* scrolled) {
     GtkWidget* map = static_cast<GtkWidget*>(g_object_get_data(G_OBJECT(scrolled), "remote-control-minimap"));
-    if (!map) return;
+    GtkWidget* marker = static_cast<GtkWidget*>(g_object_get_data(G_OBJECT(scrolled), "remote-control-minimap-marker"));
+    if (!map || !marker) return;
     GtkAdjustment* adjustment = gtk_scrolled_window_get_vadjustment(GTK_SCROLLED_WINDOW(scrolled));
     const bool documentFits = gtk_adjustment_get_upper(adjustment) <= gtk_adjustment_get_page_size(adjustment) + 0.5;
     GtkStyleContext* context = gtk_widget_get_style_context(map);
     if (documentFits) gtk_style_context_add_class(context, "remote-control-minimap-no-scrubber");
     else gtk_style_context_remove_class(context, "remote-control-minimap-no-scrubber");
+    if (documentFits) { gtk_widget_hide(marker); return; }
+    GtkAllocation allocation;
+    gtk_widget_get_allocation(map, &allocation);
+    const gdouble pageSize = gtk_adjustment_get_page_size(adjustment);
+    const gint markerHeight = std::clamp(static_cast<gint>(std::round(allocation.height * pageSize / gtk_adjustment_get_upper(adjustment))), 12, 48);
+    gtk_widget_set_size_request(marker, -1, markerHeight);
+    const gdouble range = std::max(0.0, gtk_adjustment_get_upper(adjustment) - pageSize);
+    const gdouble progress = range == 0.0 ? 0.0 : gtk_adjustment_get_value(adjustment) / range;
+    gtk_widget_set_margin_top(marker, static_cast<gint>(std::round(progress * std::max(0, allocation.height - markerHeight))));
+    gtk_widget_show(marker);
 }
 
 static void onMinimapAdjustmentChanged(GtkAdjustment*, gpointer userData) { updateMinimapViewportIndicator(GTK_WIDGET(userData)); }
 static void onMinimapSizeAllocated(GtkWidget* widget, GtkAllocation*, gpointer) { updateMinimapViewportIndicator(widget); }
+namespace { gboolean refreshEditorScrollbars(gpointer data) { GtkWidget* scrolled = GTK_WIDGET(data); gtk_widget_queue_resize(scrolled); gtk_widget_queue_allocate(scrolled); gtk_widget_queue_draw(scrolled); gtk_adjustment_changed(gtk_scrolled_window_get_vadjustment(GTK_SCROLLED_WINDOW(scrolled))); return G_SOURCE_REMOVE; } }
 
-GtkWidget* wrapGScriptEditor(GtkWidget* editor, GtkWidget* scrolled) {
-    GtkWidget* row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
-    gtk_box_pack_start(GTK_BOX(row), scrolled, true, true, 0);
+void ensureGScriptEditorMinimap(GtkWidget* editor) {
+    if (g_object_get_data(G_OBJECT(editor), "remote-control-minimap") != nullptr) return;
+    GtkWidget* row = static_cast<GtkWidget*>(g_object_get_data(G_OBJECT(editor), "remote-control-editor-row"));
+    GtkWidget* scrolled = static_cast<GtkWidget*>(g_object_get_data(G_OBJECT(editor), "remote-control-editor-scrolled"));
+    if (row == nullptr || scrolled == nullptr) return;
     GtkWidget* map = gtk_source_map_new();
-    GtkWidget* strip = GTK_WIDGET(g_object_new(minimap_strip_get_type(), nullptr));
+    GtkWidget* strip = gtk_overlay_new();
     gtk_widget_set_name(map, "remote-control-minimap");
     gtk_widget_set_name(strip, "remote-control-minimap-strip");
     gtk_widget_set_size_request(map, minimapWidth, -1);
@@ -773,22 +1110,41 @@ GtkWidget* wrapGScriptEditor(GtkWidget* editor, GtkWidget* scrolled) {
     gtk_widget_set_halign(map, GTK_ALIGN_START);
     setEditorFontSize(map, minimapFontSize);
     gtk_widget_set_no_show_all(map, true);
+    gtk_widget_set_no_show_all(strip, true);
     g_object_set_data(G_OBJECT(editor), "remote-control-minimap", map);
     g_object_set_data(G_OBJECT(editor), "remote-control-minimap-strip", strip);
     g_object_set_data(G_OBJECT(scrolled), "remote-control-minimap", map);
+    GtkWidget* marker = gtk_event_box_new();
+    gtk_widget_set_name(marker, "remote-control-minimap-marker");
+    gtk_widget_set_size_request(marker, -1, 12);
+    gtk_widget_set_valign(marker, GTK_ALIGN_START);
+    gtk_widget_set_halign(marker, GTK_ALIGN_FILL);
+    g_object_set_data(G_OBJECT(scrolled), "remote-control-minimap-marker", marker);
     GtkCssProvider* minimapStyle = gtk_css_provider_new();
-    gtk_css_provider_load_from_data(minimapStyle, "#remote-control-minimap .scrubber { min-height: 6px; max-height: 24px; } #remote-control-minimap.remote-control-minimap-no-scrubber .scrubber { background-image: none; background-color: transparent; border-color: transparent; box-shadow: none; opacity: 0; }", -1, nullptr);
+    gtk_css_provider_load_from_data(minimapStyle, "#remote-control-minimap .scrubber { background-image: none; background-color: transparent; border-color: transparent; box-shadow: none; opacity: 0; }", -1, nullptr);
     gtk_style_context_add_provider(gtk_widget_get_style_context(map), GTK_STYLE_PROVIDER(minimapStyle), GTK_STYLE_PROVIDER_PRIORITY_USER);
     g_object_unref(minimapStyle);
     GtkAdjustment* adjustment = gtk_scrolled_window_get_vadjustment(GTK_SCROLLED_WINDOW(scrolled));
     g_signal_connect(adjustment, "changed", G_CALLBACK(onMinimapAdjustmentChanged), scrolled);
+    g_signal_connect(adjustment, "value-changed", G_CALLBACK(onMinimapAdjustmentChanged), scrolled);
     g_signal_connect(scrolled, "size-allocate", G_CALLBACK(onMinimapSizeAllocated), nullptr);
     gtk_container_add(GTK_CONTAINER(strip), map);
+    gtk_overlay_add_overlay(GTK_OVERLAY(strip), marker);
+    gtk_overlay_set_overlay_pass_through(GTK_OVERLAY(strip), marker, true);
     gtk_box_pack_end(GTK_BOX(row), strip, false, false, 0);
     if (showMinimap) {
         gtk_widget_show(map);
         gtk_widget_show(strip);
     } else gtk_widget_hide(strip);
+    g_idle_add(refreshEditorScrollbars, scrolled);
+}
+
+GtkWidget* wrapGScriptEditor(GtkWidget* editor, GtkWidget* scrolled) {
+    GtkWidget* row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+    gtk_box_pack_start(GTK_BOX(row), scrolled, true, true, 0);
+    g_object_set_data(G_OBJECT(editor), "remote-control-editor-row", row);
+    g_object_set_data(G_OBJECT(editor), "remote-control-editor-scrolled", scrolled);
+    if (showMinimap) ensureGScriptEditorMinimap(editor);
     return row;
 }
 
@@ -806,6 +1162,44 @@ void configureGScriptEditor(GtkWidget* editor) {
     if (completionEditors.empty() && lspEnabled) startCompletionLoad();
     if (std::find(completionEditors.begin(), completionEditors.end(), editor) == completionEditors.end()) {
         completionEditors.push_back(editor);
+        GtkTextBuffer* editorBuffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(editor));
+        GdkRGBA selectionColor{};
+        gtk_style_context_get_background_color(gtk_widget_get_style_context(editor), GTK_STATE_FLAG_SELECTED, &selectionColor);
+        selectionColor.alpha = 0.45;
+        GtkTextTag* selectionTag = gtk_text_buffer_create_tag(editorBuffer, nullptr, "background-rgba", &selectionColor, nullptr);
+        auto multiSelection = std::make_unique<EditorMultiSelectionState>();
+        multiSelection->editor = editor;
+        multiSelection->tag = selectionTag;
+        multiSelection->applying = false;
+        EditorMultiSelectionState* multiSelectionPointer = multiSelection.get();
+        multiSelectionStates.push_back(std::move(multiSelection));
+        GdkRGBA errorColor{};
+        GdkRGBA warningColor{};
+        GdkRGBA infoColor{};
+        gdk_rgba_parse(&errorColor, "#f44747");
+        gdk_rgba_parse(&warningColor, "#e5a50a");
+        gdk_rgba_parse(&infoColor, "#4aa3df");
+        auto diagnostics = std::make_unique<EditorDiagnosticsState>();
+        diagnostics->editor = editor;
+        diagnostics->errorTag = gtk_text_buffer_create_tag(editorBuffer, nullptr, "underline", PANGO_UNDERLINE_ERROR, "underline-rgba", &errorColor, nullptr);
+        diagnostics->warningTag = gtk_text_buffer_create_tag(editorBuffer, nullptr, "underline", PANGO_UNDERLINE_ERROR, "underline-rgba", &warningColor, nullptr);
+        diagnostics->infoTag = gtk_text_buffer_create_tag(editorBuffer, nullptr, "underline", PANGO_UNDERLINE_SINGLE, "underline-rgba", &infoColor, nullptr);
+        diagnostics->timeout = 0;
+        EditorDiagnosticsState* diagnosticsPointer = diagnostics.get();
+        diagnosticsStates.push_back(std::move(diagnostics));
+        gtk_widget_add_events(editor, GDK_BUTTON_PRESS_MASK);
+        g_signal_connect(editor, "button-press-event", G_CALLBACK(multiSelectionButtonPress), multiSelectionPointer);
+        g_signal_connect(editor, "key-press-event", G_CALLBACK(multiSelectionKeyPress), multiSelectionPointer);
+        g_signal_connect_after(editor, "draw", G_CALLBACK(drawMultiSelections), multiSelectionPointer);
+        g_signal_connect(editorBuffer, "changed", G_CALLBACK(+[](GtkTextBuffer*, gpointer data) {
+            EditorMultiSelectionState* state = static_cast<EditorMultiSelectionState*>(data);
+            if (!state->applying) refreshMultiSelections(state);
+        }), multiSelectionPointer);
+        g_signal_connect(editorBuffer, "changed", G_CALLBACK(+[](GtkTextBuffer*, gpointer data) {
+            EditorDiagnosticsState* state = static_cast<EditorDiagnosticsState*>(data);
+            if (scriptDiagnosticsEnabled) scheduleEditorDiagnostics(state);
+        }), diagnosticsPointer);
+        if (scriptDiagnosticsEnabled) scheduleEditorDiagnostics(diagnosticsPointer);
         auto* provider = REMOTE_COMPLETION_PROVIDER(g_object_new(REMOTE_TYPE_COMPLETION_PROVIDER, nullptr));
         provider->editor = editor;
         GtkWidget* signaturePopover = gtk_popover_new(editor);
@@ -830,6 +1224,12 @@ void configureGScriptEditor(GtkWidget* editor) {
                 editorCompletionStates.erase(state);
             }
             completionEditors.erase(std::remove(completionEditors.begin(), completionEditors.end(), widget), completionEditors.end());
+            multiSelectionStates.erase(std::remove_if(multiSelectionStates.begin(), multiSelectionStates.end(), [widget](const auto& value) { return value->editor == widget; }), multiSelectionStates.end());
+            const auto diagnostics = std::find_if(diagnosticsStates.begin(), diagnosticsStates.end(), [widget](const auto& value) { return value->editor == widget; });
+            if (diagnostics != diagnosticsStates.end()) {
+                if ((*diagnostics)->timeout != 0) g_source_remove((*diagnostics)->timeout);
+                diagnosticsStates.erase(diagnostics);
+            }
         }), nullptr);
     }
     GtkSourceCompletion* completion = gtk_source_view_get_completion(GTK_SOURCE_VIEW(editor));
@@ -907,6 +1307,7 @@ void addGScriptEditorLineStatus(GtkDialog* dialog, GtkWidget* editor) {
     GtkWidget* actions = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 5);
     GtkWidget* spacer = gtk_label_new(nullptr);
     GtkWidget* goToLine = nullptr;
+    GtkWidget* format = nullptr;
     GtkWidget* find = nullptr;
     GtkWidget* apply = nullptr;
     GtkWidget* close = nullptr;
@@ -918,6 +1319,7 @@ void addGScriptEditorLineStatus(GtkDialog* dialog, GtkWidget* editor) {
         gtk_container_remove(GTK_CONTAINER(actionArea), button);
         const char* label = GTK_IS_BUTTON(button) ? gtk_button_get_label(GTK_BUTTON(button)) : nullptr;
         if (g_strcmp0(label, "Go to line") == 0) goToLine = button;
+        else if (g_strcmp0(label, "Format") == 0) format = button;
         else if (g_strcmp0(label, "Find") == 0) find = button;
         else if (g_strcmp0(label, "Apply") == 0 || g_strcmp0(label, "Save") == 0) apply = button;
         else if (g_strcmp0(label, "Close") == 0 || g_strcmp0(label, "Cancel") == 0) close = button;
@@ -931,6 +1333,7 @@ void addGScriptEditorLineStatus(GtkDialog* dialog, GtkWidget* editor) {
     gtk_widget_set_margin_end(actions, 5);
     gtk_widget_set_hexpand(spacer, true);
     if (goToLine != nullptr) gtk_box_pack_start(GTK_BOX(actions), goToLine, false, false, 0);
+    if (format != nullptr) gtk_box_pack_start(GTK_BOX(actions), format, false, false, 0);
     if (find != nullptr) gtk_box_pack_start(GTK_BOX(actions), find, false, false, 0);
     if (apply != nullptr) gtk_box_pack_start(GTK_BOX(actions), apply, false, false, 0);
     if (close != nullptr) gtk_box_pack_start(GTK_BOX(actions), close, false, false, 0);
@@ -938,6 +1341,7 @@ void addGScriptEditorLineStatus(GtkDialog* dialog, GtkWidget* editor) {
     for (GList* item = remaining; item != nullptr; item = item->next) g_object_unref(item->data);
     g_list_free(remaining);
     if (goToLine != nullptr) g_object_unref(goToLine);
+    if (format != nullptr) g_object_unref(format);
     if (find != nullptr) g_object_unref(find);
     if (apply != nullptr) g_object_unref(apply);
     if (close != nullptr) g_object_unref(close);
