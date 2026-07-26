@@ -6,6 +6,12 @@
 #include <fstream>
 #include <iterator>
 #include <string>
+#include <vector>
+
+std::vector<unsigned char> readBytes(const std::filesystem::path& path) {
+    std::ifstream stream(path, std::ios::binary);
+    return std::vector<unsigned char>((std::istreambuf_iterator<char>(stream)), std::istreambuf_iterator<char>());
+}
 
 int main() {
     const std::filesystem::path directory = std::filesystem::current_path() / "account-storage-test";
@@ -18,6 +24,7 @@ int main() {
         accounts.save("Test", "second-secret", false, "login-two.example:14922");
         assert(accounts.entries().size() == 2);
     }
+    const std::vector<unsigned char> firstCiphertext = readBytes(directory / "accounts.dat");
     {
         RC::RCAccounts accounts(directory);
         assert(accounts.accountName() == "Test");
@@ -26,10 +33,14 @@ int main() {
         assert(servers.size() == 2);
         assert(std::find(servers.begin(), servers.end(), "login-one.example:14922") != servers.end());
         assert(std::find(servers.begin(), servers.end(), "login-two.example:14922") != servers.end());
-        std::ifstream encrypted(directory / "accounts.dat", std::ios::binary);
-        const std::string bytes((std::istreambuf_iterator<char>(encrypted)), std::istreambuf_iterator<char>());
+        const std::vector<unsigned char> encrypted = readBytes(directory / "accounts.dat");
+        const std::string bytes(encrypted.begin(), encrypted.end());
         assert(bytes.find("portable-secret") == std::string::npos);
         assert(bytes.find("second-secret") == std::string::npos);
+        accounts.update("Test", "Test", "second-secret", false, {"login-two.example:14922"});
+        const std::vector<unsigned char> secondCiphertext = readBytes(directory / "accounts.dat");
+        assert(firstCiphertext != secondCiphertext);
+        assert(secondCiphertext.size() == firstCiphertext.size());
         accounts.save("Deny", "must-not-persist", true, "login-one.example:14922");
     }
     {
@@ -40,6 +51,25 @@ int main() {
         accounts.remove("Test");
         assert(accounts.entries().size() == 1);
     }
+    const std::filesystem::path tamperDirectory = std::filesystem::current_path() / "account-storage-tamper-test";
+    std::filesystem::remove_all(tamperDirectory);
+    {
+        RC::RCAccounts accounts(tamperDirectory);
+        accounts.save("Tamper", "authenticated-secret", false, "Official — listserver.graalonline.com:14922");
+    }
+    std::vector<unsigned char> tampered = readBytes(tamperDirectory / "accounts.dat");
+    assert(!tampered.empty());
+    tampered.back() ^= 0x5a;
+    {
+        std::ofstream stream(tamperDirectory / "accounts.dat", std::ios::binary | std::ios::trunc);
+        stream.write(reinterpret_cast<const char*>(tampered.data()), static_cast<std::streamsize>(tampered.size()));
+    }
+    {
+        RC::RCAccounts accounts(tamperDirectory);
+        assert(accounts.entries().empty());
+        assert(accounts.passwordFor("Tamper").empty());
+    }
     std::filesystem::remove_all(directory);
+    std::filesystem::remove_all(tamperDirectory);
     return 0;
 }

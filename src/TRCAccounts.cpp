@@ -17,6 +17,7 @@
 namespace {
 
     constexpr std::array<unsigned char, 8> fileMagic = {'G', 'S', 'R', 'C', 'A', 'C', 'C', '1'};
+    constexpr std::array<unsigned char, 4> passwordMagic = {'P', 'W', 'G', '1'};
     constexpr std::size_t keySize = 32;
     constexpr std::size_t nonceSize = 12;
     constexpr std::size_t tagSize = 16;
@@ -61,26 +62,32 @@ namespace {
 
     std::string encodePassword(const std::string& password, const std::array<unsigned char, keySize>& key) {
         if (password.empty()) return {};
-        const std::size_t payloadSize = 4 + password.size();
-        const std::size_t paddedSize = (payloadSize + 7) & ~std::size_t(7);
-        std::vector<unsigned char> plaintext(paddedSize);
-        plaintext[0] = static_cast<unsigned char>(password.size());
-        plaintext[1] = static_cast<unsigned char>(password.size() >> 8);
-        plaintext[2] = static_cast<unsigned char>(password.size() >> 16);
-        plaintext[3] = static_cast<unsigned char>(password.size() >> 24);
-        std::copy(password.begin(), password.end(), plaintext.begin() + 4);
-        if (paddedSize > payloadSize) RAND_bytes(plaintext.data() + payloadSize, static_cast<int>(paddedSize - payloadSize));
-        DES_cblock keyBlock;
-        std::copy_n(key.begin(), sizeof(keyBlock), keyBlock);
-        DES_key_schedule schedule;
-        DES_set_key_unchecked(&keyBlock, &schedule);
-        std::string encoded(paddedSize, '\0');
-        for (std::size_t offset = 0; offset < paddedSize; offset += 8) DES_ecb_encrypt(reinterpret_cast<const_DES_cblock*>(plaintext.data() + offset), reinterpret_cast<DES_cblock*>(encoded.data() + offset), &schedule, DES_ENCRYPT);
-        OPENSSL_cleanse(plaintext.data(), plaintext.size());
+        std::array<unsigned char, nonceSize> nonce = {};
+        std::array<unsigned char, tagSize> tag = {};
+        if (RAND_bytes(nonce.data(), static_cast<int>(nonce.size())) != 1) return {};
+        EVP_CIPHER_CTX* context = EVP_CIPHER_CTX_new();
+        if (context == nullptr) return {};
+        std::string ciphertext(password.size() + EVP_MAX_BLOCK_LENGTH, '\0');
+        int written = 0;
+        int finalWritten = 0;
+        const bool ok = EVP_EncryptInit_ex(context, EVP_aes_256_gcm(), nullptr, nullptr, nullptr) == 1 &&
+            EVP_CIPHER_CTX_ctrl(context, EVP_CTRL_GCM_SET_IVLEN, static_cast<int>(nonce.size()), nullptr) == 1 &&
+            EVP_EncryptInit_ex(context, nullptr, nullptr, key.data(), nonce.data()) == 1 &&
+            EVP_EncryptUpdate(context, reinterpret_cast<unsigned char*>(ciphertext.data()), &written, reinterpret_cast<const unsigned char*>(password.data()), static_cast<int>(password.size())) == 1 &&
+            EVP_EncryptFinal_ex(context, reinterpret_cast<unsigned char*>(ciphertext.data()) + written, &finalWritten) == 1 &&
+            EVP_CIPHER_CTX_ctrl(context, EVP_CTRL_GCM_GET_TAG, static_cast<int>(tag.size()), tag.data()) == 1;
+        EVP_CIPHER_CTX_free(context);
+        if (!ok) return {};
+        ciphertext.resize(static_cast<std::size_t>(written + finalWritten));
+        std::string encoded;
+        encoded.append(reinterpret_cast<const char*>(passwordMagic.data()), passwordMagic.size());
+        encoded.append(reinterpret_cast<const char*>(nonce.data()), nonce.size());
+        encoded.append(reinterpret_cast<const char*>(tag.data()), tag.size());
+        encoded += ciphertext;
         return encoded;
     }
 
-    bool decodePassword(const std::string& encoded, const std::array<unsigned char, keySize>& key, std::string& password) {
+    bool decodeLegacyPassword(const std::string& encoded, const std::array<unsigned char, keySize>& key, std::string& password) {
         if (encoded.empty()) { password.clear(); return true; }
         if (encoded.size() % 8 != 0 || encoded.size() < 8) return false;
         DES_cblock keyBlock;
@@ -102,6 +109,36 @@ namespace {
         return true;
     }
 
+    bool decodePassword(const std::string& encoded, const std::array<unsigned char, keySize>& key, std::string& password, bool& migratedLegacy) {
+        if (encoded.empty()) { password.clear(); return true; }
+        if (encoded.size() < passwordMagic.size() + nonceSize + tagSize || !std::equal(passwordMagic.begin(), passwordMagic.end(), encoded.begin())) {
+            if (!decodeLegacyPassword(encoded, key, password)) return false;
+            migratedLegacy = true;
+            return true;
+        }
+        const unsigned char* nonce = reinterpret_cast<const unsigned char*>(encoded.data() + passwordMagic.size());
+        const unsigned char* tag = nonce + nonceSize;
+        const unsigned char* ciphertext = tag + tagSize;
+        const std::size_t ciphertextSize = encoded.size() - passwordMagic.size() - nonceSize - tagSize;
+        EVP_CIPHER_CTX* context = EVP_CIPHER_CTX_new();
+        if (context == nullptr) return false;
+        std::string plaintext(ciphertextSize + EVP_MAX_BLOCK_LENGTH, '\0');
+        int written = 0;
+        int finalWritten = 0;
+        const bool ok = EVP_DecryptInit_ex(context, EVP_aes_256_gcm(), nullptr, nullptr, nullptr) == 1 &&
+            EVP_CIPHER_CTX_ctrl(context, EVP_CTRL_GCM_SET_IVLEN, nonceSize, nullptr) == 1 &&
+            EVP_DecryptInit_ex(context, nullptr, nullptr, key.data(), nonce) == 1 &&
+            EVP_DecryptUpdate(context, reinterpret_cast<unsigned char*>(plaintext.data()), &written, ciphertext, static_cast<int>(ciphertextSize)) == 1 &&
+            EVP_CIPHER_CTX_ctrl(context, EVP_CTRL_GCM_SET_TAG, tagSize, const_cast<unsigned char*>(tag)) == 1 &&
+            EVP_DecryptFinal_ex(context, reinterpret_cast<unsigned char*>(plaintext.data()) + written, &finalWritten) == 1;
+        EVP_CIPHER_CTX_free(context);
+        if (!ok) { OPENSSL_cleanse(plaintext.data(), plaintext.size()); return false; }
+        plaintext.resize(static_cast<std::size_t>(written + finalWritten));
+        password = plaintext;
+        OPENSSL_cleanse(plaintext.data(), plaintext.size());
+        return true;
+    }
+
     std::vector<unsigned char> serialize(const std::string& selected, const std::vector<RC::RCAccount>& accounts, const std::array<unsigned char, keySize>& key) {
         std::vector<unsigned char> output;
         appendString(output, selected);
@@ -115,7 +152,7 @@ namespace {
         return output;
     }
 
-    bool deserialize(const std::vector<unsigned char>& input, const std::array<unsigned char, keySize>& key, std::string& selected, std::vector<RC::RCAccount>& accounts) {
+    bool deserialize(const std::vector<unsigned char>& input, const std::array<unsigned char, keySize>& key, std::string& selected, std::vector<RC::RCAccount>& accounts, bool& migratedLegacy) {
         std::size_t offset = 0;
         std::uint32_t accountCount = 0;
         if (!readString(input, offset, selected) || !readUint32(input, offset, accountCount) || accountCount > 1000) return false;
@@ -124,7 +161,7 @@ namespace {
             RC::RCAccount account;
             std::string encodedPassword;
             std::uint32_t serverCount = 0;
-            if (!readString(input, offset, account.name) || !readString(input, offset, encodedPassword) || !decodePassword(encodedPassword, key, account.password) || !readUint32(input, offset, serverCount) || serverCount > 1000) return false;
+            if (!readString(input, offset, account.name) || !readString(input, offset, encodedPassword) || !decodePassword(encodedPassword, key, account.password, migratedLegacy) || !readUint32(input, offset, serverCount) || serverCount > 1000) return false;
             for (std::uint32_t serverIndex = 0; serverIndex < serverCount; ++serverIndex) {
                 std::string server;
                 if (!readString(input, offset, server)) return false;
@@ -233,13 +270,15 @@ namespace RC {
         std::vector<unsigned char> encrypted;
         std::vector<unsigned char> plaintext;
         if (!loadOrCreateKey(storageDirectory, key) || !readFile(storageDirectory / "accounts.dat", encrypted)) { OPENSSL_cleanse(key.data(), key.size()); return false; }
-        const bool ok = decrypt(encrypted, key, plaintext) && deserialize(plaintext, key, activeAccount, accountEntries);
+        bool migratedLegacy = false;
+        const bool ok = decrypt(encrypted, key, plaintext) && deserialize(plaintext, key, activeAccount, accountEntries, migratedLegacy);
         OPENSSL_cleanse(key.data(), key.size());
         if (!plaintext.empty()) OPENSSL_cleanse(plaintext.data(), plaintext.size());
         if (!ok) return false;
         rebuildNames();
         activePassword = passwordFor(activeAccount);
         if (activeAccount.empty() && !accountEntries.empty()) { activeAccount = accountEntries.front().name; activePassword = accountEntries.front().password; }
+        if (migratedLegacy) persist();
         return true;
     }
 
