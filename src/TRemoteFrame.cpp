@@ -789,6 +789,30 @@ void TRemoteFrame::onMessage(const char* message, void* data) {
     frame->appendChat(value);
 }
 
+bool TRemoteFrame::mcpOpenView(const std::string& view, std::string& error) {
+    if (view == "player_list") onPlayerList(nullptr, this);
+    else if (view == "file_browser") onFileBrowser(nullptr, this);
+    else if (view == "classes") onClasses(nullptr, this);
+    else if (view == "weapons") onWeapons(nullptr, this);
+    else if (view == "npcs") onNPCs(nullptr, this);
+    else if (view == "server_options") onServerOptions(nullptr, this);
+    else if (view == "server_flags") onServerFlags(nullptr, this);
+    else if (view == "folder_config") onFolderConfig(nullptr, this);
+    else if (view == "toalls") onToalls(nullptr, this);
+    else if (view == "accounts") onAccounts(nullptr, this);
+    else if (view == "options") onRCOptions(nullptr, this);
+    else { error = "Unsupported managed RC view"; return false; }
+    return true;
+}
+
+bool TRemoteFrame::mcpSendChat(const std::string& text, std::string& error) {
+    if (!isConnected()) { error = "RC is not connected"; return false; }
+    if (text.empty()) { error = "Chat text is empty"; return false; }
+    gtk_entry_set_text(GTK_ENTRY(editField), text.c_str());
+    send();
+    return true;
+}
+
 void TRemoteFrame::onIrcMessage(const char* channel, const char* line, void* data) {
     static_cast<TRemoteFrame*>(data)->appendChannelMessage(channel == nullptr ? "" : channel, line == nullptr ? "" : line);
 }

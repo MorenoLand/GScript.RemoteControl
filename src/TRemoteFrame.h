@@ -37,6 +37,8 @@ public:
     void refreshTheme();
     void reloadBackground();
     void updateThemeOptions(const RC::RCOptions& nextOptions);
+    bool mcpOpenView(const std::string& view, std::string& error);
+    bool mcpSendChat(const std::string& text, std::string& error);
 
 private:
     static void onSend(GtkButton*, gpointer data);

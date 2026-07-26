@@ -109,6 +109,10 @@ namespace RC {
             else if (key == "mcpread") options.mcpread = isTrue(value);
             else if (key == "mcpwrite") options.mcpwrite = isTrue(value);
             else if (key == "mcpadmin") options.mcpadmin = isTrue(value);
+            else if (key == "mcpserver") options.mcpserver = isTrue(value);
+            else if (key == "mcplogin") options.mcplogin = isTrue(value);
+            else if (key == "mcpwindows") options.mcpwindows = isTrue(value);
+            else if (key == "mcpfullcontrol") options.mcpfullcontrol = isTrue(value);
             else if (key == "mcpapprove") options.mcpapprove = isTrue(value);
             else if (key == "mcpaudit") options.mcpaudit = isTrue(value);
             else if (key == "mcpapproveweapon") options.mcpapproveweapon = isTrue(value);
@@ -192,6 +196,10 @@ namespace RC {
         writeBool(stream, "mcpread", options.mcpread);
         writeBool(stream, "mcpwrite", options.mcpwrite);
         writeBool(stream, "mcpadmin", options.mcpadmin);
+        writeBool(stream, "mcpserver", options.mcpserver);
+        writeBool(stream, "mcplogin", options.mcplogin);
+        writeBool(stream, "mcpwindows", options.mcpwindows);
+        writeBool(stream, "mcpfullcontrol", options.mcpfullcontrol);
         writeBool(stream, "mcpapprove", options.mcpapprove);
         writeBool(stream, "mcpaudit", options.mcpaudit);
         writeBool(stream, "mcpapproveweapon", options.mcpapproveweapon);

@@ -80,6 +80,10 @@ private:
     GtkWidget* mcpRead = nullptr;
     GtkWidget* mcpWrite = nullptr;
     GtkWidget* mcpAdmin = nullptr;
+    GtkWidget* mcpServer = nullptr;
+    GtkWidget* mcpLogin = nullptr;
+    GtkWidget* mcpWindows = nullptr;
+    GtkWidget* mcpFullControl = nullptr;
     GtkWidget* mcpApprove = nullptr;
     GtkWidget* mcpAudit = nullptr;
     GtkWidget* mcpApproveWeapon = nullptr;

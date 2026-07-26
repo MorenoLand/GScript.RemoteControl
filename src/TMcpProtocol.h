@@ -8,3 +8,4 @@ int mcpJsonIntField(const std::string& json, const std::string& key, int fallbac
 std::string mcpEditorLineRange(const std::string& text, int startLine, int endLine);
 std::string mcpEditorSearch(const std::string& text, const std::string& query, bool caseSensitive, int contextLines);
 bool mcpGuardedReplace(const std::string& text, const std::string& expected, const std::string& replacement, std::string& result, std::string& error);
+int mcpInstanceScore(bool active, bool connected, int editorCount);

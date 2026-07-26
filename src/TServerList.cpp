@@ -5,25 +5,36 @@
 
 #include <grclib.h>
 
+#include <algorithm>
 #include <cstdlib>
-#ifdef _WIN32
-#include <windows.h>
-#endif
-
+#include <filesystem>
+#include <fstream>
+#include <glib.h>
 namespace {
 
     constexpr const char* defaultListserverHost = "listserver.graalonline.com";
     constexpr int listserverPort = 14922;
 
-#ifdef _WIN32
-    std::string readListserverValue(HKEY key, const char* name) {
-        char value[256] = {};
-        DWORD length = sizeof(value);
-        return RegQueryValueExA(key, name, nullptr, nullptr, reinterpret_cast<LPBYTE>(value), &length) == ERROR_SUCCESS ? value : "";
+    std::filesystem::path listserverSettingsPath() { return std::filesystem::path(g_get_user_config_dir()) / "GScriptRC" / "listservers.conf"; }
+
+    bool parseListserverEndpoint(const std::string& endpoint, std::string& host, int& port) {
+        const std::size_t separator = endpoint.rfind(':');
+        if (separator == std::string::npos) return false;
+        host = endpoint.substr(0, separator);
+        port = std::atoi(endpoint.substr(separator + 1).c_str());
+        return !host.empty() && port > 0 && port <= 65535;
     }
 
-    void writeListserverValue(HKEY key, const char* name, const std::string& value) { RegSetValueExA(key, name, 0, REG_SZ, reinterpret_cast<const BYTE*>(value.c_str()), static_cast<DWORD>(value.size() + 1)); }
-#endif
+    std::string savedListserverText(const SavedListServer& server) { return server.name + " — " + server.host + ":" + std::to_string(server.port); }
+
+    void saveListserverEndpoints(const std::vector<SavedListServer>& endpoints) {
+        const std::filesystem::path path = listserverSettingsPath();
+        std::error_code error;
+        std::filesystem::create_directories(path.parent_path(), error);
+        if (error) return;
+        std::ofstream stream(path, std::ios::trunc);
+        for (const SavedListServer& endpoint : endpoints) stream << endpoint.name << '\t' << endpoint.host << '\t' << endpoint.port << '\n';
+    }
 
     int getServerListIcon(const std::string& value) {
         if (value.size() < 2 || value[1] != ' ') return -1;
@@ -40,17 +51,24 @@ namespace {
 
 TServerList::TServerList(std::function<void()> onClose, std::function<void(void*, int, const std::string&, const std::string&, const std::string&)> onConnected, std::function<void()> onServerSelected, bool nextDarkMode, const std::string& nextTheme, std::function<void(bool, const std::string&)> onThemeChanged) : onCloseCallback(std::move(onClose)), onConnectedCallback(std::move(onConnected)), onServerSelectedCallback(std::move(onServerSelected)), onThemeChangedCallback(std::move(onThemeChanged)), darkMode(nextDarkMode), theme(nextTheme) {
     listserverHost = defaultListserverHost;
-#ifdef _WIN32
-    HKEY key = nullptr;
-    if (RegOpenKeyExA(HKEY_CURRENT_USER, "SOFTWARE\\Graal\\RemoteControl", 0, KEY_READ, &key) == ERROR_SUCCESS) {
-        const std::string host = readListserverValue(key, "listserverhost");
-        const std::string port = readListserverValue(key, "listserverport");
-        if (!host.empty()) listserverHost = host;
-        const int parsedPort = std::atoi(port.c_str());
-        if (parsedPort > 0 && parsedPort <= 65535) listserverPort = parsedPort;
-        RegCloseKey(key);
+    std::ifstream endpointStream(listserverSettingsPath());
+    std::string endpoint;
+    while (std::getline(endpointStream, endpoint)) {
+        const std::size_t first = endpoint.find('\t');
+        const std::size_t second = first == std::string::npos ? std::string::npos : endpoint.find('\t', first + 1);
+        if (first != std::string::npos && second != std::string::npos) {
+            const int port = std::atoi(endpoint.substr(second + 1).c_str());
+            if (port > 0 && port <= 65535) listserverEndpoints.push_back({endpoint.substr(0, first), endpoint.substr(first + 1, second - first - 1), port});
+        } else {
+            std::string host;
+            int port = 0;
+            if (parseListserverEndpoint(endpoint, host, port)) listserverEndpoints.push_back({host, host, port});
+        }
     }
-#endif
+    if (listserverEndpoints.empty()) listserverEndpoints.push_back({"Official", defaultListserverHost, listserverPort});
+    listserverName = listserverEndpoints.front().name;
+    listserverHost = listserverEndpoints.front().host;
+    listserverPort = listserverEndpoints.front().port;
     window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
     gtk_widget_set_name(window, "ServerList");
     gtk_window_set_title(GTK_WINDOW(window), "Servers");
@@ -214,17 +232,38 @@ void TServerList::reopen() {
     refresh();
 }
 
+std::vector<std::string> TServerList::mcpServerNames() const { std::vector<std::string> names; for (const ServerEntry& entry : entries) names.push_back(entry.name); return names; }
+bool TServerList::mcpConnect(const std::string& name, std::string& error) {
+    int selected = -1;
+    for (std::size_t index = 0; index < entries.size(); ++index) if (g_ascii_strcasecmp(entries[index].name.c_str(), name.c_str()) == 0) { selected = static_cast<int>(index); break; }
+    if (selected < 0) { error = entries.empty() ? "Server list is not loaded" : "Named server was not found"; return false; }
+    { std::lock_guard lock(connectionMutex); if (connection == nullptr) { error = "Listserver connection is not ready"; return false; } }
+    GtkTreeModel* model = GTK_TREE_MODEL(store);
+    GtkTreeIter iter;
+    bool found = gtk_tree_model_get_iter_first(model, &iter);
+    while (found) {
+        int index = -1;
+        gtk_tree_model_get(model, &iter, 4, &index, -1);
+        if (index == selected) { gtk_tree_selection_select_iter(gtk_tree_view_get_selection(GTK_TREE_VIEW(tree)), &iter); connect(); return true; }
+        found = gtk_tree_model_iter_next(model, &iter);
+    }
+    error = "Named server row is unavailable";
+    return false;
+}
+
 void TServerList::show() {
     gtk_widget_show_all(window);
     gtk_window_present(GTK_WINDOW(window));
 }
 
 void TServerList::openListServerSettings() {
-    struct SettingsState { TServerList* serverList; GtkWidget* host; GtkWidget* port; GtkWidget* darkMode; GtkWidget* theme; GtkWidget* error; };
-    GtkWidget* dialog = gtk_dialog_new_with_buttons("RC settings", GTK_WINDOW(window), GTK_DIALOG_MODAL, "Cancel", GTK_RESPONSE_CANCEL, "Apply", GTK_RESPONSE_OK, nullptr);
-    gtk_window_set_default_size(GTK_WINDOW(dialog), 250, -1);
+    struct SettingsState { TServerList* serverList; GtkWidget* endpoint; GtkWidget* name; GtkWidget* host; GtkWidget* port; GtkWidget* theme; GtkWidget* error; };
+    constexpr int NewEndpoint = 1000;
+    constexpr int RemoveEndpoint = 1001;
+    GtkWidget* dialog = gtk_dialog_new_with_buttons("RC settings", GTK_WINDOW(window), GTK_DIALOG_MODAL, "New", NewEndpoint, "Remove", RemoveEndpoint, "Cancel", GTK_RESPONSE_CANCEL, "Save", GTK_RESPONSE_OK, nullptr);
+    gtk_window_set_default_size(GTK_WINDOW(dialog), 390, -1);
     gtk_window_set_resizable(GTK_WINDOW(dialog), false);
-    GtkWidget* frame = gtk_frame_new(" List server ");
+    GtkWidget* frame = gtk_frame_new(" Saved list servers ");
     gtk_container_set_border_width(GTK_CONTAINER(frame), 8);
     gtk_box_pack_start(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), frame, true, true, 0);
     GtkWidget* grid = gtk_grid_new();
@@ -232,20 +271,28 @@ void TServerList::openListServerSettings() {
     gtk_grid_set_row_spacing(GTK_GRID(grid), 5);
     gtk_grid_set_column_spacing(GTK_GRID(grid), 6);
     gtk_container_add(GTK_CONTAINER(frame), grid);
+    GtkWidget* endpoint = gtk_combo_box_text_new();
+    GtkWidget* name = gtk_entry_new();
     GtkWidget* host = gtk_entry_new();
     GtkWidget* port = gtk_entry_new();
     GtkWidget* error = gtk_label_new("");
+    for (const SavedListServer& value : listserverEndpoints) gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(endpoint), savedListserverText(value).c_str());
+    gtk_combo_box_set_active(GTK_COMBO_BOX(endpoint), 0);
+    gtk_entry_set_text(GTK_ENTRY(name), listserverName.c_str());
     gtk_entry_set_text(GTK_ENTRY(host), listserverHost.c_str());
     gtk_entry_set_text(GTK_ENTRY(port), std::to_string(listserverPort).c_str());
     gtk_label_set_xalign(GTK_LABEL(error), 0.0F);
-    gtk_grid_attach(GTK_GRID(grid), gtk_label_new("Host:"), 0, 0, 1, 1);
-    gtk_grid_attach(GTK_GRID(grid), host, 1, 0, 1, 1);
-    gtk_grid_attach(GTK_GRID(grid), gtk_label_new("Port:"), 0, 1, 1, 1);
-    gtk_grid_attach(GTK_GRID(grid), port, 1, 1, 1, 1);
-    gtk_grid_attach(GTK_GRID(grid), error, 0, 2, 2, 1);
-    GtkWidget* darkMode = gtk_check_button_new_with_label("Use dark mode");
-    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(darkMode), this->darkMode);
-    gtk_box_pack_start(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), darkMode, false, false, 8);
+    GtkWidget* endpointLabel = gtk_label_new("Saved profile:");
+    gtk_label_set_xalign(GTK_LABEL(endpointLabel), 0.0F);
+    gtk_grid_attach(GTK_GRID(grid), endpointLabel, 0, 0, 2, 1);
+    gtk_grid_attach(GTK_GRID(grid), endpoint, 0, 1, 2, 1);
+    gtk_grid_attach(GTK_GRID(grid), gtk_label_new("Name:"), 0, 2, 1, 1);
+    gtk_grid_attach(GTK_GRID(grid), name, 1, 2, 1, 1);
+    gtk_grid_attach(GTK_GRID(grid), gtk_label_new("Host:"), 0, 3, 1, 1);
+    gtk_grid_attach(GTK_GRID(grid), host, 1, 3, 1, 1);
+    gtk_grid_attach(GTK_GRID(grid), gtk_label_new("Port:"), 0, 4, 1, 1);
+    gtk_grid_attach(GTK_GRID(grid), port, 1, 4, 1, 1);
+    gtk_grid_attach(GTK_GRID(grid), error, 0, 5, 2, 1);
     GtkWidget* theme = gtk_combo_box_text_new();
     gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(theme), "dark", "Dark");
     gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(theme), "dracula", "Dracula");
@@ -266,25 +313,58 @@ void TServerList::openListServerSettings() {
     gtk_grid_attach(GTK_GRID(themeGrid), gtk_label_new("Theme:"), 0, 0, 1, 1);
     gtk_grid_attach(GTK_GRID(themeGrid), theme, 1, 0, 1, 1);
     gtk_box_pack_start(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), themeGrid, false, false, 0);
-    auto* state = new SettingsState{this, host, port, darkMode, theme, error};
+    auto* state = new SettingsState{this, endpoint, name, host, port, theme, error};
+    g_signal_connect(endpoint, "changed", G_CALLBACK(+[](GtkComboBox* combo, gpointer data) {
+        auto* state = static_cast<SettingsState*>(data);
+        const int index = gtk_combo_box_get_active(combo);
+        if (index < 0 || static_cast<std::size_t>(index) >= state->serverList->listserverEndpoints.size()) return;
+        const SavedListServer& selected = state->serverList->listserverEndpoints[static_cast<std::size_t>(index)];
+        gtk_entry_set_text(GTK_ENTRY(state->name), selected.name.c_str());
+        gtk_entry_set_text(GTK_ENTRY(state->host), selected.host.c_str());
+        gtk_entry_set_text(GTK_ENTRY(state->port), std::to_string(selected.port).c_str());
+    }), state);
     g_signal_connect(theme, "changed", G_CALLBACK(+[](GtkComboBox*, gpointer data) {
         auto* state = static_cast<SettingsState*>(data);
         const char* selected = gtk_combo_box_get_active_id(GTK_COMBO_BOX(state->theme));
         if (selected == nullptr) return;
         state->serverList->theme = selected;
         state->serverList->darkMode = state->serverList->theme != "light";
-        gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(state->darkMode), state->serverList->darkMode);
         state->serverList->onThemeChangedCallback(state->serverList->darkMode, state->serverList->theme);
     }), state);
     g_signal_connect(dialog, "response", G_CALLBACK(+[](GtkDialog* settings, gint response, gpointer data) {
         auto* state = static_cast<SettingsState*>(data);
+        if (response == NewEndpoint) {
+            gtk_combo_box_set_active(GTK_COMBO_BOX(state->endpoint), -1);
+            gtk_entry_set_text(GTK_ENTRY(state->name), "");
+            gtk_entry_set_text(GTK_ENTRY(state->host), "");
+            gtk_entry_set_text(GTK_ENTRY(state->port), "14922");
+            gtk_widget_grab_focus(state->name);
+            return;
+        }
+        if (response == RemoveEndpoint) {
+            const int index = gtk_combo_box_get_active(GTK_COMBO_BOX(state->endpoint));
+            auto& endpoints = state->serverList->listserverEndpoints;
+            if (index >= 0 && static_cast<std::size_t>(index) < endpoints.size()) endpoints.erase(endpoints.begin() + index);
+            if (endpoints.empty()) endpoints.push_back({"Official", defaultListserverHost, 14922});
+            state->serverList->listserverName = endpoints.front().name;
+            state->serverList->listserverHost = endpoints.front().host;
+            state->serverList->listserverPort = endpoints.front().port;
+            saveListserverEndpoints(endpoints);
+            gtk_combo_box_text_remove_all(GTK_COMBO_BOX_TEXT(state->endpoint));
+            for (const SavedListServer& value : endpoints) gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(state->endpoint), savedListserverText(value).c_str());
+            gtk_combo_box_set_active(GTK_COMBO_BOX(state->endpoint), 0);
+            return;
+        }
         if (response != GTK_RESPONSE_OK) { gtk_widget_destroy(GTK_WIDGET(settings)); return; }
+        const std::string name = gtk_entry_get_text(GTK_ENTRY(state->name));
         const std::string host = gtk_entry_get_text(GTK_ENTRY(state->host));
         const int port = std::atoi(gtk_entry_get_text(GTK_ENTRY(state->port)));
-        if (host.empty() || port <= 0 || port > 65535) { gtk_label_set_text(GTK_LABEL(state->error), "Enter a host and port from 1 to 65535."); return; }
-        state->serverList->setListServer(host, port);
+        if (name.empty() || host.empty() || port <= 0 || port > 65535) { gtk_label_set_text(GTK_LABEL(state->error), "Enter a name, host, and port from 1 to 65535."); return; }
+        const int index = gtk_combo_box_get_active(GTK_COMBO_BOX(state->endpoint));
+        if (index >= 0 && static_cast<std::size_t>(index) < state->serverList->listserverEndpoints.size()) state->serverList->listserverEndpoints.erase(state->serverList->listserverEndpoints.begin() + index);
+        state->serverList->setListServer(name, host, port);
         state->serverList->theme = gtk_combo_box_get_active_id(GTK_COMBO_BOX(state->theme));
-        state->serverList->darkMode = state->serverList->theme != "light" && gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(state->darkMode)) != FALSE;
+        state->serverList->darkMode = state->serverList->theme != "light";
         state->serverList->onThemeChangedCallback(state->serverList->darkMode, state->serverList->theme);
         gtk_widget_destroy(GTK_WIDGET(settings));
     }), state);
@@ -292,19 +372,15 @@ void TServerList::openListServerSettings() {
     gtk_widget_show_all(dialog);
 }
 
-void TServerList::setListServer(const std::string& host, int port) {
+void TServerList::setListServer(const std::string& name, const std::string& host, int port) {
+    listserverName = name;
     listserverHost = host;
     listserverPort = port;
-#ifdef _WIN32
-    HKEY key = nullptr;
-    DWORD disposition = 0;
-    if (RegCreateKeyExA(HKEY_CURRENT_USER, "SOFTWARE\\Graal\\RemoteControl", 0, nullptr, 0, KEY_WRITE, nullptr, &key, &disposition) == ERROR_SUCCESS) {
-        writeListserverValue(key, "listserverhost", listserverHost);
-        writeListserverValue(key, "listserverport", std::to_string(listserverPort));
-        RegCloseKey(key);
-    }
-#endif
+    listserverEndpoints.insert(listserverEndpoints.begin(), {name, host, port});
+    saveListserverEndpoints(listserverEndpoints);
 }
+
+std::string TServerList::currentListServer() const { return listserverName + " — " + listserverHost + ":" + std::to_string(listserverPort); }
 
 void TServerList::onRefresh(GtkButton*, gpointer data) { static_cast<TServerList*>(data)->refresh(); }
 

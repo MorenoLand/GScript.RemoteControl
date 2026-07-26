@@ -10,6 +10,12 @@
 
 struct RCConnection;
 
+struct SavedListServer {
+    std::string name;
+    std::string host;
+    int port = 14922;
+};
+
 class TServerList {
 public:
     TServerList(std::function<void()> onClose, std::function<void(void*, int, const std::string&, const std::string&, const std::string&)> onConnected, std::function<void()> onServerSelected, bool darkMode, const std::string& theme, std::function<void(bool, const std::string&)> onThemeChanged);
@@ -19,6 +25,10 @@ public:
     void reopen();
     void show();
     void openListServerSettings();
+    void setListServer(const std::string& name, const std::string& host, int port);
+    std::string currentListServer() const;
+    std::vector<std::string> mcpServerNames() const;
+    bool mcpConnect(const std::string& name, std::string& error);
 
 private:
     struct ServerEntry {
@@ -49,8 +59,6 @@ private:
     void connect();
     void disconnectCurrentConnection();
     void showEntry(int index);
-    void setListServer(const std::string& host, int port);
-
     std::function<void()> onCloseCallback;
     std::function<void(void*, int, const std::string&, const std::string&, const std::string&)> onConnectedCallback;
     std::function<void()> onServerSelectedCallback;
@@ -73,6 +81,8 @@ private:
     std::string nickname;
     std::string listserverHost;
     int listserverPort = 14922;
+    std::string listserverName;
+    std::vector<SavedListServer> listserverEndpoints;
     bool darkMode = true;
     std::string theme = "dark";
     std::vector<ServerEntry> entries;

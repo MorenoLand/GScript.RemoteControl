@@ -172,3 +172,5 @@ bool mcpGuardedReplace(const std::string& text, const std::string& expected, con
     result.replace(found, expected.size(), replacement);
     return true;
 }
+
+int mcpInstanceScore(bool active, bool connected, int editorCount) { return (editorCount > 0 ? 10000 + std::min(editorCount, 100) : 0) + (active ? 1000 : 0) + (connected ? 100 : 0); }

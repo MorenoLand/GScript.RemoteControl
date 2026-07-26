@@ -24,5 +24,8 @@ int main() {
     assert(edited == "before\nchanged block\nafter");
     assert(!mcpGuardedReplace("same same", "same", "changed", edited, error));
     assert(error == "Expected text is not unique in the current buffer");
+    assert(mcpInstanceScore(true, true, 1) > mcpInstanceScore(false, true, 5));
+    assert(mcpInstanceScore(false, true, 1) > mcpInstanceScore(false, true, 0));
+    assert(mcpInstanceScore(false, true, 0) > mcpInstanceScore(false, false, 0));
     return 0;
 }

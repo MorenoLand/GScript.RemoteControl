@@ -5,7 +5,7 @@
 
 int main() {
     RC::RCOptions options;
-    RC::loadRCOptions(options, std::filesystem::current_path() / "original" / "rc3_win_dark");
+    RC::loadRCOptions(options, std::filesystem::current_path() / "original" / "rc_win_dark");
     assert(options.nickname.empty());
     assert(options.attachaway);
     assert(!options.logrcchat);
@@ -23,11 +23,12 @@ int main() {
     assert(options.labelservers == "Server:");
     assert(options.labelplayers == "Players:");
     const std::filesystem::path saved = std::filesystem::current_path() / "mcp-options-test";
-    options.mcpapproveweapon = true; options.mcpapproveclass = true; options.mcpapprovenpc = true;
+    options.mcpapproveweapon = true; options.mcpapproveclass = true; options.mcpapprovenpc = true; options.mcpserver = true; options.mcplogin = true; options.mcpwindows = true; options.mcpfullcontrol = true;
     RC::saveRCOptions(options, saved);
     RC::RCOptions restored;
     RC::loadRCOptions(restored, saved);
     assert(restored.mcpapproveweapon && restored.mcpapproveclass && restored.mcpapprovenpc);
+    assert(restored.mcpserver && restored.mcplogin && restored.mcpwindows && restored.mcpfullcontrol);
     std::filesystem::remove_all(saved);
     return 0;
 }

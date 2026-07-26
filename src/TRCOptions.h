@@ -72,6 +72,10 @@ namespace RC {
         bool mcpread = true;
         bool mcpwrite = false;
         bool mcpadmin = false;
+        bool mcpserver = false;
+        bool mcplogin = false;
+        bool mcpwindows = false;
+        bool mcpfullcontrol = false;
         bool mcpapprove = true;
         bool mcpaudit = true;
         bool mcpapproveweapon = false;
