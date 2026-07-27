@@ -15,6 +15,7 @@
 #include <fstream>
 #include <functional>
 #include <memory>
+#include <map>
 #include <vector>
 #include <gtk/gtk.h>
 #include <gtksourceview/gtksource.h>
@@ -50,6 +51,10 @@ gint64 trayDoubleClickUntil = 0;
 bool pmTrayAlertVisible = false;
 std::function<void()> trayServerListOpen;
 std::function<void()> traySignOut;
+std::vector<TRemoteFrame*> trayRemoteFrames;
+std::function<void(TRemoteFrame*)> trayFrameSignOut;
+std::map<unsigned int, std::wstring> trayMenuDynamicText;
+std::map<unsigned int, TRemoteFrame*> trayMenuDynamicTargets;
 bool remoteControlDebug = false;
 
 namespace {
@@ -77,7 +82,10 @@ namespace {
     constexpr UINT TrayMenuQuitId = 3;
     constexpr UINT TrayMenuSignOutId = 4;
     HWND serverListHotkeyWindow = nullptr;
+    UINT trayMenuWidth = 132;
     const wchar_t* trayMenuText(UINT itemId) {
+        const auto dynamic = trayMenuDynamicText.find(itemId);
+        if (dynamic != trayMenuDynamicText.end()) return dynamic->second.c_str();
         if (itemId == TrayMenuOpenId) return L"Open";
         if (itemId == TrayMenuServerListId) return L"Server List";
         if (itemId == TrayMenuSignOutId) return L"Sign out";
@@ -95,7 +103,7 @@ namespace {
             GetTextExtentPoint32W(dc, trayMenuText(measure->itemID), -1, &size);
             SelectObject(dc, oldFont);
             ReleaseDC(window, dc);
-            measure->itemWidth = 132;
+            measure->itemWidth = trayMenuWidth;
             measure->itemHeight = static_cast<UINT>(std::max(24L, size.cy + 10));
             return TRUE;
         }
@@ -161,6 +169,9 @@ namespace {
         if (traySignOut) traySignOut();
     }
 
+    void onTrayFrameShow(GtkMenuItem*, gpointer data) { trayRemoteFrame = static_cast<TRemoteFrame*>(data); onTrayOpen(nullptr, nullptr); }
+    void onTrayFrameSignOut(GtkMenuItem*, gpointer data) { if (trayFrameSignOut) trayFrameSignOut(static_cast<TRemoteFrame*>(data)); }
+
     void onTrayQuit(GtkMenuItem*, gpointer) { gtk_main_quit(); }
 
     void toggleTrayApplication() {
@@ -205,7 +216,25 @@ namespace {
         AppendMenuW(menu, MF_OWNERDRAW, TrayMenuOpenId, L"Open");
         const bool canOpenServerList = trayRemoteFrame != nullptr && trayRemoteFrame->isNCAuthenticated();
         if (canOpenServerList) AppendMenuW(menu, MF_OWNERDRAW, TrayMenuServerListId, L"Server List");
-        if (trayRemoteFrame != nullptr) AppendMenuW(menu, MF_OWNERDRAW, TrayMenuSignOutId, L"Sign out");
+        trayMenuWidth = 132;
+        UINT dynamicId = 100;
+        bool firstConnection = true;
+        for (TRemoteFrame* frame : trayRemoteFrames) if (frame != nullptr && frame->isConnected()) {
+            const std::string serverName = frame->currentServerName();
+            const std::wstring wideServerName(serverName.begin(), serverName.end());
+            const std::wstring label = std::wstring(L"Open ") + wideServerName;
+            if (!firstConnection) AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+            firstConnection = false;
+            trayMenuWidth = std::max(trayMenuWidth, static_cast<UINT>(std::min<std::size_t>(420, label.size() * 8 + 30)));
+            trayMenuDynamicText[dynamicId] = label;
+            trayMenuDynamicTargets[dynamicId] = frame;
+            AppendMenuW(menu, MF_OWNERDRAW, dynamicId++, label.c_str());
+            const std::wstring signOutLabel = std::wstring(L"Sign out ") + wideServerName;
+            trayMenuWidth = std::max(trayMenuWidth, static_cast<UINT>(std::min<std::size_t>(420, signOutLabel.size() * 8 + 30)));
+            trayMenuDynamicText[dynamicId] = signOutLabel;
+            trayMenuDynamicTargets[dynamicId] = frame;
+            AppendMenuW(menu, MF_OWNERDRAW, dynamicId++, signOutLabel.c_str());
+        }
         AppendMenuW(menu, MF_OWNERDRAW, TrayMenuQuitId, L"Quit");
         POINT cursor;
         GetCursorPos(&cursor);
@@ -220,7 +249,23 @@ namespace {
         else if (command == TrayMenuServerListId) onTrayServerList(nullptr, nullptr);
         else if (command == TrayMenuSignOutId) onTraySignOut(nullptr, nullptr);
         else if (command == TrayMenuQuitId) onTrayQuit(nullptr, nullptr);
+        else if (command >= 100) { const auto target = trayMenuDynamicTargets.find(command); if (target != trayMenuDynamicTargets.end()) { trayRemoteFrame = target->second; if ((command - 100) % 2 == 0) onTrayOpen(nullptr, nullptr); else onTrayFrameSignOut(nullptr, trayRemoteFrame); } }
+        trayMenuDynamicText.clear();
+        trayMenuDynamicTargets.clear();
 #else
+        GtkWidget* connections = gtk_menu_item_new_with_label("Connections");
+        GtkWidget* connectionMenu = gtk_menu_new();
+        gtk_menu_item_set_submenu(GTK_MENU_ITEM(connections), connectionMenu);
+        gtk_menu_shell_append(GTK_MENU_SHELL(trayMenu), connections);
+        for (TRemoteFrame* frame : trayRemoteFrames) if (frame != nullptr && frame->isConnected()) {
+            GtkWidget* show = gtk_menu_item_new_with_label((std::string("Open ") + frame->currentServerName()).c_str());
+            GtkWidget* signOut = gtk_menu_item_new_with_label((std::string("Sign out ") + frame->currentServerName()).c_str());
+            gtk_menu_shell_append(GTK_MENU_SHELL(connectionMenu), show);
+            gtk_menu_shell_append(GTK_MENU_SHELL(connectionMenu), signOut);
+            g_signal_connect(show, "activate", G_CALLBACK(onTrayFrameShow), frame);
+            g_signal_connect(signOut, "activate", G_CALLBACK(onTrayFrameSignOut), frame);
+        }
+        gtk_widget_show_all(connections);
         gtk_widget_set_visible(trayServerListItem, trayRemoteFrame != nullptr && trayRemoteFrame->isNCAuthenticated());
         gtk_widget_set_visible(traySignOutItem, trayRemoteFrame != nullptr);
         gtk_menu_popup(GTK_MENU(trayMenu), nullptr, nullptr, gtk_status_icon_position_menu, icon, button, activateTime);
@@ -403,17 +448,20 @@ int main(int argc, char** argv) {
     g_signal_connect(trayIcon, "activate", G_CALLBACK(onTrayActivate), nullptr);
     g_signal_connect(trayIcon, "popup-menu", G_CALLBACK(onTrayPopup), nullptr);
     TStartFrame* startFrame = nullptr;
-    std::unique_ptr<TRemoteFrame> remoteFrame;
+    std::vector<std::unique_ptr<TRemoteFrame>> remoteFrames;
     std::function<void()> switchServer;
-    TServerList serverList([&] { if (remoteFrame == nullptr) startFrame->show(); }, [&](void* connection, int serverIndex, const std::string& serverName, const std::string& nickname, const std::string& accountName) {
-        remoteFrame = std::make_unique<TRemoteFrame>(options, applicationDirectory, [&] { serverList.reopen(); }, [&] { switchServer(); }, [&] { serverList.openListServerSettings(); });
-        trayRemoteFrame = remoteFrame.get();
-        remoteFrame->open(connection, serverIndex, serverName, nickname, accountName);
+    TServerList serverList([&] { if (remoteFrames.empty()) startFrame->show(); }, [&](void* connection, int serverIndex, const std::string& serverName, const std::string& nickname, const std::string& accountName) {
+        remoteFrames.push_back(std::make_unique<TRemoteFrame>(options, applicationDirectory, [&] { serverList.reopen(); }, [&] { switchServer(); }, [&] { serverList.openListServerSettings(); }));
+        TRemoteFrame* frame = remoteFrames.back().get();
+        trayRemoteFrames.push_back(frame);
+        trayRemoteFrame = frame;
+        frame->open(connection, serverIndex, serverName, nickname, accountName);
     }, [&] {
-        if (remoteFrame == nullptr) return;
+        if (remoteFrames.empty()) return;
         trayRemoteFrame = nullptr;
-        remoteFrame->disconnect();
-        remoteFrame.reset();
+        for (auto& frame : remoteFrames) frame->disconnect();
+        remoteFrames.clear();
+        trayRemoteFrames.clear();
     }, options.darkmode, options.theme, [&](bool darkMode, const std::string& theme) {
         options.darkmode = darkMode;
         options.theme = theme;
@@ -423,8 +471,8 @@ int main(int argc, char** argv) {
         setRemoteControlSyntaxTheme(options.syntaxtheme);
         setGScriptEditorOptions(options);
         refreshGScriptEditorTheme();
-        if (remoteFrame != nullptr) remoteFrame->updateThemeOptions(options);
-    });
+        for (auto& frame : remoteFrames) frame->updateThemeOptions(options);
+    }, [&] { return startFrame == nullptr ? std::vector<RC::RCAccount>() : startFrame->accountsForListServer(serverList.currentListServerName()); });
     switchServer = [&] {
         serverList.reopen();
     };
@@ -433,16 +481,21 @@ int main(int argc, char** argv) {
     startFrame = &frame;
     trayStartFrame = startFrame;
     trayServerListOpen = switchServer;
-    traySignOut = [&] {
-        if (remoteFrame == nullptr) return;
-        trayRemoteFrame = nullptr;
-        remoteFrame->signOut();
-        remoteFrame.reset();
-        startFrame->show();
+    trayFrameSignOut = [&](TRemoteFrame* closing) {
+        if (closing == nullptr) return;
+        closing->signOut();
+        trayRemoteFrames.erase(std::remove(trayRemoteFrames.begin(), trayRemoteFrames.end(), closing), trayRemoteFrames.end());
+        remoteFrames.erase(std::remove_if(remoteFrames.begin(), remoteFrames.end(), [&](const auto& frame) { return frame.get() == closing; }), remoteFrames.end());
+        trayRemoteFrame = trayRemoteFrames.empty() ? nullptr : trayRemoteFrames.back();
+        if (trayRemoteFrame == nullptr) startFrame->show();
     };
+    traySignOut = [&] { if (trayFrameSignOut) trayFrameSignOut(trayRemoteFrame); };
+    auto activeRemoteFrame = [&]() -> TRemoteFrame* { return trayRemoteFrame; };
     startMcpGuiBridge(options, applicationDirectory, {
-        [&remoteFrame] { return remoteFrame ? remoteFrame->currentServerName() : std::string(); },
-        [&remoteFrame] { return remoteFrame != nullptr && remoteFrame->isConnected(); },
+        [&activeRemoteFrame] { TRemoteFrame* frame = activeRemoteFrame(); return frame == nullptr ? std::string() : frame->currentServerName(); },
+        [&activeRemoteFrame] { TRemoteFrame* frame = activeRemoteFrame(); return frame != nullptr && frame->isConnected(); },
+        [&] { std::vector<std::string> names; for (TRemoteFrame* frame : trayRemoteFrames) if (frame != nullptr && frame->isConnected()) names.push_back(frame->currentServerName()); return names; },
+        [&](const std::string& name, std::string& error) { for (TRemoteFrame* frame : trayRemoteFrames) if (frame != nullptr && frame->isConnected() && g_ascii_strcasecmp(frame->currentServerName().c_str(), name.c_str()) == 0) { trayRemoteFrame = frame; return true; } error = "Connected RC server session not found"; return false; },
         [&frame] { return frame.mcpVisible(); },
         [&frame] { return frame.mcpAccount(); },
         [&frame] { return frame.mcpNickname(); },
@@ -450,8 +503,8 @@ int main(int argc, char** argv) {
         [&frame](const std::string& account, const std::string& nickname, std::string& error) { return frame.mcpSubmit(account, nickname, error); },
         [&serverList] { return serverList.mcpServerNames(); },
         [&serverList](const std::string& name, std::string& error) { return serverList.mcpConnect(name, error); },
-        [&remoteFrame](const std::string& view, std::string& error) { if (!remoteFrame) { error = "No connected RC server window"; return false; } return remoteFrame->mcpOpenView(view, error); },
-        [&remoteFrame](const std::string& text, std::string& error) { if (!remoteFrame) { error = "No connected RC server window"; return false; } return remoteFrame->mcpSendChat(text, error); }
+        [&activeRemoteFrame](const std::string& view, std::string& error) { TRemoteFrame* frame = activeRemoteFrame(); if (frame == nullptr) { error = "No connected RC server window"; return false; } return frame->mcpOpenView(view, error); },
+        [&activeRemoteFrame](const std::string& text, std::string& error) { TRemoteFrame* frame = activeRemoteFrame(); if (frame == nullptr) { error = "No connected RC server window"; return false; } return frame->mcpSendChat(text, error); }
     });
 #ifdef _WIN32
     frame.show();

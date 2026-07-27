@@ -28,6 +28,7 @@ public:
     bool mcpHasPassword() const;
     bool mcpSubmit(const std::string& account, const std::string& nickname, std::string& error);
     bool editAccount(const std::string& accountName, GtkWindow* parent = nullptr, int accountIndex = -1);
+    std::vector<RC::RCAccount> accountsForListServer(const std::string& listServer) const;
 
 private:
     static void onConnect(GtkButton*, gpointer data);

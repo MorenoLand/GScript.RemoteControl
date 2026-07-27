@@ -9,6 +9,7 @@
 #include <string>
 #include <thread>
 #include <vector>
+#include "TRCAccounts.h"
 
 struct RCConnection;
 
@@ -25,7 +26,7 @@ bool saveListServerProfiles(const std::filesystem::path& path, const std::vector
 
 class TServerList {
 public:
-    TServerList(std::function<void()> onClose, std::function<void(void*, int, const std::string&, const std::string&, const std::string&)> onConnected, std::function<void()> onServerSelected, bool darkMode, const std::string& theme, std::function<void(bool, const std::string&)> onThemeChanged);
+    TServerList(std::function<void()> onClose, std::function<void(void*, int, const std::string&, const std::string&, const std::string&)> onConnected, std::function<void()> onServerSelected, bool darkMode, const std::string& theme, std::function<void(bool, const std::string&)> onThemeChanged, std::function<std::vector<RC::RCAccount>()> accountChoices = {});
     ~TServerList();
 
     void open(std::uint64_t accountId, const std::string& account, const std::string& password, const std::string& nickname, const std::string& listServer);
@@ -35,6 +36,7 @@ public:
     void openListServerSettings();
     void setListServer(const std::string& name, const std::string& host, int port);
     std::string currentListServer() const;
+    std::string currentListServerName() const { return listserverName; }
     std::vector<std::string> mcpServerNames() const;
     bool mcpConnect(const std::string& name, std::string& error);
 
@@ -59,18 +61,21 @@ private:
     static void onConnect(GtkButton*, gpointer data);
     static void onSelectionChanged(GtkTreeSelection*, gpointer data);
     static void onRowActivated(GtkTreeView*, GtkTreePath*, GtkTreeViewColumn*, gpointer data);
+    static gboolean onTreeButtonPress(GtkWidget*, GdkEventButton*, gpointer data);
     static void onHomepage(GtkButton*, gpointer data);
     static gboolean onDelete(GtkWidget*, GdkEvent*, gpointer data);
     static gboolean finishLoad(gpointer data);
 
     void refresh();
-    void connect();
+    void connect(bool additional = false);
+    void connectWithAccount(const RC::RCAccount& account);
     void disconnectCurrentConnection();
     void showEntry(int index);
     std::function<void()> onCloseCallback;
     std::function<void(void*, int, const std::string&, const std::string&, const std::string&)> onConnectedCallback;
     std::function<void()> onServerSelectedCallback;
     std::function<void(bool, const std::string&)> onThemeChangedCallback;
+    std::function<std::vector<RC::RCAccount>()> accountChoicesCallback;
     GtkWidget* window = nullptr;
     GtkWindow* loginParent = nullptr;
     GtkListStore* store = nullptr;
@@ -96,4 +101,5 @@ private:
     bool darkMode = true;
     std::string theme = "dark";
     std::vector<ServerEntry> entries;
+    bool additionalConnect = false;
 };

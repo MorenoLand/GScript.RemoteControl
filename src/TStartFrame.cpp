@@ -224,6 +224,19 @@ bool TStartFrame::mcpVisible() const { return gtk_widget_get_visible(window); }
 std::string TStartFrame::mcpAccount() const { return getText(accountField); }
 std::string TStartFrame::mcpNickname() const { return getText(nicknameField); }
 bool TStartFrame::mcpHasPassword() const { return !getText(passwordField).empty(); }
+std::vector<RC::RCAccount> TStartFrame::accountsForListServer(const std::string& listServer) const {
+    std::vector<RC::RCAccount> result;
+    const std::vector<SavedListServer> profiles = RC::loadListServerProfiles(std::filesystem::path(g_get_user_config_dir()) / "GScriptRC" / "listservers.conf", "listserver.graalonline.com", 14922);
+    const auto profile = std::find_if(profiles.begin(), profiles.end(), [&](const SavedListServer& value) { return g_ascii_strcasecmp(value.name.c_str(), listServer.c_str()) == 0; });
+    const std::string endpoint = profile == profiles.end() ? std::string() : profile->host + ":" + std::to_string(profile->port);
+    for (const RC::RCAccount& account : accounts.entries()) if (std::any_of(account.listServers.begin(), account.listServers.end(), [&](const std::string& association) {
+        if (g_ascii_strcasecmp(association.c_str(), listServer.c_str()) == 0) return true;
+        if (!endpoint.empty() && g_ascii_strcasecmp(association.c_str(), endpoint.c_str()) == 0) return true;
+        if (profile != profiles.end() && g_ascii_strcasecmp(RC::normalizeListServerAssociation(association, profiles).c_str(), RC::listServerAssociation(*profile).c_str()) == 0) return true;
+        return false;
+    })) result.push_back(account);
+    return result;
+}
 
 bool TStartFrame::mcpSubmit(const std::string& account, const std::string& nickname, std::string& error) {
     if (!account.empty()) selectAccount(account);

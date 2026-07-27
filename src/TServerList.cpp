@@ -12,6 +12,7 @@
 #include <filesystem>
 #include <fstream>
 #include <glib.h>
+#include <map>
 namespace {
 
     constexpr const char* defaultListserverHost = "listserver.graalonline.com";
@@ -63,7 +64,7 @@ namespace {
 
 }
 
-TServerList::TServerList(std::function<void()> onClose, std::function<void(void*, int, const std::string&, const std::string&, const std::string&)> onConnected, std::function<void()> onServerSelected, bool nextDarkMode, const std::string& nextTheme, std::function<void(bool, const std::string&)> onThemeChanged) : onCloseCallback(std::move(onClose)), onConnectedCallback(std::move(onConnected)), onServerSelectedCallback(std::move(onServerSelected)), onThemeChangedCallback(std::move(onThemeChanged)), darkMode(nextDarkMode), theme(nextTheme) {
+TServerList::TServerList(std::function<void()> onClose, std::function<void(void*, int, const std::string&, const std::string&, const std::string&)> onConnected, std::function<void()> onServerSelected, bool nextDarkMode, const std::string& nextTheme, std::function<void(bool, const std::string&)> onThemeChanged, std::function<std::vector<RC::RCAccount>()> accountChoices) : onCloseCallback(std::move(onClose)), onConnectedCallback(std::move(onConnected)), onServerSelectedCallback(std::move(onServerSelected)), onThemeChangedCallback(std::move(onThemeChanged)), accountChoicesCallback(std::move(accountChoices)), darkMode(nextDarkMode), theme(nextTheme) {
     listserverHost = defaultListserverHost;
     listserverEndpoints = RC::loadListServerProfiles(listserverSettingsPath(), defaultListserverHost, listserverPort);
     listserverName = listserverEndpoints.front().name;
@@ -71,7 +72,7 @@ TServerList::TServerList(std::function<void()> onClose, std::function<void(void*
     listserverPort = listserverEndpoints.front().port;
     window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
     gtk_widget_set_name(window, "ServerList");
-    gtk_window_set_title(GTK_WINDOW(window), "Servers");
+    gtk_window_set_title(GTK_WINDOW(window), (listserverName + " Servers").c_str());
     gtk_window_set_position(GTK_WINDOW(window), GTK_WIN_POS_CENTER);
     gtk_window_set_default_size(GTK_WINDOW(window), 520, 350);
 
@@ -227,6 +228,7 @@ TServerList::TServerList(std::function<void()> onClose, std::function<void(void*
 
     g_signal_connect(refreshButton, "clicked", G_CALLBACK(onRefresh), this);
     g_signal_connect(connectButton, "clicked", G_CALLBACK(onConnect), this);
+    g_signal_connect(tree, "button-press-event", G_CALLBACK(onTreeButtonPress), this);
     g_signal_connect(homepageButton, "clicked", G_CALLBACK(onHomepage), this);
     g_signal_connect(window, "delete-event", G_CALLBACK(onDelete), this);
 }
@@ -546,13 +548,14 @@ void TServerList::setListServer(const std::string& name, const std::string& host
     listserverPort = port;
     listserverEndpoints.insert(listserverEndpoints.begin(), {name, host, port});
     saveListserverEndpoints(listserverEndpoints);
+    gtk_window_set_title(GTK_WINDOW(window), (listserverName + " Servers").c_str());
 }
 
 std::string TServerList::currentListServer() const { return listserverName + " — " + listserverHost + ":" + std::to_string(listserverPort); }
 
 void TServerList::onRefresh(GtkButton*, gpointer data) { static_cast<TServerList*>(data)->refresh(); }
 
-void TServerList::onConnect(GtkButton*, gpointer data) { static_cast<TServerList*>(data)->connect(); }
+void TServerList::onConnect(GtkButton*, gpointer data) { static_cast<TServerList*>(data)->connect(false); }
 
 void TServerList::onSelectionChanged(GtkTreeSelection* selection, gpointer data) {
     GtkTreeModel* model = nullptr;
@@ -563,7 +566,51 @@ void TServerList::onSelectionChanged(GtkTreeSelection* selection, gpointer data)
     static_cast<TServerList*>(data)->showEntry(index);
 }
 
-void TServerList::onRowActivated(GtkTreeView*, GtkTreePath*, GtkTreeViewColumn*, gpointer data) { static_cast<TServerList*>(data)->connect(); }
+void TServerList::onRowActivated(GtkTreeView*, GtkTreePath*, GtkTreeViewColumn*, gpointer data) { static_cast<TServerList*>(data)->connect(false); }
+
+gboolean TServerList::onTreeButtonPress(GtkWidget* widget, GdkEventButton* event, gpointer data) {
+    TServerList* list = static_cast<TServerList*>(data);
+    if (event->button == GDK_BUTTON_PRIMARY && (event->state & GDK_CONTROL_MASK) != 0) {
+        GtkTreePath* path = nullptr;
+        if (gtk_tree_view_get_path_at_pos(GTK_TREE_VIEW(widget), static_cast<int>(event->x), static_cast<int>(event->y), &path, nullptr, nullptr, nullptr)) {
+            gtk_tree_view_set_cursor(GTK_TREE_VIEW(widget), path, nullptr, false);
+            gtk_tree_path_free(path);
+            list->connect(true);
+            return true;
+        }
+    }
+    if (event->button != GDK_BUTTON_SECONDARY) return false;
+    GtkTreePath* path = nullptr;
+    if (!gtk_tree_view_get_path_at_pos(GTK_TREE_VIEW(widget), static_cast<int>(event->x), static_cast<int>(event->y), &path, nullptr, nullptr, nullptr)) return false;
+    gtk_tree_view_set_cursor(GTK_TREE_VIEW(widget), path, nullptr, false);
+    GtkWidget* menu = gtk_menu_new();
+    GtkWidget* additional = gtk_menu_item_new_with_label("Open additional connection");
+    GtkWidget* normal = gtk_menu_item_new_with_label("Connect");
+    gtk_menu_shell_append(GTK_MENU_SHELL(menu), additional);
+    gtk_menu_shell_append(GTK_MENU_SHELL(menu), normal);
+    g_signal_connect(additional, "activate", G_CALLBACK(+[](GtkMenuItem*, gpointer value) { static_cast<TServerList*>(value)->connect(true); }), list);
+    g_signal_connect(normal, "activate", G_CALLBACK(+[](GtkMenuItem*, gpointer value) { static_cast<TServerList*>(value)->connect(false); }), list);
+    if (list->accountChoicesCallback) {
+        GtkWidget* accounts = gtk_menu_item_new_with_label("Connect using account");
+        GtkWidget* accountMenu = gtk_menu_new();
+        gtk_menu_item_set_submenu(GTK_MENU_ITEM(accounts), accountMenu);
+        const auto choices = list->accountChoicesCallback();
+        std::map<std::string, int> nameCounts;
+        for (const RC::RCAccount& account : choices) ++nameCounts[account.name];
+        for (const RC::RCAccount& account : choices) {
+            const std::string label = nameCounts[account.name] > 1 ? account.name + " (#" + std::to_string(account.id) + ")" : account.name;
+            GtkWidget* item = gtk_menu_item_new_with_label(label.c_str());
+            g_object_set_data_full(G_OBJECT(item), "rc-account-choice", new RC::RCAccount(account), [](gpointer value) { delete static_cast<RC::RCAccount*>(value); });
+            g_signal_connect(item, "activate", G_CALLBACK(+[](GtkMenuItem* item, gpointer value) { const auto* account = static_cast<const RC::RCAccount*>(g_object_get_data(G_OBJECT(item), "rc-account-choice")); if (account != nullptr) static_cast<TServerList*>(value)->connectWithAccount(*account); }), list);
+            gtk_menu_shell_append(GTK_MENU_SHELL(accountMenu), item);
+        }
+        gtk_menu_shell_append(GTK_MENU_SHELL(menu), accounts);
+    }
+    gtk_widget_show_all(menu);
+    gtk_menu_popup_at_pointer(GTK_MENU(menu), reinterpret_cast<GdkEvent*>(event));
+    gtk_tree_path_free(path);
+    return true;
+}
 
 void TServerList::onHomepage(GtkButton*, gpointer data) {
     TServerList* serverList = static_cast<TServerList*>(data);
@@ -638,14 +685,14 @@ void TServerList::refresh() {
     });
 }
 
-void TServerList::connect() {
+void TServerList::connect(bool additional) {
     GtkTreeSelection* selection = gtk_tree_view_get_selection(GTK_TREE_VIEW(tree));
     GtkTreeModel* model = nullptr;
     GtkTreeIter iter;
     if (!gtk_tree_selection_get_selected(selection, &model, &iter)) return;
     int index = -1;
     gtk_tree_model_get(model, &iter, 4, &index, -1);
-    if (onServerSelectedCallback) onServerSelectedCallback();
+    if (!additional && onServerSelectedCallback) onServerSelectedCallback();
     std::lock_guard lock(connectionMutex);
     if (connection == nullptr) return;
     remoteControlDebugLog("connecting to server index %d", index);
@@ -660,6 +707,33 @@ void TServerList::connect() {
         remoteControlDebugLog("server connection failed: %s", reason == nullptr ? "You have been disconnected!" : reason);
         createErrorWindow("Connection Error", reason == nullptr ? "You have been disconnected!" : reason, loginParent != nullptr ? loginParent : GTK_WINDOW(window));
     }
+}
+
+void TServerList::connectWithAccount(const RC::RCAccount& selectedAccount) {
+    GtkTreeSelection* selection = gtk_tree_view_get_selection(GTK_TREE_VIEW(tree));
+    GtkTreeModel* model = nullptr;
+    GtkTreeIter iter;
+    if (!gtk_tree_selection_get_selected(selection, &model, &iter)) return;
+    int index = -1;
+    gtk_tree_model_get(model, &iter, 4, &index, -1);
+    if (index < 0 || static_cast<std::size_t>(index) >= entries.size()) return;
+    void* nextConnection = rc_connect(listserverHost.c_str(), listserverPort, selectedAccount.name.c_str(), selectedAccount.password.c_str());
+    if (nextConnection == nullptr) { createErrorWindow("Connection Error", "Unable to create listserver connection.", loginParent != nullptr ? loginParent : GTK_WINDOW(window)); return; }
+    RCServer* servers = nullptr;
+    const int count = rc_get_servers(nextConnection, &servers);
+    int serverIndex = -1;
+    for (int server = 0; server < count; ++server) {
+        const std::string rawName = servers[server].name == nullptr ? "" : servers[server].name;
+        if (getServerListName(rawName) == entries[index].name) { serverIndex = server; break; }
+    }
+    if (serverIndex < 0 || !rc_connect_to_server(nextConnection, serverIndex)) {
+        const char* reason = rc_last_error(nextConnection);
+        createErrorWindow("Connection Error", reason == nullptr ? "Server is no longer available." : reason, loginParent != nullptr ? loginParent : GTK_WINDOW(window));
+        rc_disconnect(nextConnection);
+        return;
+    }
+    gtk_widget_hide(window);
+    onConnectedCallback(nextConnection, serverIndex, entries[index].name, nickname, selectedAccount.name);
 }
 
 void TServerList::disconnectCurrentConnection() {

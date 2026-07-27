@@ -7,6 +7,8 @@
 struct McpGuiActions {
     std::function<std::string()> serverName;
     std::function<bool()> connected;
+    std::function<std::vector<std::string>()> connectionNames;
+    std::function<bool(const std::string&, std::string&)> selectConnection;
     std::function<bool()> loginVisible;
     std::function<std::string()> loginAccount;
     std::function<std::string()> loginNickname;

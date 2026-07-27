@@ -1,6 +1,10 @@
+set(runtimeDependencyDirectories "${REMOTE_CONTROL_MINGW_RUNTIME_DIRECTORY}")
+if(REMOTE_CONTROL_EXTRA_RUNTIME_DIRECTORY)
+    list(APPEND runtimeDependencyDirectories "${REMOTE_CONTROL_EXTRA_RUNTIME_DIRECTORY}")
+endif()
 file(GET_RUNTIME_DEPENDENCIES
     EXECUTABLES "${REMOTE_CONTROL_EXECUTABLE}"
-    DIRECTORIES "${REMOTE_CONTROL_MINGW_RUNTIME_DIRECTORY}"
+    DIRECTORIES ${runtimeDependencyDirectories}
     PRE_EXCLUDE_REGEXES "api-ms-.*" "ext-ms-.*" "Azure.*" "HvsiFileTrust.*" "PdmUtilities.*" "wpaxholder.*" "WTDSENSOR\\.dll" "wtdccm\\.dll"
     POST_EXCLUDE_REGEXES ".*[Ww]indows[/\\]System32[/\\].*"
     RESOLVED_DEPENDENCIES_VAR runtimeDependencies
@@ -19,15 +23,19 @@ endif()
 
 foreach(runtimeDependency IN LISTS runtimeDependencies)
     get_filename_component(runtimeDependencyName "${runtimeDependency}" NAME)
-    set(runtimeDependencySource "${REMOTE_CONTROL_MINGW_RUNTIME_DIRECTORY}/${runtimeDependencyName}")
-    if(EXISTS "${runtimeDependencySource}")
-        file(COPY_FILE "${runtimeDependencySource}" "${REMOTE_CONTROL_OUTPUT_DIRECTORY}/${runtimeDependencyName}" ONLY_IF_DIFFERENT)
-    endif()
+    foreach(runtimeDependencyDirectory IN LISTS runtimeDependencyDirectories)
+        if(EXISTS "${runtimeDependencyDirectory}/${runtimeDependencyName}")
+            file(COPY_FILE "${runtimeDependencyDirectory}/${runtimeDependencyName}" "${REMOTE_CONTROL_OUTPUT_DIRECTORY}/${runtimeDependencyName}" ONLY_IF_DIFFERENT)
+            break()
+        endif()
+    endforeach()
 endforeach()
 
 foreach(runtimeConflict IN LISTS runtimeConflicts_FILENAMES)
-    set(runtimeConflictSource "${REMOTE_CONTROL_MINGW_RUNTIME_DIRECTORY}/${runtimeConflict}")
-    if(EXISTS "${runtimeConflictSource}")
-        file(COPY_FILE "${runtimeConflictSource}" "${REMOTE_CONTROL_OUTPUT_DIRECTORY}/${runtimeConflict}" ONLY_IF_DIFFERENT)
-    endif()
+    foreach(runtimeDependencyDirectory IN LISTS runtimeDependencyDirectories)
+        if(EXISTS "${runtimeDependencyDirectory}/${runtimeConflict}")
+            file(COPY_FILE "${runtimeDependencyDirectory}/${runtimeConflict}" "${REMOTE_CONTROL_OUTPUT_DIRECTORY}/${runtimeConflict}" ONLY_IF_DIFFERENT)
+            break()
+        endif()
+    endforeach()
 endforeach()

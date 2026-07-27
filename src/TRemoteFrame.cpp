@@ -37,6 +37,14 @@ extern void remote_control_begin_pm_tray_alert();
 extern void remote_control_clear_pm_tray_alert();
 extern void remote_control_set_tray_label(const char* serverName, int playerCount);
 
+namespace {
+std::string remoteControlTitle(const std::string& server = {}, const std::string& players = {}) {
+    std::string title = server.empty() ? "Remote Control" : server;
+    if (!players.empty()) title += " [" + players + "]";
+    return title + " - " + REMOTE_CONTROL_BUILD_DATE;
+}
+}
+
 struct WebPAnimation {
     std::vector<uint8_t> data;
     WebPData source{};
@@ -129,7 +137,7 @@ TRemoteFrame::TRemoteFrame(const RC::RCOptions& nextOptions, const std::filesyst
     pacmanEmote = gdk_pixbuf_new_from_file((applicationDirectory / "images" / "emote_pacman.png").string().c_str(), nullptr);
     window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
     gtk_widget_set_name(window, "RemoteFrame");
-    gtk_window_set_title(GTK_WINDOW(window), (std::string("Remote Control ") + REMOTE_CONTROL_BUILD_DATE).c_str());
+    gtk_window_set_title(GTK_WINDOW(window), remoteControlTitle().c_str());
     gtk_window_set_default_size(GTK_WINDOW(window), 500, 350);
 
     GtkWidget* root = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
@@ -422,7 +430,7 @@ void TRemoteFrame::open(void* nextConnection, int serverIndex, const std::string
     connection = nextConnection;
     currentServerIndex = serverIndex;
     this->serverName = serverName;
-    gtk_window_set_title(GTK_WINDOW(window), (std::string("Remote Control (") + serverName + ")").c_str());
+    gtk_window_set_title(GTK_WINDOW(window), remoteControlTitle(serverName).c_str());
     trayPlayerCount = -1;
     setBackupServerName(serverName);
     disconnectHandled = false;
@@ -782,7 +790,7 @@ gboolean TRemoteFrame::processEvents(gpointer data) {
             gtk_label_set_text(GTK_LABEL(frame->playersLabel), playerText.c_str());
             for (GtkWidget* shadow : frame->playersLabelShadows) if (shadow != nullptr) gtk_label_set_text(GTK_LABEL(shadow), playerText.c_str());
             const std::string playerLabel = frame->options.labelplayers.empty() ? "Players:" : frame->options.labelplayers;
-            gtk_window_set_title(GTK_WINDOW(frame->window), (std::string("Remote Control (") + frame->serverName + ") (" + playerLabel + " " + std::to_string(count) + ")").c_str());
+            gtk_window_set_title(GTK_WINDOW(frame->window), remoteControlTitle(frame->serverName, playerLabel + " " + std::to_string(count)).c_str());
             if (count != frame->trayPlayerCount) {
                 frame->trayPlayerCount = count;
                 remote_control_set_tray_label(frame->serverName.c_str(), count);
