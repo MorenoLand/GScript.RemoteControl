@@ -15,6 +15,7 @@ public:
     ~TPlayerList();
     void open(void* connection);
     void setConnection(void* connection);
+    void setServerName(const std::string& server);
     void setStatusList(const char* statuses);
     void setAttachAway(bool enabled);
     void setAwayStatus(bool away);
@@ -77,6 +78,7 @@ private:
     void loadStatusIcons();
     std::vector<int> playerIds() const;
     GtkWidget* window = nullptr;
+    std::string serverName;
     GtkWidget* tree = nullptr;
     GtkWidget* statusCombo = nullptr;
     GtkTreeStore* store = nullptr;

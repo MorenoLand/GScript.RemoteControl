@@ -179,6 +179,7 @@ TAccountsWindow::TAccountsWindow() {
 }
 
 TAccountsWindow::~TAccountsWindow() { if (queryWindow != nullptr) gtk_widget_destroy(queryWindow); if (listWindow != nullptr) gtk_widget_destroy(listWindow); if (editorWindow != nullptr) gtk_widget_destroy(editorWindow); if (store != nullptr) g_object_unref(store); }
+void TAccountsWindow::setServerName(const std::string& server) { serverName = server; const std::string suffix = serverName.empty() ? "" : " - " + serverName; if (queryWindow != nullptr) gtk_window_set_title(GTK_WINDOW(queryWindow), ("Get Accounts List" + suffix).c_str()); if (listWindow != nullptr) gtk_window_set_title(GTK_WINDOW(listWindow), ("Accounts List" + suffix).c_str()); if (editorWindow != nullptr) gtk_window_set_title(GTK_WINDOW(editorWindow), ("Account Editor" + suffix).c_str()); }
 void TAccountsWindow::open(void* nextConnection) { connection = nextConnection; gtk_widget_show_all(listWindow); gtk_window_present(GTK_WINDOW(listWindow)); }
 void TAccountsWindow::openQuery() { gtk_widget_show_all(queryWindow); gtk_window_present(GTK_WINDOW(queryWindow)); gtk_widget_grab_focus(accountField); }
 void TAccountsWindow::setAccounts(const char* accounts) { gtk_list_store_clear(store); std::istringstream input(accounts == nullptr ? "" : accounts); for (std::string account; std::getline(input, account);) { GtkTreeIter row; gtk_list_store_append(store, &row); gtk_list_store_set(store, &row, 0, account.c_str(), -1); } gtk_widget_show_all(listWindow); gtk_window_present(GTK_WINDOW(listWindow)); }
@@ -186,7 +187,8 @@ void TAccountsWindow::showEditor(void* nextConnection, const std::string& accoun
 void TAccountsWindow::openEditor(const std::string& account, const char* content) {
     editingAccount = account;
     const std::map<std::string, std::string> values = valuesFromText(content);
-    gtk_window_set_title(GTK_WINDOW(editorWindow), account.empty() ? "Add new account" : ("Edit account of " + account).c_str());
+    const std::string baseTitle = account.empty() ? "Add new account" : "Edit account of " + account;
+    gtk_window_set_title(GTK_WINDOW(editorWindow), serverName.empty() ? baseTitle.c_str() : (baseTitle + " - " + serverName).c_str());
     gtk_entry_set_text(GTK_ENTRY(nameField), values.count("account") ? values.at("account").c_str() : account.c_str());
     gtk_entry_set_text(GTK_ENTRY(passwordField), values.count("password") ? values.at("password").c_str() : "");
     gtk_entry_set_text(GTK_ENTRY(emailField), values.count("email") ? values.at("email").c_str() : "");

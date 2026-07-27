@@ -11,6 +11,7 @@ public:
     TOptionsWindow(RC::RCOptions& options, const std::filesystem::path& applicationDirectory, std::function<void(const RC::RCOptions&)> onSaved);
     ~TOptionsWindow();
     void open();
+    void setServerName(const std::string& server);
 private:
     static void onClose(GtkButton*, gpointer data);
     static void onThemeChanged(GtkComboBox*, gpointer data);

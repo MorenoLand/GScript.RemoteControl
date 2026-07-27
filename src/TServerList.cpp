@@ -64,7 +64,7 @@ namespace {
 
 }
 
-TServerList::TServerList(std::function<void()> onClose, std::function<void(void*, int, const std::string&, const std::string&, const std::string&)> onConnected, std::function<void()> onServerSelected, bool nextDarkMode, const std::string& nextTheme, std::function<void(bool, const std::string&)> onThemeChanged, std::function<std::vector<RC::RCAccount>()> accountChoices) : onCloseCallback(std::move(onClose)), onConnectedCallback(std::move(onConnected)), onServerSelectedCallback(std::move(onServerSelected)), onThemeChangedCallback(std::move(onThemeChanged)), accountChoicesCallback(std::move(accountChoices)), darkMode(nextDarkMode), theme(nextTheme) {
+TServerList::TServerList(std::function<void()> onClose, std::function<void(void*, int, const std::string&, const std::string&, const std::string&)> onConnected, std::function<void()> onServerSelected, bool nextDarkMode, const std::string& nextTheme, std::function<void(bool, const std::string&)> onThemeChanged, std::function<std::vector<RC::RCAccount>()> accountChoices, std::function<std::vector<RC::RCAccount>(const std::string&)> accountChoicesForListServer, std::function<void()> onOpenAnother) : onCloseCallback(std::move(onClose)), onConnectedCallback(std::move(onConnected)), onServerSelectedCallback(std::move(onServerSelected)), onThemeChangedCallback(std::move(onThemeChanged)), accountChoicesCallback(std::move(accountChoices)), accountChoicesForListServerCallback(std::move(accountChoicesForListServer)), onOpenAnotherCallback(std::move(onOpenAnother)), darkMode(nextDarkMode), theme(nextTheme) {
     listserverHost = defaultListserverHost;
     listserverEndpoints = RC::loadListServerProfiles(listserverSettingsPath(), defaultListserverHost, listserverPort);
     listserverName = listserverEndpoints.front().name;
@@ -543,6 +543,14 @@ void TServerList::openListServerSettings() {
     gtk_widget_show_all(dialog);
 }
 
+void TServerList::openAnotherListServer(const RC::RCAccount* selectedAccount, const std::string& selectedListServer) {
+    additionalLists.push_back(std::make_unique<TServerList>([] {}, onConnectedCallback, onServerSelectedCallback, darkMode, theme, onThemeChangedCallback, accountChoicesCallback, accountChoicesForListServerCallback, [this] { openAnotherListServer(); }));
+    TServerList* list = additionalLists.back().get();
+    list->setLoginParent(loginParent);
+    if (selectedAccount == nullptr) list->open(accountId, account, password, nickname, "");
+    else list->open(selectedAccount->id, selectedAccount->name, selectedAccount->password, nickname, selectedListServer.empty() ? listserverName : selectedListServer);
+}
+
 void TServerList::setListServer(const std::string& name, const std::string& host, int port) {
     listserverName = name;
     listserverHost = host;
@@ -585,17 +593,34 @@ gboolean TServerList::onTreeButtonPress(GtkWidget* widget, GdkEventButton* event
     if (!gtk_tree_view_get_path_at_pos(GTK_TREE_VIEW(widget), static_cast<int>(event->x), static_cast<int>(event->y), &path, nullptr, nullptr, nullptr)) return false;
     gtk_tree_view_set_cursor(GTK_TREE_VIEW(widget), path, nullptr, false);
     GtkWidget* menu = gtk_menu_new();
+    GtkWidget* anotherList = gtk_menu_item_new_with_label("Open another server list");
     GtkWidget* additional = gtk_menu_item_new_with_label("Open additional connection");
     GtkWidget* normal = gtk_menu_item_new_with_label("Connect");
+    GtkWidget* anotherListMenu = gtk_menu_new();
+    gtk_menu_item_set_submenu(GTK_MENU_ITEM(anotherList), anotherListMenu);
+    gtk_menu_shell_append(GTK_MENU_SHELL(menu), anotherList);
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), additional);
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), normal);
+    const auto choices = list->accountChoicesCallback ? list->accountChoicesCallback() : std::vector<RC::RCAccount>();
+    std::map<std::string, int> nameCounts;
+    for (const RC::RCAccount& account : choices) ++nameCounts[account.name];
+    for (const RC::RCAccount& account : choices) {
+        std::string associations;
+        for (const std::string& association : account.listServers) { if (!associations.empty()) associations += ", "; associations += association; }
+        std::string label = account.name + " [" + (associations.empty() ? list->listserverName : associations) + "]";
+        if (nameCounts[account.name] > 1) label += " (#" + std::to_string(account.id) + ")";
+        GtkWidget* item = gtk_menu_item_new_with_label(label.c_str());
+        g_object_set_data_full(G_OBJECT(item), "rc-account-choice", new RC::RCAccount(account), [](gpointer value) { delete static_cast<RC::RCAccount*>(value); });
+        g_signal_connect(item, "activate", G_CALLBACK(+[](GtkMenuItem* item, gpointer value) { const auto* account = static_cast<const RC::RCAccount*>(g_object_get_data(G_OBJECT(item), "rc-account-choice")); if (account != nullptr) static_cast<TServerList*>(value)->openAnotherListServer(account, account->listServers.empty() ? std::string() : account->listServers.front()); }), list);
+        gtk_menu_shell_append(GTK_MENU_SHELL(anotherListMenu), item);
+    }
+    if (choices.empty()) { GtkWidget* empty = gtk_menu_item_new_with_label("No saved accounts"); gtk_widget_set_sensitive(empty, false); gtk_menu_shell_append(GTK_MENU_SHELL(anotherListMenu), empty); }
     g_signal_connect(additional, "activate", G_CALLBACK(+[](GtkMenuItem*, gpointer value) { static_cast<TServerList*>(value)->connect(true); }), list);
     g_signal_connect(normal, "activate", G_CALLBACK(+[](GtkMenuItem*, gpointer value) { static_cast<TServerList*>(value)->connect(false); }), list);
-    if (list->accountChoicesCallback) {
+    if (list->accountChoicesCallback || list->accountChoicesForListServerCallback) {
         GtkWidget* accounts = gtk_menu_item_new_with_label("Connect using account");
         GtkWidget* accountMenu = gtk_menu_new();
         gtk_menu_item_set_submenu(GTK_MENU_ITEM(accounts), accountMenu);
-        const auto choices = list->accountChoicesCallback();
         std::map<std::string, int> nameCounts;
         for (const RC::RCAccount& account : choices) ++nameCounts[account.name];
         for (const RC::RCAccount& account : choices) {

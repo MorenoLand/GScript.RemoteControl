@@ -371,6 +371,7 @@ TOptionsWindow::TOptionsWindow(RC::RCOptions& nextOptions, const std::filesystem
     g_signal_connect(window, "delete-event", G_CALLBACK(onDelete), this);
 }
 TOptionsWindow::~TOptionsWindow() { if (animationSource != 0) g_source_remove(animationSource); if (window != nullptr) gtk_widget_destroy(window); }
+void TOptionsWindow::setServerName(const std::string& server) { gtk_window_set_title(GTK_WINDOW(window), server.empty() ? "Options" : ("Options - " + server).c_str()); }
 void TOptionsWindow::open() {
     RC::RCOptions persisted = options;
     RC::loadRCOptions(persisted, applicationDirectory);

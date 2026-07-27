@@ -50,6 +50,7 @@ TLevelList::TLevelList(GtkWindow* parent) {
     g_signal_connect(window, "delete-event", G_CALLBACK(onDelete), this);
 }
 TLevelList::~TLevelList() { if (window != nullptr) gtk_widget_destroy(window); }
+void TLevelList::setServerName(const std::string& server) { serverName = server; gtk_window_set_title(GTK_WINDOW(window), serverName.empty() ? "Levels" : ("Levels - " + serverName).c_str()); }
 void TLevelList::hide() { if (window != nullptr) gtk_widget_hide(window); }
 void TLevelList::open(void* nextConnection) {
     connection = nextConnection;

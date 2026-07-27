@@ -26,7 +26,7 @@ bool saveListServerProfiles(const std::filesystem::path& path, const std::vector
 
 class TServerList {
 public:
-    TServerList(std::function<void()> onClose, std::function<void(void*, int, const std::string&, const std::string&, const std::string&)> onConnected, std::function<void()> onServerSelected, bool darkMode, const std::string& theme, std::function<void(bool, const std::string&)> onThemeChanged, std::function<std::vector<RC::RCAccount>()> accountChoices = {});
+    TServerList(std::function<void()> onClose, std::function<void(void*, int, const std::string&, const std::string&, const std::string&)> onConnected, std::function<void()> onServerSelected, bool darkMode, const std::string& theme, std::function<void(bool, const std::string&)> onThemeChanged, std::function<std::vector<RC::RCAccount>()> accountChoices = {}, std::function<std::vector<RC::RCAccount>(const std::string&)> accountChoicesForListServer = {}, std::function<void()> onOpenAnother = {});
     ~TServerList();
 
     void open(std::uint64_t accountId, const std::string& account, const std::string& password, const std::string& nickname, const std::string& listServer);
@@ -34,6 +34,7 @@ public:
     void reopen();
     void show();
     void openListServerSettings();
+    void openAnotherListServer(const RC::RCAccount* selectedAccount = nullptr, const std::string& selectedListServer = {});
     void setListServer(const std::string& name, const std::string& host, int port);
     std::string currentListServer() const;
     std::string currentListServerName() const { return listserverName; }
@@ -76,6 +77,9 @@ private:
     std::function<void()> onServerSelectedCallback;
     std::function<void(bool, const std::string&)> onThemeChangedCallback;
     std::function<std::vector<RC::RCAccount>()> accountChoicesCallback;
+    std::function<std::vector<RC::RCAccount>(const std::string&)> accountChoicesForListServerCallback;
+    std::function<void()> onOpenAnotherCallback;
+    std::vector<std::unique_ptr<TServerList>> additionalLists;
     GtkWidget* window = nullptr;
     GtkWindow* loginParent = nullptr;
     GtkListStore* store = nullptr;

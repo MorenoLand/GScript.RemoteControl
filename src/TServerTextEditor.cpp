@@ -7,9 +7,9 @@
 #include <grclib.h>
 #include <gtksourceview/gtksource.h>
 
-TServerTextEditor::TServerTextEditor(Kind nextKind, const char* title) : kind(nextKind) {
+TServerTextEditor::TServerTextEditor(Kind nextKind, const char* nextTitle) : kind(nextKind), title(nextTitle == nullptr ? "Script" : nextTitle) {
     window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
-    gtk_window_set_title(GTK_WINDOW(window), title);
+    gtk_window_set_title(GTK_WINDOW(window), this->title.c_str());
     gtk_window_set_default_size(GTK_WINDOW(window), 600, 460);
     GtkWidget* root = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
     gtk_container_add(GTK_CONTAINER(window), root);
@@ -62,6 +62,8 @@ TServerTextEditor::TServerTextEditor(Kind nextKind, const char* title) : kind(ne
     g_signal_connect(closeButton, "clicked", G_CALLBACK(onClose), this);
     g_signal_connect(window, "delete-event", G_CALLBACK(onDelete), this);
 }
+
+void TServerTextEditor::setServerName(const std::string& server) { gtk_window_set_title(GTK_WINDOW(window), server.empty() ? title.c_str() : (title + " - " + server).c_str()); }
 
 TServerTextEditor::~TServerTextEditor() { if (window != nullptr) gtk_widget_destroy(window); }
 void TServerTextEditor::hide() { if (window != nullptr) gtk_widget_hide(window); }

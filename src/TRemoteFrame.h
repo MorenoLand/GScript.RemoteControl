@@ -123,6 +123,7 @@ private:
     GtkWidget* notebook = nullptr;
     GtkCssProvider* notebookTabProvider = nullptr;
     GtkWidget* graphicalFixed = nullptr;
+    GtkWidget* graphicalContainer = nullptr;
     GtkWidget* backgroundImage = nullptr;
     GtkWidget* editField = nullptr;
     GtkWidget* serverLabel = nullptr;

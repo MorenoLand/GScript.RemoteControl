@@ -430,6 +430,7 @@ void TFileBrowserTree::openFolder(void* nextConnection, const std::string& folde
 
 void TFileBrowserTree::setDownloadFolder(const std::string& folder) { downloadFolder = folder; }
 void TFileBrowserTree::setDownloadServer(const std::string& server) { downloadServer = server; }
+void TFileBrowserTree::setServerName(const std::string& server) { gtk_window_set_title(GTK_WINDOW(window), server.empty() ? "File Browser" : ("File Browser - " + server).c_str()); }
 std::string TFileBrowserTree::downloadDestinationDirectory() const {
     if (downloadFolder.empty()) return {};
     std::string destination = downloadFolder;
@@ -1164,7 +1165,8 @@ gboolean TFileBrowserTree::beginInlineRename(gpointer data) {
 
 void TFileBrowserTree::showTextEditor(const char* path, const void* content, int length) {
     struct EditorState { void* connection; std::string path; GtkWidget* editor; };
-    GtkWidget* dialog = gtk_dialog_new_with_buttons(path, GTK_WINDOW(window), static_cast<GtkDialogFlags>(0), "Cancel", GTK_RESPONSE_CANCEL, "Save", GTK_RESPONSE_ACCEPT, nullptr);
+    const std::string editorTitle = downloadServer.empty() ? std::string(path) : std::string(path) + " - " + downloadServer;
+    GtkWidget* dialog = gtk_dialog_new_with_buttons(editorTitle.c_str(), GTK_WINDOW(window), static_cast<GtkDialogFlags>(0), "Cancel", GTK_RESPONSE_CANCEL, "Save", GTK_RESPONSE_ACCEPT, nullptr);
     gtk_window_set_destroy_with_parent(GTK_WINDOW(dialog), false);
     gtk_window_set_transient_for(GTK_WINDOW(dialog), nullptr);
     gtk_window_set_type_hint(GTK_WINDOW(dialog), GDK_WINDOW_TYPE_HINT_NORMAL);

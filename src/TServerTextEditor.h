@@ -11,6 +11,7 @@ public:
     void open(void* connection);
     void hide();
     void setContent(const char* content);
+    void setServerName(const std::string& server);
 private:
     static void onSave(GtkButton*, gpointer data);
     static void onClose(GtkButton*, gpointer data);
@@ -20,4 +21,5 @@ private:
     GtkWidget* window = nullptr;
     GtkTextBuffer* buffer = nullptr;
     void* connection = nullptr;
+    std::string title;
 };

@@ -532,6 +532,7 @@ void TRemoteFrame::onPlayerList(GtkMenuItem*, gpointer data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
     if (frame->connection == nullptr) return;
     if (frame->playerList == nullptr) frame->playerList = new TPlayerList(frame->applicationDirectory, frame->accountName);
+    frame->playerList->setServerName(frame->serverName);
     frame->playerList->open(frame->connection);
 }
 
@@ -539,6 +540,7 @@ void TRemoteFrame::onToalls(GtkMenuItem*, gpointer data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
     if (frame->connection == nullptr) return;
     if (frame->toallsWindow == nullptr) frame->toallsWindow = new TToallsWindow();
+    frame->toallsWindow->setServerName(frame->serverName);
     frame->toallsWindow->open(frame->connection, frame->nickname);
 }
 
@@ -546,12 +548,14 @@ void TRemoteFrame::onAccounts(GtkMenuItem*, gpointer data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
     if (frame->connection == nullptr) return;
     if (frame->accountsWindow == nullptr) frame->accountsWindow = new TAccountsWindow();
+    frame->accountsWindow->setServerName(frame->serverName);
     frame->accountsWindow->open(frame->connection);
 }
 
 void TRemoteFrame::onRCOptions(GtkMenuItem*, gpointer data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
     if (frame->optionsWindow == nullptr) frame->optionsWindow = new TOptionsWindow(const_cast<RC::RCOptions&>(frame->options), frame->applicationDirectory, [frame](const RC::RCOptions& previous) { frame->applyOptions(previous); });
+    frame->optionsWindow->setServerName(frame->serverName);
     frame->optionsWindow->open();
 }
 
@@ -561,34 +565,40 @@ void TRemoteFrame::onPlayerText(const char* type, const char* account, const cha
     if (type == nullptr || account == nullptr) return;
     if (std::string(type) == "account") {
         if (frame->accountsWindow == nullptr) frame->accountsWindow = new TAccountsWindow();
+        frame->accountsWindow->setServerName(frame->serverName);
         frame->accountsWindow->showEditor(frame->connection, account, content);
         return;
     }
     if (frame->playerList == nullptr) frame->playerList = new TPlayerList(frame->applicationDirectory, frame->accountName);
+    frame->playerList->setServerName(frame->serverName);
     frame->playerList->setConnection(frame->connection);
     frame->playerList->handlePlayerText(type, account, content);
 }
 void TRemoteFrame::onPlayerRights(const char* account, int rights, const char* ipRange, const char* folderAccess, void* data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
     if (frame->playerList == nullptr) frame->playerList = new TPlayerList(frame->applicationDirectory, frame->accountName);
+    frame->playerList->setServerName(frame->serverName);
     frame->playerList->setConnection(frame->connection);
     frame->playerList->handlePlayerRights(account, rights, ipRange, folderAccess);
 }
 void TRemoteFrame::onPlayerAttributes(const char* account, const char* properties, const char* editorText, void* data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
     if (frame->playerList == nullptr) frame->playerList = new TPlayerList(frame->applicationDirectory, frame->accountName);
+    frame->playerList->setServerName(frame->serverName);
     frame->playerList->setConnection(frame->connection);
     frame->playerList->handlePlayerAttributes(account, properties, editorText);
 }
 void TRemoteFrame::onBanData(const char* account, const char* computerId, const char* details, void* data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
     if (frame->playerList == nullptr) frame->playerList = new TPlayerList(frame->applicationDirectory, frame->accountName);
+    frame->playerList->setServerName(frame->serverName);
     frame->playerList->setConnection(frame->connection);
     frame->playerList->handleBanData(account, computerId, details);
 }
 void TRemoteFrame::onBanListData(const char* type, const char* account, const char* content, void* data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
     if (frame->playerList == nullptr) frame->playerList = new TPlayerList(frame->applicationDirectory, frame->accountName);
+    frame->playerList->setServerName(frame->serverName);
     frame->playerList->setConnection(frame->connection);
     frame->playerList->handleBanListData(type, account, content);
 }
@@ -597,6 +607,7 @@ void TRemoteFrame::onFileBrowser(GtkMenuItem*, gpointer data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
     if (frame->connection == nullptr) return;
     if (frame->fileBrowser == nullptr) frame->fileBrowser = new TFileBrowserTree();
+    frame->fileBrowser->setServerName(frame->serverName);
     frame->fileBrowser->setDownloadFolder(frame->options.downloadfolder);
     frame->fileBrowser->setDownloadServer(frame->serverName);
     frame->fileBrowser->open(frame->connection);
@@ -606,6 +617,7 @@ void TRemoteFrame::onClasses(GtkMenuItem*, gpointer data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
     if (frame->connection == nullptr || rc_is_nc_authenticated(frame->connection) == 0) return;
     if (frame->classList == nullptr) frame->classList = new TScriptList("classes");
+    frame->classList->setServerName(frame->serverName);
     frame->classList->open(frame->connection);
 }
 
@@ -613,6 +625,7 @@ void TRemoteFrame::onWeapons(GtkMenuItem*, gpointer data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
     if (frame->connection == nullptr || rc_is_nc_authenticated(frame->connection) == 0) return;
     if (frame->weaponList == nullptr) frame->weaponList = new TScriptList("weapons");
+    frame->weaponList->setServerName(frame->serverName);
     frame->weaponList->open(frame->connection);
 }
 
@@ -620,6 +633,7 @@ void TRemoteFrame::onNPCs(GtkMenuItem*, gpointer data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
     if (frame->connection == nullptr || rc_is_nc_authenticated(frame->connection) == 0) return;
     if (frame->npcList == nullptr) frame->npcList = new TNPCList(frame->accountName);
+    frame->npcList->setServerName(frame->serverName);
     frame->npcList->open(frame->connection);
 }
 
@@ -627,6 +641,7 @@ void TRemoteFrame::onLevels(GtkMenuItem*, gpointer data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
     if (frame->connection == nullptr || rc_is_nc_authenticated(frame->connection) == 0) return;
     if (frame->levelList == nullptr) frame->levelList = new TLevelList(GTK_WINDOW(frame->window));
+    frame->levelList->setServerName(frame->serverName);
     frame->levelList->open(frame->connection);
 }
 
@@ -634,7 +649,8 @@ void TRemoteFrame::onLocalNPCDump(GtkMenuItem*, gpointer data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
     if (frame->connection == nullptr || rc_is_nc_authenticated(frame->connection) == 0) return;
     rc_on_local_npcs(frame->connection, onLocalNPCData, frame);
-    GtkWidget* dialog = gtk_dialog_new_with_buttons("Local NPCs", GTK_WINDOW(frame->window), GTK_DIALOG_MODAL, "Cancel", GTK_RESPONSE_CANCEL, "OK", GTK_RESPONSE_OK, nullptr);
+    const std::string title = frame->serverName.empty() ? "Local NPCs" : "Local NPCs - " + frame->serverName;
+    GtkWidget* dialog = gtk_dialog_new_with_buttons(title.c_str(), GTK_WINDOW(frame->window), GTK_DIALOG_MODAL, "Cancel", GTK_RESPONSE_CANCEL, "OK", GTK_RESPONSE_OK, nullptr);
     GtkWidget* content = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
     GtkWidget* grid = gtk_grid_new();
     gtk_container_set_border_width(GTK_CONTAINER(grid), 8);
@@ -670,7 +686,8 @@ void TRemoteFrame::onLocalNPCSubmit(GtkDialog* dialog, gint response, gpointer d
 void TRemoteFrame::onLocalNPCData(const char*, const char* content, void* data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
     if (content == nullptr || content[0] == '\0') return;
-    GtkWidget* dialog = gtk_dialog_new_with_buttons("Local NPCs", GTK_WINDOW(frame->window), GTK_DIALOG_DESTROY_WITH_PARENT, "Close", GTK_RESPONSE_CLOSE, nullptr);
+    const std::string title = frame->serverName.empty() ? "Local NPCs" : "Local NPCs - " + frame->serverName;
+    GtkWidget* dialog = gtk_dialog_new_with_buttons(title.c_str(), GTK_WINDOW(frame->window), GTK_DIALOG_DESTROY_WITH_PARENT, "Close", GTK_RESPONSE_CLOSE, nullptr);
     gtk_window_set_default_size(GTK_WINDOW(dialog), 520, 380);
     GtkWidget* scrolled = gtk_scrolled_window_new(nullptr, nullptr);
     GtkSourceLanguage* language = gtk_source_language_manager_get_language(gtk_source_language_manager_get_default(), "ini");
@@ -695,6 +712,7 @@ void TRemoteFrame::onServerOptions(GtkMenuItem*, gpointer data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
     if (frame->connection == nullptr) return;
     if (frame->serverOptionsEditor == nullptr) frame->serverOptionsEditor = new TServerTextEditor(TServerTextEditor::Kind::ServerOptions, "Server Options");
+    frame->serverOptionsEditor->setServerName(frame->serverName);
     frame->serverOptionsEditor->open(frame->connection);
 }
 
@@ -707,6 +725,7 @@ void TRemoteFrame::onServerFlags(GtkMenuItem*, gpointer data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
     if (frame->connection == nullptr) return;
     if (frame->serverFlagsEditor == nullptr) frame->serverFlagsEditor = new TServerTextEditor(TServerTextEditor::Kind::ServerFlags, "Server Flags");
+    frame->serverFlagsEditor->setServerName(frame->serverName);
     frame->serverFlagsEditor->open(frame->connection);
 }
 
@@ -714,6 +733,7 @@ void TRemoteFrame::onFolderConfig(GtkMenuItem*, gpointer data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
     if (frame->connection == nullptr) return;
     if (frame->folderConfigEditor == nullptr) frame->folderConfigEditor = new TServerTextEditor(TServerTextEditor::Kind::FolderConfig, "Folder Config");
+    frame->folderConfigEditor->setServerName(frame->serverName);
     frame->folderConfigEditor->open(frame->connection);
 }
 
@@ -779,11 +799,13 @@ gboolean TRemoteFrame::onDelete(GtkWidget*, GdkEvent*, gpointer data) {
 void TRemoteFrame::onGraphicalAllocate(GtkWidget*, GdkRectangle* allocation, gpointer data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
     if (allocation->width <= 0 || allocation->height <= 0) return;
-    frame->graphicalBackgroundWidth = allocation->width;
+    GtkAllocation containerAllocation;
+    gtk_widget_get_allocation(frame->graphicalContainer, &containerAllocation);
+    frame->graphicalBackgroundWidth = containerAllocation.width > allocation->width ? containerAllocation.width : allocation->width;
     if (frame->npcServerLabel != nullptr) {
-        gtk_widget_set_size_request(frame->npcServerLabel, allocation->width, -1);
+        gtk_widget_set_size_request(frame->npcServerLabel, frame->graphicalBackgroundWidth, -1);
         gtk_fixed_move(GTK_FIXED(frame->graphicalFixed), frame->npcServerLabel, 0, 130);
-        for (GtkWidget* shadow : frame->npcServerLabelShadows) if (shadow != nullptr) { gtk_widget_set_size_request(shadow, allocation->width, -1); gtk_fixed_move(GTK_FIXED(frame->graphicalFixed), shadow, 0, 130); }
+        for (GtkWidget* shadow : frame->npcServerLabelShadows) if (shadow != nullptr) { gtk_widget_set_size_request(shadow, frame->graphicalBackgroundWidth, -1); gtk_fixed_move(GTK_FIXED(frame->graphicalFixed), shadow, 0, 130); }
     }
     gtk_widget_queue_draw(frame->backgroundImage);
     frame->repositionGraphicalButtons();
@@ -793,7 +815,9 @@ void TRemoteFrame::repositionGraphicalButtons() {
     if (graphicalFixed == nullptr) return;
     GtkAllocation allocation;
     gtk_widget_get_allocation(graphicalFixed, &allocation);
-    const int width = graphicalBackgroundWidth > 0 ? graphicalBackgroundWidth : allocation.width;
+    GtkAllocation containerAllocation;
+    gtk_widget_get_allocation(graphicalContainer, &containerAllocation);
+    const int width = containerAllocation.width > 0 ? containerAllocation.width : (graphicalBackgroundWidth > 0 ? graphicalBackgroundWidth : allocation.width);
     if (width <= 0) return;
     const int positions[15][2] = {{5, 15}, {5, 48}, {38, 15}, {71, 15}, {394, 15}, {427, 15}, {460, 15}, {460, 48}, {460, 81}, {427, 114}, {394, 114}, {360, 114}, {104, 15}, {460, 114}, {361, 15}};
     for (int index = 4; index < 15; ++index) if (index != 12 && graphicalButtons[index] != nullptr) gtk_fixed_move(GTK_FIXED(graphicalFixed), graphicalButtons[index], width - (500 - positions[index][0]), positions[index][1]);
@@ -935,6 +959,7 @@ void TRemoteFrame::onPrivateMessage(int playerId, const char* account, const cha
     const std::string messageType = type == nullptr ? "normal" : type;
     if (messageType == "mass" && frame->options.nomassmessages) return;
     if (frame->playerList == nullptr) frame->playerList = new TPlayerList(frame->applicationDirectory, frame->accountName);
+    frame->playerList->setServerName(frame->serverName);
     const std::string display = frame->playerList->notePrivateMessage(playerId, account, nick, message, type);
     if (frame->options.newpmalerts) {
         frame->appendChat("#ALERT New PM from " + display, true);
@@ -945,6 +970,7 @@ void TRemoteFrame::onPrivateMessage(int playerId, const char* account, const cha
 void TRemoteFrame::onPlayerPropertiesChanged(int playerId, const char* properties, void* data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
     if (frame->playerList == nullptr) frame->playerList = new TPlayerList(frame->applicationDirectory, frame->accountName);
+    frame->playerList->setServerName(frame->serverName);
     frame->playerList->setPlayerProperties(playerId, properties);
     frame->updateMassPMAcceptance();
 }
@@ -954,6 +980,7 @@ void TRemoteFrame::onServerData(const char* type, const char* content, void* dat
     const std::string value = content == nullptr ? "" : content;
     if (type != nullptr && std::string(type) == "statuslist") {
         if (frame->playerList == nullptr) frame->playerList = new TPlayerList(frame->applicationDirectory, frame->accountName);
+        frame->playerList->setServerName(frame->serverName);
         frame->playerList->setConnection(frame->connection);
         frame->playerList->setStatusList(value.c_str());
     }

@@ -9,6 +9,7 @@ public:
     ~TScriptList();
     void open(void* connection);
     void hide();
+    void setServerName(const std::string& server);
     static void restoreScriptReceiver(void* connection);
 private:
     static void onEdit(GtkButton*, gpointer data);
@@ -28,4 +29,5 @@ private:
     GtkListStore* store = nullptr;
     GtkWidget* tree = nullptr;
     void* connection = nullptr;
+    std::string serverName;
 };

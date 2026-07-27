@@ -14,6 +14,7 @@ public:
     void openFolder(void* connection, const std::string& folder);
     void setDownloadFolder(const std::string& folder);
     void setDownloadServer(const std::string& server);
+    void setServerName(const std::string& server);
 private:
     static void onRefresh(GtkButton*, gpointer data);
     static void onFolderSelected(GtkTreeSelection*, gpointer data);

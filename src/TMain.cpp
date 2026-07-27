@@ -477,6 +477,7 @@ int main(int argc, char** argv) {
     TStartFrame* startFrame = nullptr;
     std::vector<std::unique_ptr<TRemoteFrame>> remoteFrames;
     std::function<void()> switchServer;
+    std::function<void()> openAnotherServerList;
     TServerList serverList([&] { if (remoteFrames.empty()) startFrame->show(); }, [&](void* connection, int serverIndex, const std::string& serverName, const std::string& nickname, const std::string& accountName) {
         remoteFrames.push_back(std::make_unique<TRemoteFrame>(options, applicationDirectory, [&] { serverList.reopen(); }, [&] { switchServer(); }, [&] { serverList.openListServerSettings(); }));
         TRemoteFrame* frame = remoteFrames.back().get();
@@ -499,13 +500,14 @@ int main(int argc, char** argv) {
         setGScriptEditorOptions(options);
         refreshGScriptEditorTheme();
         for (auto& frame : remoteFrames) frame->updateThemeOptions(options);
-    }, [&] { return startFrame == nullptr ? std::vector<RC::RCAccount>() : startFrame->accountsForListServer(serverList.currentListServerName()); });
+    }, [&] { return startFrame == nullptr ? std::vector<RC::RCAccount>() : startFrame->allAccounts(); }, [&](const std::string& name) { return startFrame == nullptr ? std::vector<RC::RCAccount>() : startFrame->accountsForListServer(name); }, [&] { openAnotherServerList(); });
     switchServer = [&] {
         serverList.reopen();
     };
     TStartFrame frame(options, applicationDirectory, [&](std::uint64_t accountId, const std::string& account, const std::string& password, const std::string& nickname, const std::string& listServer) { serverList.open(accountId, account, password, nickname, listServer); }, [&] { serverList.openListServerSettings(); }, [&] { return serverList.currentListServer(); });
     serverList.setLoginParent(frame.windowHandle());
     startFrame = &frame;
+    openAnotherServerList = [&] { serverList.openAnotherListServer(); };
     trayStartFrame = startFrame;
     trayServerListOpen = switchServer;
     trayFrameSignOut = [&](TRemoteFrame* closing) {

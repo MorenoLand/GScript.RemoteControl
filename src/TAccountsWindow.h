@@ -10,6 +10,7 @@ public:
     void open(void* connection);
     void setAccounts(const char* accounts);
     void showEditor(void* connection, const std::string& account, const char* content);
+    void setServerName(const std::string& server);
 private:
     static void onGetList(GtkButton*, gpointer data);
     static void onGetAccounts(GtkButton*, gpointer data);
@@ -49,4 +50,5 @@ private:
     GtkListStore* store = nullptr;
     void* connection = nullptr;
     std::string editingAccount;
+    std::string serverName;
 };

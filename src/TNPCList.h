@@ -9,6 +9,7 @@ public:
     ~TNPCList();
     void open(void* connection);
     void hide();
+    void setServerName(const std::string& server);
 private:
     static void onRefresh(GtkButton*, gpointer data);
     static void onAdd(GtkButton*, gpointer data);
@@ -37,6 +38,7 @@ private:
     GtkListStore* store = nullptr;
     void* connection = nullptr;
     std::string accountName;
+    std::string serverName;
     std::string addNPCType = "OBJECT";
     std::string addNPCLevel = "onlinestartlocal.nw";
     std::string addNPCX = "30.5";

@@ -61,6 +61,8 @@ TScriptList::TScriptList(std::string nextType) : type(std::move(nextType)) {
     g_signal_connect(window, "delete-event", G_CALLBACK(onDelete), this);
 }
 
+void TScriptList::setServerName(const std::string& server) { serverName = server; const std::string base = type == "classes" ? "Classes" : "Weapon/GUI-Script List"; gtk_window_set_title(GTK_WINDOW(window), serverName.empty() ? base.c_str() : (base + " - " + serverName).c_str()); }
+
 TScriptList::~TScriptList() { if (classList == this) classList = nullptr; if (weaponList == this) weaponList = nullptr; if (window != nullptr) gtk_widget_destroy(window); if (store != nullptr) g_object_unref(store); }
 void TScriptList::hide() { if (window != nullptr) gtk_widget_hide(window); }
 
@@ -174,7 +176,8 @@ void TScriptList::onScript(const char* scriptType, const char* name, int, const 
 
 void TScriptList::showEditor(const char* name, const char* script) {
     struct EditorState { void* connection; bool weapon; std::string name; GtkWidget* editor; };
-    GtkWidget* dialog = gtk_dialog_new_with_buttons(name, GTK_WINDOW(window), static_cast<GtkDialogFlags>(0), "Apply", GTK_RESPONSE_ACCEPT, "Close", GTK_RESPONSE_CANCEL, nullptr);
+    const std::string editorTitle = serverName.empty() ? std::string(name) : std::string(name) + " - " + serverName;
+    GtkWidget* dialog = gtk_dialog_new_with_buttons(editorTitle.c_str(), GTK_WINDOW(window), static_cast<GtkDialogFlags>(0), "Apply", GTK_RESPONSE_ACCEPT, "Close", GTK_RESPONSE_CANCEL, nullptr);
     gtk_window_set_destroy_with_parent(GTK_WINDOW(dialog), false);
     gtk_window_set_transient_for(GTK_WINDOW(dialog), nullptr);
     gtk_window_set_type_hint(GTK_WINDOW(dialog), GDK_WINDOW_TYPE_HINT_NORMAL);

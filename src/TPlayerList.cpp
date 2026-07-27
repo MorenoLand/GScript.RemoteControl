@@ -397,6 +397,7 @@ TPlayerList::TPlayerList(const std::filesystem::path& nextApplicationDirectory, 
 TPlayerList::~TPlayerList() { if (pmBlinkSource != 0) g_source_remove(pmBlinkSource); delete localBanWindow; for (GdkPixbuf* icon : statusIcons) if (icon != nullptr) g_object_unref(icon); if (onlineIcon != nullptr) g_object_unref(onlineIcon); if (channelIcon != nullptr) g_object_unref(channelIcon); if (channelClosedIcon != nullptr) g_object_unref(channelClosedIcon); if (pmNormalIcon != nullptr) g_object_unref(pmNormalIcon); if (pmGuildIcon != nullptr) g_object_unref(pmGuildIcon); if (pmAdminIcon != nullptr) g_object_unref(pmAdminIcon); if (pmMassIcon != nullptr) g_object_unref(pmMassIcon); if (window != nullptr) gtk_widget_destroy(window); if (store != nullptr) g_object_unref(store); if (guildStore != nullptr) g_object_unref(guildStore); if (serverStore != nullptr) g_object_unref(serverStore); if (channelStore != nullptr) g_object_unref(channelStore); }
 void TPlayerList::open(void* nextConnection) { setConnection(nextConnection); rc_on_pm_servers_updated(connection, onPMServers, this); rc_on_pm_guilds_updated(connection, onPMGuilds, this); rc_on_pm_server_players(connection, onPMServerPlayers, this); refresh(); gtk_widget_show_all(window); gtk_window_present(GTK_WINDOW(window)); }
 void TPlayerList::setConnection(void* nextConnection) { connection = nextConnection; }
+void TPlayerList::setServerName(const std::string& server) { gtk_window_set_title(GTK_WINDOW(window), server.empty() ? "Player List" : ("Player List - " + server).c_str()); }
 void TPlayerList::setStatusList(const char* statuses) {
     statusNames.clear();
     std::stringstream stream(statuses == nullptr ? "" : statuses);
@@ -1257,7 +1258,7 @@ void TPlayerList::openPrivateMessage(int playerId, const char* account, const ch
     PMWindowData* data = new PMWindowData{connection, applicationDirectory / "PMs", nullptr, nullptr, nullptr, playerId, account, nick == nullptr ? "" : nick, accountName, unread == pmMessages.end() ? "" : unread->second};
     data->window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
     gtk_widget_set_name(data->window, "PrivateMessage");
-    gtk_window_set_title(GTK_WINDOW(data->window), "PM");
+    gtk_window_set_title(GTK_WINDOW(data->window), serverName.empty() ? "PM" : ("PM - " + serverName).c_str());
     gtk_window_set_default_size(GTK_WINDOW(data->window), 380, 300);
     GtkWidget* root = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
     gtk_container_add(GTK_CONTAINER(data->window), root);
