@@ -18,6 +18,7 @@ class TToallsWindow;
 class TAccountsWindow;
 class TOptionsWindow;
 class TNPCList;
+class TLevelList;
 struct WebPAnimation;
 
 class TRemoteFrame {
@@ -37,6 +38,7 @@ public:
     void refreshTheme();
     void reloadBackground();
     void updateThemeOptions(const RC::RCOptions& nextOptions);
+    void setDownloadServer(const std::string& server);
     bool mcpOpenView(const std::string& view, std::string& error);
     bool mcpSendChat(const std::string& text, std::string& error);
 
@@ -57,6 +59,7 @@ private:
     static void onClasses(GtkMenuItem*, gpointer data);
     static void onWeapons(GtkMenuItem*, gpointer data);
     static void onNPCs(GtkMenuItem*, gpointer data);
+    static void onLevels(GtkMenuItem*, gpointer data);
     static void onLocalNPCDump(GtkMenuItem*, gpointer data);
     static void onServerOptions(GtkMenuItem*, gpointer data);
     static void onServerFlags(GtkMenuItem*, gpointer data);
@@ -71,8 +74,9 @@ private:
     static gboolean onDelete(GtkWidget*, GdkEvent*, gpointer data);
     static gboolean onConfigure(GtkWidget*, GdkEventConfigure*, gpointer data);
     static gboolean onWindowState(GtkWidget*, GdkEventWindowState*, gpointer data);
-    static gboolean onGraphicalDraw(GtkWidget*, cairo_t*, gpointer data);
-    static void onGraphicalAllocate(GtkWidget*, GdkRectangle*, gpointer data);
+      static gboolean onGraphicalDraw(GtkWidget*, cairo_t*, gpointer data);
+      static void onGraphicalAllocate(GtkWidget*, GdkRectangle*, gpointer data);
+      void repositionGraphicalButtons();
     static gboolean processEvents(gpointer data);
     static void onConnected(void* data);
     static void onDisconnected(const char* reason, void* data);
@@ -127,7 +131,7 @@ private:
     std::array<GtkWidget*, 8> serverLabelShadows{};
     std::array<GtkWidget*, 8> playersLabelShadows{};
     std::array<GtkWidget*, 8> npcServerLabelShadows{};
-    std::array<GtkWidget*, 12> graphicalButtons{};
+    std::array<GtkWidget*, 15> graphicalButtons{};
     GdkPixbuf* kappaEmote = nullptr;
     GdkPixbuf* pmNormalEmote = nullptr;
     GdkPixbuf* pacmanEmote = nullptr;
@@ -172,6 +176,7 @@ private:
     TAccountsWindow* accountsWindow = nullptr;
     TOptionsWindow* optionsWindow = nullptr;
     TNPCList* npcList = nullptr;
+    TLevelList* levelList = nullptr;
     RC::RCOptions options;
     std::filesystem::path applicationDirectory;
     std::unordered_map<std::string, GtkWidget*> channelFields;

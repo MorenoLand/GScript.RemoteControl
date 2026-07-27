@@ -85,6 +85,9 @@ private:
     GtkWidget* playersLabel = nullptr;
     GtkWidget* npcServerLabel = nullptr;
     GtkWidget* backgroundImage = nullptr;
+    GtkWidget* backgroundTint = nullptr;
+    GtkWidget* syncBackgroundTint = nullptr;
+    GtkWidget* backgroundTintSolid = nullptr;
     GtkWidget* mcpEnabled = nullptr;
     GtkWidget* mcpRead = nullptr;
     GtkWidget* mcpWrite = nullptr;

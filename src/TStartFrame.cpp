@@ -558,7 +558,11 @@ void TStartFrame::connect() {
         const std::vector<std::string> associations = accounts.listServersForIndex(static_cast<std::size_t>(selectedAccountIndex));
         if (!associations.empty()) endpoint = associations.front();
     }
-    if (endpoint.empty() && listServerEndpointCallback) endpoint = listServerEndpointCallback();
+    if (endpoint.empty() && selectedAccountIndex < 0 && listServerEndpointCallback) endpoint = listServerEndpointCallback();
+    if (endpoint.empty() && selectedAccountIndex >= 0) {
+        const std::vector<SavedListServer> profiles = RC::loadListServerProfiles(std::filesystem::path(g_get_user_config_dir()) / "GScriptRC" / "listservers.conf", "listserver.graalonline.com", 14922);
+        if (!profiles.empty()) endpoint = RC::listServerAssociation(profiles.front());
+    }
     if (selectedAccountIndex >= 0) accounts.saveAt(static_cast<std::size_t>(selectedAccountIndex), getText(passwordField), options.dontsavepassword, endpoint);
     else accounts.save(selectedAccount, getText(passwordField), options.dontsavepassword, endpoint);
     gtk_widget_hide(window);

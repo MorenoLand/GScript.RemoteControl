@@ -19,6 +19,7 @@
 #include "TAccountsWindow.h"
 #include "TOptionsWindow.h"
 #include "TNPCList.h"
+#include "TLevelList.h"
 #include "TMcpServer.h"
 
 #include <grclib.h>
@@ -178,8 +179,12 @@ TRemoteFrame::TRemoteFrame(const RC::RCOptions& nextOptions, const std::filesyst
         gtk_container_add(GTK_CONTAINER(graphicalContainer), graphicalBase);
         GtkWidget* header = gtk_overlay_new();
         gtk_widget_set_size_request(header, 1, 180);
+        gtk_widget_set_hexpand(header, true);
         GtkWidget* fixed = gtk_fixed_new();
         graphicalFixed = fixed;
+        gtk_widget_set_hexpand(fixed, true);
+        gtk_widget_set_halign(fixed, GTK_ALIGN_FILL);
+        gtk_widget_set_valign(fixed, GTK_ALIGN_FILL);
         const std::filesystem::path configuredBackground(options.background);
         const std::filesystem::path background = configuredBackground.is_absolute() ? configuredBackground : applicationDirectory / "images" / configuredBackground;
         std::string extension = background.extension().string();
@@ -201,6 +206,8 @@ TRemoteFrame::TRemoteFrame(const RC::RCOptions& nextOptions, const std::filesyst
             if (imageError != nullptr) g_error_free(imageError);
         }
         backgroundImage = gtk_drawing_area_new();
+        gtk_widget_set_hexpand(backgroundImage, true);
+        gtk_widget_set_halign(backgroundImage, GTK_ALIGN_FILL);
         gtk_container_add(GTK_CONTAINER(header), backgroundImage);
         gtk_overlay_add_overlay(GTK_OVERLAY(header), fixed);
         g_signal_connect(backgroundImage, "draw", G_CALLBACK(onGraphicalDraw), this);
@@ -219,8 +226,8 @@ TRemoteFrame::TRemoteFrame(const RC::RCOptions& nextOptions, const std::filesyst
             gtk_widget_queue_draw(frame->backgroundImage);
             return G_SOURCE_CONTINUE;
         }, this);
-        const int positions[12][2] = {{5, 15}, {5, 48}, {38, 15}, {71, 15}, {394, 15}, {427, 15}, {460, 15}, {460, 48}, {460, 81}, {460, 114}, {427, 114}, {394, 114}};
-        for (int index = 0; index < 12; ++index) {
+        const int positions[15][2] = {{5, 15}, {5, 48}, {38, 15}, {71, 15}, {394, 15}, {427, 15}, {460, 15}, {460, 48}, {460, 81}, {427, 114}, {394, 114}, {360, 114}, {104, 15}, {460, 114}, {361, 15}};
+        for (int index = 0; index < 15; ++index) {
             GtkWidget* button = gtk_event_box_new();
             gtk_event_box_set_visible_window(GTK_EVENT_BOX(button), false);
             GtkWidget* buttonImage = gtk_image_new_from_file((applicationDirectory / "images" / options.buttonimagefiles[index]).string().c_str());
@@ -228,9 +235,10 @@ TRemoteFrame::TRemoteFrame(const RC::RCOptions& nextOptions, const std::filesyst
             g_object_set_data(G_OBJECT(button), "button-index", GINT_TO_POINTER(index));
             g_signal_connect(button, "button-press-event", G_CALLBACK(onGraphicalButton), this);
             g_signal_connect(button, "button-release-event", G_CALLBACK(onGraphicalButton), this);
+            if (index == 14) gtk_widget_set_tooltip_text(button, "GUI scripts");
             gtk_fixed_put(GTK_FIXED(fixed), button, positions[index][0], positions[index][1]);
             graphicalButtons[index] = button;
-            if (index >= 8) gtk_widget_hide(button);
+            if (index >= 8 && index != 12) gtk_widget_hide(button);
         }
         GtkWidget* listServerSettings = gtk_button_new_with_label("⚙");
         gtk_widget_set_size_request(listServerSettings, 28, 28);
@@ -268,6 +276,10 @@ TRemoteFrame::TRemoteFrame(const RC::RCOptions& nextOptions, const std::filesyst
         addLabel(options.labelservers, 10, 90, &serverLabel, &serverLabelShadows);
         addLabel(options.labelplayers, 10, 110, &playersLabel, &playersLabelShadows);
         addLabel(options.labelnpcserver, 10, 130, &npcServerLabel, &npcServerLabelShadows);
+        gtk_widget_set_size_request(npcServerLabel, 500, -1);
+        gtk_label_set_xalign(GTK_LABEL(npcServerLabel), 0.5f);
+        gtk_fixed_move(GTK_FIXED(fixed), npcServerLabel, 0, 130);
+        for (GtkWidget* shadow : npcServerLabelShadows) if (shadow != nullptr) { gtk_widget_set_size_request(shadow, 500, -1); gtk_label_set_xalign(GTK_LABEL(shadow), 0.5f); gtk_fixed_move(GTK_FIXED(fixed), shadow, 0, 130); }
         pango_font_description_free(labelFont);
         gtk_box_pack_start(GTK_BOX(graphicalBase), header, false, false, 0);
         GtkWidget* filler = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
@@ -373,11 +385,13 @@ gboolean TRemoteFrame::onWindowState(GtkWidget*, GdkEventWindowState* event, gpo
 #else
             gtk_window_resize(GTK_WINDOW(target->window), target->normalWindowWidth, target->normalWindowHeight);
 #endif
+            target->repositionGraphicalButtons();
             return G_SOURCE_REMOVE;
         }, frame);
         return false;
     }
     frame->windowMaximized = maximized;
+    g_idle_add(+[](gpointer value) -> gboolean { static_cast<TRemoteFrame*>(value)->repositionGraphicalButtons(); return G_SOURCE_REMOVE; }, frame);
     return false;
 }
 
@@ -391,6 +405,17 @@ gboolean TRemoteFrame::onGraphicalDraw(GtkWidget* widget, cairo_t* context, gpoi
     cairo_scale(context, static_cast<double>(std::max(1, allocation.width)) / gdk_pixbuf_get_width(pixbuf), static_cast<double>(std::max(1, allocation.height)) / gdk_pixbuf_get_height(pixbuf));
     gdk_cairo_set_source_pixbuf(context, pixbuf, 0, 0);
     cairo_paint(context);
+    GdkRGBA tint{};
+    bool hasTint = gdk_rgba_parse(&tint, frame->options.backgroundtint.c_str());
+    if (!hasTint && frame->options.backgroundtint.size() == 9 && frame->options.backgroundtint.front() == '#') {
+        unsigned int red = 0, green = 0, blue = 0, alpha = 0;
+        if (std::sscanf(frame->options.backgroundtint.c_str() + 1, "%02x%02x%02x%02x", &red, &green, &blue, &alpha) == 4) { tint.red = red / 255.0; tint.green = green / 255.0; tint.blue = blue / 255.0; tint.alpha = alpha / 255.0; hasTint = true; }
+    }
+    if (hasTint && (tint.alpha > 0.0 || frame->options.backgroundtintsolid)) {
+        tint.alpha = frame->options.backgroundtintsolid ? 1.0 : 0.35;
+        cairo_set_source_rgba(context, tint.red, tint.green, tint.blue, tint.alpha);
+        cairo_paint(context);
+    }
     cairo_restore(context);
     return false;
 }
@@ -424,6 +449,7 @@ TRemoteFrame::~TRemoteFrame() {
     delete accountsWindow;
     delete optionsWindow;
     delete npcList;
+    delete levelList;
 }
 
 void TRemoteFrame::open(void* nextConnection, int serverIndex, const std::string& serverName, const std::string& nickname, const std::string& accountName) {
@@ -483,6 +509,7 @@ void TRemoteFrame::signOut() {
 
 bool TRemoteFrame::isNCAuthenticated() const { return connection != nullptr && rc_is_nc_authenticated(connection) != 0; }
 const std::string& TRemoteFrame::currentServerName() const { return serverName; }
+void TRemoteFrame::setDownloadServer(const std::string& server) { if (fileBrowser != nullptr) fileBrowser->setDownloadServer(server); }
 bool TRemoteFrame::isConnected() const { return connection != nullptr; }
 
 void TRemoteFrame::show() {
@@ -571,6 +598,7 @@ void TRemoteFrame::onFileBrowser(GtkMenuItem*, gpointer data) {
     if (frame->connection == nullptr) return;
     if (frame->fileBrowser == nullptr) frame->fileBrowser = new TFileBrowserTree();
     frame->fileBrowser->setDownloadFolder(frame->options.downloadfolder);
+    frame->fileBrowser->setDownloadServer(frame->serverName);
     frame->fileBrowser->open(frame->connection);
 }
 
@@ -593,6 +621,13 @@ void TRemoteFrame::onNPCs(GtkMenuItem*, gpointer data) {
     if (frame->connection == nullptr || rc_is_nc_authenticated(frame->connection) == 0) return;
     if (frame->npcList == nullptr) frame->npcList = new TNPCList(frame->accountName);
     frame->npcList->open(frame->connection);
+}
+
+void TRemoteFrame::onLevels(GtkMenuItem*, gpointer data) {
+    TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
+    if (frame->connection == nullptr || rc_is_nc_authenticated(frame->connection) == 0) return;
+    if (frame->levelList == nullptr) frame->levelList = new TLevelList(GTK_WINDOW(frame->window));
+    frame->levelList->open(frame->connection);
 }
 
 void TRemoteFrame::onLocalNPCDump(GtkMenuItem*, gpointer data) {
@@ -745,9 +780,23 @@ void TRemoteFrame::onGraphicalAllocate(GtkWidget*, GdkRectangle* allocation, gpo
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
     if (allocation->width <= 0 || allocation->height <= 0) return;
     frame->graphicalBackgroundWidth = allocation->width;
+    if (frame->npcServerLabel != nullptr) {
+        gtk_widget_set_size_request(frame->npcServerLabel, allocation->width, -1);
+        gtk_fixed_move(GTK_FIXED(frame->graphicalFixed), frame->npcServerLabel, 0, 130);
+        for (GtkWidget* shadow : frame->npcServerLabelShadows) if (shadow != nullptr) { gtk_widget_set_size_request(shadow, allocation->width, -1); gtk_fixed_move(GTK_FIXED(frame->graphicalFixed), shadow, 0, 130); }
+    }
     gtk_widget_queue_draw(frame->backgroundImage);
-    const int positions[12][2] = {{5, 15}, {5, 48}, {38, 15}, {71, 15}, {394, 15}, {427, 15}, {460, 15}, {460, 48}, {460, 81}, {460, 114}, {427, 114}, {394, 114}};
-    for (int index = 4; index < 12; ++index) gtk_fixed_move(GTK_FIXED(frame->graphicalFixed), frame->graphicalButtons[index], allocation->width - (500 - positions[index][0]), positions[index][1]);
+    frame->repositionGraphicalButtons();
+}
+
+void TRemoteFrame::repositionGraphicalButtons() {
+    if (graphicalFixed == nullptr) return;
+    GtkAllocation allocation;
+    gtk_widget_get_allocation(graphicalFixed, &allocation);
+    const int width = graphicalBackgroundWidth > 0 ? graphicalBackgroundWidth : allocation.width;
+    if (width <= 0) return;
+    const int positions[15][2] = {{5, 15}, {5, 48}, {38, 15}, {71, 15}, {394, 15}, {427, 15}, {460, 15}, {460, 48}, {460, 81}, {427, 114}, {394, 114}, {360, 114}, {104, 15}, {460, 114}, {361, 15}};
+    for (int index = 4; index < 15; ++index) if (index != 12 && graphicalButtons[index] != nullptr) gtk_fixed_move(GTK_FIXED(graphicalFixed), graphicalButtons[index], width - (500 - positions[index][0]), positions[index][1]);
 }
 
 gboolean TRemoteFrame::processEvents(gpointer data) {
@@ -917,6 +966,7 @@ void TRemoteFrame::onServerData(const char* type, const char* content, void* dat
     else if (type != nullptr && std::string(type) == "options" && frame->serverOptionsEditor != nullptr) frame->serverOptionsEditor->setContent(value.c_str());
     else if (type != nullptr && std::string(type) == "flags" && frame->serverFlagsEditor != nullptr) frame->serverFlagsEditor->setContent(value.c_str());
     else if (type != nullptr && std::string(type) == "folder_config" && frame->folderConfigEditor != nullptr) frame->folderConfigEditor->setContent(value.c_str());
+    else if (type != nullptr && std::string(type) == "nc_levellist" && frame->levelList != nullptr) frame->levelList->setContent(value.c_str());
 }
 
 gboolean TRemoteFrame::scrollChatToBottom(gpointer data) {
@@ -945,6 +995,9 @@ void TRemoteFrame::graphicalAction(int index) {
     else if (index == 5) onServerFlags(nullptr, this);
     else if (index == 6) onFolderConfig(nullptr, this);
     else if (index == 7) onServerOptions(nullptr, this);
+    else if (index == 12) return;
+    else if (index == 13) onLevels(nullptr, this);
+    else if (index == 14) return;
 }
 
 void TRemoteFrame::appendChat(const std::string& message, bool suppressUrgency, bool suppressEmotes) {
@@ -1016,6 +1069,7 @@ void TRemoteFrame::applyOptions(const RC::RCOptions& previous) {
     if (options.separatenc != previous.separatenc) setNCChannelVisible(options.separatenc);
     if (fileBrowser != nullptr && options.downloadfolder != previous.downloadfolder) fileBrowser->setDownloadFolder(options.downloadfolder);
     if (options.background != previous.background) reloadBackground();
+    if (options.backgroundtint != previous.backgroundtint && backgroundImage != nullptr) gtk_widget_queue_draw(backgroundImage);
     refreshTheme();
     if (options.chatfontfamily != previous.chatfontfamily || options.chatfontsize != previous.chatfontsize) for (const auto& entry : channelFields) configureChatField(entry.second);
     for (const auto& entry : chatTags) {
@@ -1186,7 +1240,7 @@ void TRemoteFrame::configureChatField(GtkWidget* field) {
 }
 
 void TRemoteFrame::updateNCUi(bool connected) {
-    for (int index = 8; index < 12; ++index) {
+    for (int index = 8; index < 15; ++index) {
         if (graphicalButtons[index] == nullptr) continue;
         if (connected) gtk_widget_show(graphicalButtons[index]); else gtk_widget_hide(graphicalButtons[index]);
     }
@@ -1199,6 +1253,7 @@ void TRemoteFrame::updateNCUi(bool connected) {
         if (classList != nullptr) classList->hide();
         if (weaponList != nullptr) weaponList->hide();
         if (npcList != nullptr) npcList->hide();
+        if (levelList != nullptr) levelList->hide();
         if (serverOptionsEditor != nullptr) serverOptionsEditor->hide();
         if (serverFlagsEditor != nullptr) serverFlagsEditor->hide();
         if (folderConfigEditor != nullptr) folderConfigEditor->hide();
@@ -1429,6 +1484,7 @@ gboolean TRemoteFrame::onFindResultClick(GtkWidget* widget, GdkEventButton* even
     if (frame->connection == nullptr) return true;
     if (frame->fileBrowser == nullptr) frame->fileBrowser = new TFileBrowserTree();
     frame->fileBrowser->setDownloadFolder(frame->options.downloadfolder);
+    frame->fileBrowser->setDownloadServer(frame->serverName);
     frame->fileBrowser->openFolder(frame->connection, folder);
     return true;
 }

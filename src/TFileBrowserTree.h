@@ -13,6 +13,7 @@ public:
     void open(void* connection);
     void openFolder(void* connection, const std::string& folder);
     void setDownloadFolder(const std::string& folder);
+    void setDownloadServer(const std::string& server);
 private:
     static void onRefresh(GtkButton*, gpointer data);
     static void onFolderSelected(GtkTreeSelection*, gpointer data);
@@ -47,6 +48,7 @@ private:
     void refreshFiles(const char* folder, int count);
     void addFolder(const char* pattern, const char* rights);
     void appendLog(const char* message);
+    bool isPreviewTransferMessage(const char* message) const;
     void showTextEditor(const char* path, const void* content, int length);
     void showItemMenu(GtkWidget* view, GdkEventButton* event, bool folder);
     void clearPreviewCache();
@@ -88,6 +90,7 @@ private:
     std::string pendingInlineRenamePath;
     guint inlineRenameId = 0;
     std::string downloadFolder;
+    std::string downloadServer;
     std::vector<std::string> pendingDragSelectionPaths;
     std::unordered_map<std::string, std::string> pendingDragDownloads;
     std::unordered_map<std::string, std::string> pendingPreviewDownloads;
@@ -101,6 +104,7 @@ private:
     std::string hoveredPreviewPath;
     int previewRootX = 0;
     int previewRootY = 0;
+    std::string downloadDestinationDirectory() const;
 #ifdef _WIN32
     guint nativeDragButton = 0;
     gint nativeDragX = 0;

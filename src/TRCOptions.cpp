@@ -7,7 +7,7 @@
 
 namespace {
 
-    const std::array<std::string, 12> buttonImageNames = {"playerlist", "filebrowser", "accounts", "toalls", "options", "serverflags", "folderoptions", "serveroptions", "localnpcs", "classlist", "weaponlist", "npclist"};
+    const std::array<std::string, 15> buttonImageNames = {"playerlist", "filebrowser", "accounts", "toalls", "options", "serverflags", "folderoptions", "serveroptions", "localnpcs", "classlist", "weaponlist", "npclist", "help", "levellist", "guiscripts"};
 
     std::string trim(const std::string& value) {
         const auto first = std::find_if_not(value.begin(), value.end(), [](unsigned char character) { return std::isspace(character) != 0; });
@@ -41,7 +41,9 @@ namespace {
 namespace RC {
 
     void loadRCOptions(RCOptions& options, const std::filesystem::path& applicationDirectory) {
-        std::ifstream stream(applicationDirectory / "control2config.txt");
+        const std::filesystem::path configPath = applicationDirectory / "control2config.txt";
+        if (!std::filesystem::exists(configPath)) { saveRCOptions(options, applicationDirectory); return; }
+        std::ifstream stream(configPath);
         for (std::string line; std::getline(stream, line);) {
             const auto separator = line.find('=');
             if (separator == std::string::npos) continue;
@@ -97,6 +99,9 @@ namespace RC {
             else if (key == "preserveclientside") options.preserveclientside = isTrue(value);
             else if (key == "webbrowsers") options.webbrowsers = splitCommaText(value);
             else if (key == "background") options.background = value;
+            else if (key == "backgroundtint") options.backgroundtint = value;
+            else if (key == "syncbackgroundtint") options.syncbackgroundtint = isTrue(value);
+            else if (key == "backgroundtintsolid") options.backgroundtintsolid = isTrue(value);
             else if (key == "timestampformat") options.timestampformat = value.empty() ? "[%I:%M %p]" : value;
             else if (key == "coloredit") options.coloredit = value;
             else if (key == "coloreditback") options.coloreditback = value;
@@ -185,6 +190,9 @@ namespace RC {
         writeBool(stream, "preserveclientside", options.preserveclientside);
         writeString(stream, "webbrowsers", joinCommaText(options.webbrowsers));
         writeString(stream, "background", options.background);
+        writeString(stream, "backgroundtint", options.backgroundtint);
+        writeBool(stream, "syncbackgroundtint", options.syncbackgroundtint);
+        writeBool(stream, "backgroundtintsolid", options.backgroundtintsolid);
         writeString(stream, "timestampformat", options.timestampformat);
         for (std::size_t index = 0; index < buttonImageNames.size(); ++index) {
             writeString(stream, ("icon" + buttonImageNames[index]).c_str(), options.buttonimagefiles[index]);

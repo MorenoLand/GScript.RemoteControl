@@ -24,9 +24,32 @@
 #include <cwchar>
 #include <iomanip>
 #include <sstream>
+#include <filesystem>
 #include <vector>
 
 namespace {
+
+    std::string safeDownloadComponent(const std::string& value, const std::string& fallback) {
+        std::string result;
+        for (const char character : value) {
+            if (character == '/' || character == '\\' || character == ':' || character == '*' || character == '?' || character == '"' || character == '<' || character == '>' || character == '|') result += '_';
+            else if (static_cast<unsigned char>(character) >= 32) result += character;
+        }
+        while (!result.empty() && (result.back() == ' ' || result.back() == '.')) result.pop_back();
+        return result.empty() || result == "." || result == ".." ? fallback : result;
+    }
+
+    std::vector<std::string> remotePathComponents(const std::string& path) {
+        std::vector<std::string> components;
+        std::string component;
+        for (const char character : path + "/") {
+            if (character == '/' || character == '\\') {
+                if (!component.empty() && component != "." && component != "..") components.push_back(safeDownloadComponent(component, "folder"));
+                component.clear();
+            } else component += character;
+        }
+        return components;
+    }
     constexpr int FolderIconColumn = 0;
     constexpr int FolderPathColumn = 1;
     constexpr int FolderRightsColumn = 2;
@@ -217,6 +240,16 @@ namespace {
     }
 }
 
+bool TFileBrowserTree::isPreviewTransferMessage(const char* message) const {
+    if (message == nullptr || pendingPreviewDownloads.empty()) return false;
+    const std::string text(message);
+    const std::size_t separator = text.find(" for ");
+    const std::size_t colon = text.find(": ");
+    const std::string path = separator == std::string::npos ? colon == std::string::npos ? std::string() : text.substr(colon + 2) : text.substr(separator + 5);
+    if (path.empty()) return false;
+    return std::any_of(pendingPreviewDownloads.begin(), pendingPreviewDownloads.end(), [&](const auto& pending) { return pathMatches(pending.first, path); });
+}
+
 TFileBrowserTree::TFileBrowserTree() {
     window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
     gtk_window_set_title(GTK_WINDOW(window), "File Browser");
@@ -396,11 +429,19 @@ void TFileBrowserTree::openFolder(void* nextConnection, const std::string& folde
 }
 
 void TFileBrowserTree::setDownloadFolder(const std::string& folder) { downloadFolder = folder; }
+void TFileBrowserTree::setDownloadServer(const std::string& server) { downloadServer = server; }
+std::string TFileBrowserTree::downloadDestinationDirectory() const {
+    if (downloadFolder.empty()) return {};
+    std::string destination = downloadFolder;
+    destination = (std::filesystem::path(destination) / safeDownloadComponent(downloadServer, "Server")).string();
+    for (const std::string& component : remotePathComponents(currentFolder)) destination = (std::filesystem::path(destination) / component).string();
+    return destination;
+}
 
 void TFileBrowserTree::onRefresh(GtkButton*, gpointer data) { TFileBrowserTree* browser = static_cast<TFileBrowserTree*>(data); browser->hidePreview(); gtk_widget_hide(browser->window); }
 void TFileBrowserTree::onFolders(int, void* data) { static_cast<TFileBrowserTree*>(data)->refreshFolders(); }
 void TFileBrowserTree::onFiles(const char* folder, int count, void* data) { static_cast<TFileBrowserTree*>(data)->refreshFiles(folder, count); }
-void TFileBrowserTree::onMessage(const char* message, void* data) { static_cast<TFileBrowserTree*>(data)->appendLog(message == nullptr ? "" : message); }
+void TFileBrowserTree::onMessage(const char* message, void* data) { TFileBrowserTree* browser = static_cast<TFileBrowserTree*>(data); if (browser->isPreviewTransferMessage(message)) return; browser->appendLog(message == nullptr ? "" : message); }
 gboolean TFileBrowserTree::onDelete(GtkWidget*, GdkEvent*, gpointer data) { TFileBrowserTree* browser = static_cast<TFileBrowserTree*>(data); browser->hidePreview(); gtk_widget_hide(browser->window); return true; }
 
 void TFileBrowserTree::onFolderSelected(GtkTreeSelection* selection, gpointer data) {
@@ -1016,10 +1057,11 @@ void TFileBrowserTree::onFileReceived(const char* path, const void* content, int
     if (!browser->pendingExternalPath.empty() && externalPathMatches) {
         const std::string remotePath = browser->pendingExternalPath;
         browser->pendingExternalPath.clear();
-        if (browser->downloadFolder.empty()) { browser->appendLog("Specify a download folder in RC Options first."); return; }
-        if (g_mkdir_with_parents(browser->downloadFolder.c_str(), 0755) != 0) { browser->appendLog("Could not create the download folder."); return; }
+        const std::string destinationFolder = browser->downloadDestinationDirectory();
+        if (destinationFolder.empty()) { browser->appendLog("Specify a download folder in RC Options first."); return; }
+        if (g_mkdir_with_parents(destinationFolder.c_str(), 0755) != 0) { browser->appendLog("Could not create the download folder."); return; }
         gchar* basename = g_path_get_basename(path);
-        gchar* destination = g_build_filename(browser->downloadFolder.c_str(), basename, nullptr);
+        gchar* destination = g_build_filename(destinationFolder.c_str(), basename, nullptr);
         g_free(basename);
         if (!g_file_set_contents(destination, static_cast<const gchar*>(content), length, nullptr)) { g_free(destination); browser->appendLog("Could not save downloaded file."); return; }
         gchar* absoluteDestination = g_canonicalize_filename(destination, nullptr);
@@ -1064,16 +1106,17 @@ void TFileBrowserTree::onFileReceived(const char* path, const void* content, int
         break;
     }
     if (previewResponse && !userDownload) return;
-    if (browser->downloadFolder.empty()) {
+    const std::string destinationFolder = browser->downloadDestinationDirectory();
+    if (destinationFolder.empty()) {
         browser->appendLog("Specify a download folder in RC Options first.");
         return;
     }
-    if (g_mkdir_with_parents(browser->downloadFolder.c_str(), 0755) != 0) {
+    if (g_mkdir_with_parents(destinationFolder.c_str(), 0755) != 0) {
         browser->appendLog("Could not create the download folder.");
         return;
     }
     gchar* basename = g_path_get_basename(path);
-    gchar* destination = g_build_filename(browser->downloadFolder.c_str(), basename, nullptr);
+    gchar* destination = g_build_filename(destinationFolder.c_str(), basename, nullptr);
     g_free(basename);
     if (!g_file_set_contents(destination, static_cast<const gchar*>(content), length, nullptr)) {
         g_free(destination);
@@ -1188,7 +1231,7 @@ void TFileBrowserTree::refreshFiles(const char* folder, int count) {
     gtk_tree_sortable_set_sort_column_id(GTK_TREE_SORTABLE(files), GTK_TREE_SORTABLE_UNSORTED_SORT_COLUMN_ID, GTK_SORT_ASCENDING);
     gtk_list_store_clear(files);
     currentFolder = responseFolder;
-    if (previewFolder != responseFolder) { clearPreviewCache(); previewFolder = responseFolder; }
+    previewFolder = responseFolder;
     gtk_label_set_text(GTK_LABEL(folderPath), (std::string("Current Folder: ") + responseFolder).c_str());
     for (int index = 0; index < entryCount; ++index) {
         GtkTreeIter row;

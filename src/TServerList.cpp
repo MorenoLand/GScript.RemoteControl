@@ -251,6 +251,7 @@ void TServerList::open(std::uint64_t accountId, const std::string& account, cons
     std::string selectedHost;
     int selectedPort = 0;
     if (associationEndpoint(listServer, selectedName, selectedHost, selectedPort)) { listserverName = selectedName; listserverHost = selectedHost; listserverPort = selectedPort; }
+    gtk_window_set_title(GTK_WINDOW(window), (listserverName + " Servers").c_str());
     gtk_widget_show_all(window);
     gtk_window_present(GTK_WINDOW(window));
     refresh();

@@ -16,6 +16,7 @@
 #include <functional>
 #include <memory>
 #include <map>
+#include <set>
 #include <vector>
 #include <gtk/gtk.h>
 #include <gtksourceview/gtksource.h>
@@ -52,6 +53,7 @@ bool pmTrayAlertVisible = false;
 std::function<void()> trayServerListOpen;
 std::function<void()> traySignOut;
 std::vector<TRemoteFrame*> trayRemoteFrames;
+std::set<TRemoteFrame*> trayPrimaryFrames;
 std::function<void(TRemoteFrame*)> trayFrameSignOut;
 std::map<unsigned int, std::wstring> trayMenuDynamicText;
 std::map<unsigned int, TRemoteFrame*> trayMenuDynamicTargets;
@@ -83,6 +85,7 @@ namespace {
     constexpr UINT TrayMenuSignOutId = 4;
     HWND serverListHotkeyWindow = nullptr;
     UINT trayMenuWidth = 132;
+    HMENU trayActiveMenu = nullptr;
     const wchar_t* trayMenuText(UINT itemId) {
         const auto dynamic = trayMenuDynamicText.find(itemId);
         if (dynamic != trayMenuDynamicText.end()) return dynamic->second.c_str();
@@ -93,6 +96,24 @@ namespace {
         return L"";
     }
     LRESULT CALLBACK trayMenuWindowProcedure(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
+        if (message == WM_MENURBUTTONUP && trayActiveMenu != nullptr) {
+            const UINT itemId = GetMenuItemID(trayActiveMenu, static_cast<int>(lParam));
+            const auto target = trayMenuDynamicTargets.find(itemId);
+            if (target != trayMenuDynamicTargets.end()) {
+                TRemoteFrame* frame = target->second;
+                if (trayPrimaryFrames.contains(frame)) trayPrimaryFrames.erase(frame); else trayPrimaryFrames.insert(frame);
+                const std::wstring marker = trayPrimaryFrames.contains(frame) ? L"[*] " : L"";
+                const std::wstring wideServerName(frame->currentServerName().begin(), frame->currentServerName().end());
+                for (const auto& item : trayMenuDynamicTargets) if (item.second == frame) {
+                    const bool signOut = (item.first - 100) % 2 != 0;
+                    const std::wstring text = signOut ? std::wstring(L"Sign out ") + marker + wideServerName : marker + wideServerName;
+                    trayMenuDynamicText[item.first] = text;
+                    ModifyMenuW(trayActiveMenu, item.first, MF_BYCOMMAND | MF_OWNERDRAW, item.first, text.c_str());
+                }
+                InvalidateRect(window, nullptr, TRUE);
+            }
+            return 0;
+        }
         if (message == WM_MEASUREITEM) {
             auto* measure = reinterpret_cast<MEASUREITEMSTRUCT*>(lParam);
             if (measure->CtlType != ODT_MENU) return FALSE;
@@ -156,6 +177,7 @@ namespace {
 
     void onTrayOpen(GtkMenuItem*, gpointer) {
         clearTrayPMAlert();
+        for (TRemoteFrame* frame : trayRemoteFrames) if (frame != nullptr && frame->isConnected() && trayPrimaryFrames.contains(frame)) { trayRemoteFrame = frame; break; }
         if (trayRemoteFrame != nullptr) trayRemoteFrame->show();
         else if (trayStartFrame != nullptr) trayStartFrame->show();
     }
@@ -219,17 +241,20 @@ namespace {
         trayMenuWidth = 132;
         UINT dynamicId = 100;
         bool firstConnection = true;
+        const bool hasConnection = std::any_of(trayRemoteFrames.begin(), trayRemoteFrames.end(), [](TRemoteFrame* frame) { return frame != nullptr && frame->isConnected(); });
+        if (hasConnection) AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
         for (TRemoteFrame* frame : trayRemoteFrames) if (frame != nullptr && frame->isConnected()) {
             const std::string serverName = frame->currentServerName();
             const std::wstring wideServerName(serverName.begin(), serverName.end());
-            const std::wstring label = std::wstring(L"Open ") + wideServerName;
+            const std::wstring marker = trayPrimaryFrames.contains(frame) ? L"[*] " : L"";
+            const std::wstring label = marker + wideServerName;
             if (!firstConnection) AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
             firstConnection = false;
             trayMenuWidth = std::max(trayMenuWidth, static_cast<UINT>(std::min<std::size_t>(420, label.size() * 8 + 30)));
             trayMenuDynamicText[dynamicId] = label;
             trayMenuDynamicTargets[dynamicId] = frame;
             AppendMenuW(menu, MF_OWNERDRAW, dynamicId++, label.c_str());
-            const std::wstring signOutLabel = std::wstring(L"Sign out ") + wideServerName;
+            const std::wstring signOutLabel = std::wstring(L"Sign out ") + marker + wideServerName;
             trayMenuWidth = std::max(trayMenuWidth, static_cast<UINT>(std::min<std::size_t>(420, signOutLabel.size() * 8 + 30)));
             trayMenuDynamicText[dynamicId] = signOutLabel;
             trayMenuDynamicTargets[dynamicId] = frame;
@@ -240,9 +265,11 @@ namespace {
         GetCursorPos(&cursor);
         HWND owner = CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE, L"STATIC", L"", WS_POPUP, 0, 0, 0, 0, nullptr, nullptr, GetModuleHandleW(nullptr), nullptr);
         SetWindowLongPtrW(owner, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(trayMenuWindowProcedure));
+        trayActiveMenu = menu;
         SetForegroundWindow(owner);
         const UINT command = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON | TPM_LEFTALIGN | TPM_BOTTOMALIGN, cursor.x, cursor.y, 0, owner, nullptr);
         DestroyMenu(menu);
+        trayActiveMenu = nullptr;
         DeleteObject(menuBackground);
         DestroyWindow(owner);
         if (command == TrayMenuOpenId) onTrayOpen(nullptr, nullptr);
@@ -258,7 +285,7 @@ namespace {
         gtk_menu_item_set_submenu(GTK_MENU_ITEM(connections), connectionMenu);
         gtk_menu_shell_append(GTK_MENU_SHELL(trayMenu), connections);
         for (TRemoteFrame* frame : trayRemoteFrames) if (frame != nullptr && frame->isConnected()) {
-            GtkWidget* show = gtk_menu_item_new_with_label((std::string("Open ") + frame->currentServerName()).c_str());
+            GtkWidget* show = gtk_menu_item_new_with_label(frame->currentServerName().c_str());
             GtkWidget* signOut = gtk_menu_item_new_with_label((std::string("Sign out ") + frame->currentServerName()).c_str());
             gtk_menu_shell_append(GTK_MENU_SHELL(connectionMenu), show);
             gtk_menu_shell_append(GTK_MENU_SHELL(connectionMenu), signOut);
@@ -483,6 +510,7 @@ int main(int argc, char** argv) {
     trayServerListOpen = switchServer;
     trayFrameSignOut = [&](TRemoteFrame* closing) {
         if (closing == nullptr) return;
+        trayPrimaryFrames.erase(closing);
         closing->signOut();
         trayRemoteFrames.erase(std::remove(trayRemoteFrames.begin(), trayRemoteFrames.end(), closing), trayRemoteFrames.end());
         remoteFrames.erase(std::remove_if(remoteFrames.begin(), remoteFrames.end(), [&](const auto& frame) { return frame.get() == closing; }), remoteFrames.end());

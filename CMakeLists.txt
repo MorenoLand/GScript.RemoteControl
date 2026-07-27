@@ -69,7 +69,7 @@ if(WIN32)
     add_test(NAME CompactLayoutTests COMMAND CompactLayoutTests)
 endif()
 
-add_executable(RemoteControl src/TMain.cpp src/TMcpServer.cpp src/TMcpProtocol.cpp src/TBackup.cpp src/TGScriptEditor.cpp src/TGS2Diagnostics.cpp src/TRCAccounts.cpp src/TAccountPresentation.cpp src/TScriptEditorTracking.cpp src/TAccountsWindow.cpp src/TFileBrowser.cpp src/TFileBrowserTree.cpp src/TListServerProfiles.cpp src/TLocalBanWindow.cpp src/TNPCList.cpp src/TOptionsWindow.cpp src/TPlayerList.cpp src/TScriptList.cpp src/TRemoteFrame.cpp src/TServerList.cpp src/TServerPlayer.cpp src/TServerTextEditor.cpp src/TToallsWindow.cpp src/TStartFrame.cpp)
+add_executable(RemoteControl src/TMain.cpp src/TMcpServer.cpp src/TMcpProtocol.cpp src/TBackup.cpp src/TGScriptEditor.cpp src/TGS2Diagnostics.cpp src/TRCAccounts.cpp src/TAccountPresentation.cpp src/TScriptEditorTracking.cpp src/TAccountsWindow.cpp src/TFileBrowser.cpp src/TFileBrowserTree.cpp src/TListServerProfiles.cpp src/TLocalBanWindow.cpp src/TNPCList.cpp src/TLevelList.cpp src/TOptionsWindow.cpp src/TPlayerList.cpp src/TScriptList.cpp src/TRemoteFrame.cpp src/TServerList.cpp src/TServerPlayer.cpp src/TServerTextEditor.cpp src/TToallsWindow.cpp src/TStartFrame.cpp)
 if(WIN32)
     set_target_properties(RemoteControl PROPERTIES WIN32_EXECUTABLE TRUE)
     target_sources(RemoteControl PRIVATE assets/RemoteControl.rc)

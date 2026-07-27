@@ -58,9 +58,12 @@ namespace RC {
         bool preserveclientside = true;
         std::vector<std::string> webbrowsers = {"firefox", "mozilla", "konqueror", "netscape"};
         std::string background = "rc_graalonline2.jpg";
+        std::string backgroundtint = "#00000000";
+        bool syncbackgroundtint = false;
+        bool backgroundtintsolid = false;
         std::string timestampformat = "[%I:%M %p]";
-        std::array<std::string, 12> buttonimagefiles = {"rc_playerlist_normal.png", "rc_filebrowser_normal.png", "rc_accounts_normal.png", "rc_toalls_normal.png", "rc_options_normal.png", "rc_serverflags_normal.png", "rc_folderoptions_normal.png", "rc_serveroptions_normal.png", "rc_localnpcs_normal.png", "rc_classlist_normal.png", "rc_weaponlist_normal.png", "rc_npclist_normal.png"};
-        std::array<std::string, 12> buttonimagefilespressed = buttonimagefiles;
+        std::array<std::string, 15> buttonimagefiles = {"rc_playerlist_normal.png", "rc_filebrowser_normal.png", "rc_accounts_normal.png", "rc_toalls_normal.png", "rc_options_normal.png", "rc_serverflags_normal.png", "rc_folderoptions_normal.png", "rc_serveroptions_normal.png", "rc_localnpcs_normal.png", "rc_classlist_normal.png", "rc_weaponlist_normal.png", "rc_npclist_normal.png", "rc_help_normal.png", "rc_levellist_normal.png", "rc_guiscripts_normal.png"};
+        std::array<std::string, 15> buttonimagefilespressed = {"rc_playerlist_normal.png", "rc_filebrowser_normal.png", "rc_accounts_normal.png", "rc_toalls_normal.png", "rc_options_normal.png", "rc_serverflags_normal.png", "rc_folderoptions_normal.png", "rc_serveroptions_normal.png", "rc_localnpcs_normal.png", "rc_classlist_normal.png", "rc_weaponlist_normal.png", "rc_npclist_normal.png", "rc_help_pressed.png", "rc_levellist_pressed.png", "rc_guiscripts_pressed.png"};
         std::string coloredit = "#00ff00";
         std::string coloreditback = "#1e1e1e";
         std::string colorchat = "#d4d4d4";

@@ -47,6 +47,26 @@ namespace {
         std::snprintf(value, sizeof(value), "#%02x%02x%02x", static_cast<unsigned int>(color.red * 255.0 + 0.5), static_cast<unsigned int>(color.green * 255.0 + 0.5), static_cast<unsigned int>(color.blue * 255.0 + 0.5));
         return value;
     }
+    std::string colorValueWithAlpha(GtkWidget* field) {
+        GdkRGBA color{};
+        gtk_color_chooser_get_rgba(GTK_COLOR_CHOOSER(field), &color);
+        char value[20];
+        std::snprintf(value, sizeof(value), "#%02x%02x%02x%02x", static_cast<unsigned int>(color.red * 255.0 + 0.5), static_cast<unsigned int>(color.green * 255.0 + 0.5), static_cast<unsigned int>(color.blue * 255.0 + 0.5), static_cast<unsigned int>(color.alpha * 255.0 + 0.5));
+        return value;
+    }
+    std::string tintForColor(const std::string& value) {
+        GdkRGBA color{};
+        if (!gdk_rgba_parse(&color, value.c_str())) return "#00000000";
+        char result[20];
+        std::snprintf(result, sizeof(result), "#%02x%02x%02x%02x", static_cast<unsigned int>(color.red * 255.0 + 0.5), static_cast<unsigned int>(color.green * 255.0 + 0.5), static_cast<unsigned int>(color.blue * 255.0 + 0.5), 96u);
+        return result;
+    }
+    void themeColors(const std::string& theme, RC::RCOptions& options);
+    std::string tintForTheme(const std::string& theme, const RC::RCOptions& current) {
+        RC::RCOptions themed = current;
+        themeColors(theme, themed);
+        return tintForColor(themed.colorchatback);
+    }
     void themeColors(const std::string& theme, RC::RCOptions& options) {
         if (theme == "dracula") { options.coloredit = "#f8f8f2"; options.coloreditback = "#282a36"; options.colorchat = "#f8f8f2"; options.colorchatbold = "#50fa7b"; options.colorchatback = "#282a36"; options.colorlabel = "#50fa7b"; options.colorlabelback = "#282a36"; }
         else if (theme == "material") { options.coloredit = "#eeffff"; options.coloreditback = "#263238"; options.colorchat = "#eeffff"; options.colorchatbold = "#80cbc4"; options.colorchatback = "#263238"; options.colorlabel = "#80cbc4"; options.colorlabelback = "#263238"; }
@@ -210,6 +230,15 @@ TOptionsWindow::TOptionsWindow(RC::RCOptions& nextOptions, const std::filesystem
     backgroundImage = addEntry(GTK_GRID(customizationGrid), "Background image:", options.background, 10);
     GtkWidget* backgroundBrowse = gtk_button_new_with_label("Browse");
     gtk_grid_attach(GTK_GRID(customizationGrid), backgroundBrowse, 2, 10, 1, 1);
+    backgroundTint = addColorEntry(GTK_GRID(customizationGrid), "Background image tint:", options.backgroundtint, 11);
+    gtk_color_chooser_set_use_alpha(GTK_COLOR_CHOOSER(backgroundTint), true);
+    backgroundTintSolid = gtk_check_button_new_with_label("Solid fill");
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(backgroundTintSolid), options.backgroundtintsolid);
+    gtk_grid_attach(GTK_GRID(customizationGrid), backgroundTintSolid, 2, 11, 1, 1);
+    syncBackgroundTint = gtk_check_button_new_with_label("Sync background tint with theme");
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(syncBackgroundTint), options.syncbackgroundtint);
+    gtk_grid_attach(GTK_GRID(customizationGrid), syncBackgroundTint, 1, 12, 2, 1);
+    g_signal_connect(backgroundTint, "color-set", G_CALLBACK(+[](GtkColorButton*, gpointer data) { static_cast<TOptionsWindow*>(data)->save(); }), this);
     theme = gtk_combo_box_text_new();
     gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(theme), "system", "System (OS theme)");
     gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(theme), "dark", "Dark");
@@ -225,8 +254,8 @@ TOptionsWindow::TOptionsWindow(RC::RCOptions& nextOptions, const std::filesystem
     gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(theme), "catppuccin", "Catppuccin Mocha");
     gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(theme), "light", "Light");
     gtk_combo_box_set_active_id(GTK_COMBO_BOX(theme), options.theme.c_str());
-    gtk_grid_attach(GTK_GRID(customizationGrid), gtk_label_new("Theme:"), 0, 11, 1, 1);
-    gtk_grid_attach(GTK_GRID(customizationGrid), theme, 1, 11, 1, 1);
+    gtk_grid_attach(GTK_GRID(customizationGrid), gtk_label_new("Theme:"), 0, 13, 1, 1);
+    gtk_grid_attach(GTK_GRID(customizationGrid), theme, 1, 13, 1, 1);
     gtk_box_pack_start(GTK_BOX(customization), customizationGrid, false, false, 4);
     syncColors = addCheck(GTK_BOX(customization), "Sync colors with theme", options.synccolors);
     GtkWidget* mcp = gtk_box_new(GTK_ORIENTATION_VERTICAL, 5);
@@ -298,6 +327,7 @@ TOptionsWindow::TOptionsWindow(RC::RCOptions& nextOptions, const std::filesystem
     gtk_box_pack_start(GTK_BOX(root), buttons, false, false, 5);
     g_signal_connect(close, "clicked", G_CALLBACK(onClose), this);
     g_signal_connect(theme, "changed", G_CALLBACK(onThemeChanged), this);
+    g_signal_connect(syncBackgroundTint, "toggled", G_CALLBACK(+[](GtkToggleButton*, gpointer data) { static_cast<TOptionsWindow*>(data)->save(); }), this);
     g_signal_connect(syntaxTheme, "changed", G_CALLBACK(onSyntaxThemeChanged), this);
     g_signal_connect(syncSyntaxTheme, "toggled", G_CALLBACK(onSyncSyntaxThemeChanged), this);
     for (GtkWidget* field : {syntax, autoIndent, smartHomeEnd, brackets, lineNumbers, minimap, lsp, scriptDiagnostics, scriptUseTabs}) g_signal_connect(field, "toggled", G_CALLBACK(onLiveEditorOptionChanged), this);
@@ -432,7 +462,7 @@ void TOptionsWindow::save() {
     options.optionsanimations = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(optionAnimations));
     options.nomassmessages = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(ignoreMass)); options.nomassifclienton = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(ignoreMassClient)); options.attachaway = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(attachAway)); options.globalpms = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(globalPMs)); options.buddytracking = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(buddies)); options.separatenc = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(separateNC)); options.rctimestamps = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(timestamps)); options.newpmalerts = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(pmAlerts)); options.notificationsounds = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(notificationSounds)); options.logrcchat = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(logChat)); options.separatefindresults = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(separateFindResults)); options.syntaxhighlighting = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(syntax)); options.autoindenting = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(autoIndent)); options.smarthomeend = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(smartHomeEnd)); options.showbrackets = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(brackets)); options.showlinenumbers = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(lineNumbers)); options.minimap = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(minimap)); options.lsp = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(lsp)); options.scriptdiagnostics = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(scriptDiagnostics)); options.scripttabwidth = std::clamp(std::atoi(gtk_entry_get_text(GTK_ENTRY(scriptTabWidth))), 1, 1000); options.scriptusetabs = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(scriptUseTabs)); options.scriptfontsize = std::clamp(std::atoi(gtk_entry_get_text(GTK_ENTRY(scriptFontSize))), 1, 1000); if (const char* family = gtk_combo_box_text_get_active_text(GTK_COMBO_BOX_TEXT(scriptFontFamily))) { options.scriptfontfamily = family; g_free(const_cast<char*>(family)); } options.autocompletesource = gtk_entry_get_text(GTK_ENTRY(autocompleteSource));
     options.formatindentwidth = std::clamp(std::atoi(gtk_entry_get_text(GTK_ENTRY(formatIndentWidth))), 1, 16); options.formatusetabs = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(formatUseTabs)); options.formattrimtrailing = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(formatTrimTrailing)); options.removelinecomments = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(removeLineComments)); options.removeblockcomments = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(removeBlockComments)); options.preserveclientside = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(preserveClientside));
-    options.coloredit = colorValue(chatbarTextColor); options.coloreditback = colorValue(chatbarBackgroundColor); options.colorchat = colorValue(chatTextColor); options.colorchatbold = colorValue(chatBoldColor); options.colorchatback = colorValue(chatBackgroundColor); options.colorlabel = colorValue(labelColor); options.colorlabelback = colorValue(labelBackgroundColor); options.labelservers = gtk_entry_get_text(GTK_ENTRY(serverLabel)); options.labelplayers = gtk_entry_get_text(GTK_ENTRY(playersLabel)); options.labelnpcserver = gtk_entry_get_text(GTK_ENTRY(npcServerLabel)); options.background = gtk_entry_get_text(GTK_ENTRY(backgroundImage));
+    options.coloredit = colorValue(chatbarTextColor); options.coloreditback = colorValue(chatbarBackgroundColor); options.colorchat = colorValue(chatTextColor); options.colorchatbold = colorValue(chatBoldColor); options.colorchatback = colorValue(chatBackgroundColor); options.colorlabel = colorValue(labelColor); options.colorlabelback = colorValue(labelBackgroundColor); options.labelservers = gtk_entry_get_text(GTK_ENTRY(serverLabel)); options.labelplayers = gtk_entry_get_text(GTK_ENTRY(playersLabel)); options.labelnpcserver = gtk_entry_get_text(GTK_ENTRY(npcServerLabel)); options.background = gtk_entry_get_text(GTK_ENTRY(backgroundImage)); options.syncbackgroundtint = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(syncBackgroundTint)); options.backgroundtint = options.syncbackgroundtint ? tintForTheme(options.theme, options) : colorValueWithAlpha(backgroundTint); options.backgroundtintsolid = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(backgroundTintSolid));
     options.mcpenabled = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(mcpEnabled)); options.mcpread = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(mcpRead)); options.mcpwrite = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(mcpWrite)); options.mcpserver = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(mcpServer)); options.mcplogin = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(mcpLogin)); options.mcpwindows = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(mcpWindows)); options.mcpadmin = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(mcpAdmin)); options.mcpfullcontrol = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(mcpFullControl)); options.mcpapprove = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(mcpApprove)); options.mcpaudit = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(mcpAudit)); options.mcpapproveweapon = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(mcpApproveWeapon)); options.mcpapproveclass = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(mcpApproveClass)); options.mcpapprovenpc = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(mcpApproveNpc)); options.mcpfileroots = gtk_entry_get_text(GTK_ENTRY(mcpFileRoots)); options.mcpserverscope = gtk_entry_get_text(GTK_ENTRY(mcpServerScope));
     setGScriptEditorOptions(options);
     applyRemoteControlTheme(options.theme, options.darkmode);
@@ -500,6 +530,11 @@ void TOptionsWindow::applyThemeSelection() {
         const std::string values[] = {options.coloredit, options.coloreditback, options.colorchat, options.colorchatbold, options.colorchatback, options.colorlabel, options.colorlabelback};
         GtkWidget* fields[] = {chatbarTextColor, chatbarBackgroundColor, chatTextColor, chatBoldColor, chatBackgroundColor, labelColor, labelBackgroundColor};
         for (int index = 0; index < 7; ++index) if (gdk_rgba_parse(&color, values[index].c_str())) gtk_color_chooser_set_rgba(GTK_COLOR_CHOOSER(fields[index]), &color);
+    }
+    if (gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(syncBackgroundTint))) {
+        options.backgroundtint = tintForTheme(options.theme, options);
+        GdkRGBA tint{};
+        if (gdk_rgba_parse(&tint, options.backgroundtint.c_str())) gtk_color_chooser_set_rgba(GTK_COLOR_CHOOSER(backgroundTint), &tint);
     }
     setGScriptEditorOptions(options);
     applyRemoteControlTheme(options.theme, options.darkmode);
