@@ -15,6 +15,7 @@ public:
     ~TPlayerList();
     void open(void* connection);
     void setConnection(void* connection);
+    void setStatusList(const char* statuses);
     void setAttachAway(bool enabled);
     void setAwayStatus(bool away);
     void handleBanData(const char* account, const char* computerId, const char* details);
@@ -72,6 +73,8 @@ private:
     void markPrivateMessageRead(int playerId);
     void appendHistory(const char* account, const char* sender, const char* message) const;
     GdkPixbuf* pmIconFor(const std::string& type) const;
+    GdkPixbuf* statusIconFor(const TServerPlayer& player) const;
+    void loadStatusIcons();
     std::vector<int> playerIds() const;
     GtkWidget* window = nullptr;
     GtkWidget* tree = nullptr;
@@ -88,6 +91,8 @@ private:
     GdkPixbuf* pmGuildIcon = nullptr;
     GdkPixbuf* pmAdminIcon = nullptr;
     GdkPixbuf* pmMassIcon = nullptr;
+    std::vector<std::string> statusNames;
+    std::vector<GdkPixbuf*> statusIcons;
     class TLocalBanWindow* localBanWindow = nullptr;
     std::map<std::string, std::vector<std::string>> serverPlayers;
     std::map<int, std::string> pmTypes;

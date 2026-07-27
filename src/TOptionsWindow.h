@@ -36,6 +36,7 @@ private:
     GtkWidget* downloadFolder = nullptr;
     GtkWidget* logFile = nullptr;
     GtkWidget* chatFontSize = nullptr;
+    GtkWidget* chatFontFamily = nullptr;
     GtkWidget* ignoreMass = nullptr;
     GtkWidget* ignoreMassClient = nullptr;
     GtkWidget* globalPMs = nullptr;
@@ -62,6 +63,7 @@ private:
     GtkWidget* scriptTabWidth = nullptr;
     GtkWidget* scriptUseTabs = nullptr;
     GtkWidget* scriptFontSize = nullptr;
+    GtkWidget* scriptFontFamily = nullptr;
     GtkWidget* formatIndentWidth = nullptr;
     GtkWidget* formatUseTabs = nullptr;
     GtkWidget* formatTrimTrailing = nullptr;

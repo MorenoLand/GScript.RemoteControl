@@ -8,7 +8,7 @@
 #include <vector>
 #include <gtk/gtk.h>
 
-void configureGScriptEditor(GtkWidget* editor);
+void configureGScriptEditor(GtkWidget* editor, bool script = true);
 GtkWidget* wrapGScriptEditor(GtkWidget* editor, GtkWidget* scrolled);
 bool consumeEditorCtrlS(GtkWidget* editor, GdkEventKey* event);
 gboolean releaseEditorCtrlS(GtkWidget* editor, GdkEventKey* event);

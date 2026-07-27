@@ -19,6 +19,7 @@
 #include <ctime>
 #include <iomanip>
 #include <map>
+#include <cctype>
 
 #include <gtksourceview/gtksource.h>
 
@@ -161,7 +162,7 @@ namespace {
         GtkSourceBuffer* sourceBuffer = gtk_source_buffer_new(nullptr);
         applyRemoteControlSourceStyle(sourceBuffer);
         GtkWidget* field = gtk_source_view_new_with_buffer(sourceBuffer);
-        configureGScriptEditor(field);
+        configureGScriptEditor(field, false);
         gtk_widget_set_name(field, "PrivateMessageHistoryText");
         gtk_text_view_set_editable(GTK_TEXT_VIEW(field), false);
         gtk_text_view_set_cursor_visible(GTK_TEXT_VIEW(field), false);
@@ -267,6 +268,7 @@ TPlayerList::TPlayerList(const std::filesystem::path& nextApplicationDirectory, 
     pmGuildIcon = gdk_pixbuf_new_from_file("images/pmicon_guild.png", nullptr);
     pmAdminIcon = gdk_pixbuf_new_from_file("images/pmicon_admin.png", nullptr);
     pmMassIcon = gdk_pixbuf_new_from_file("images/pmicon_mass.png", nullptr);
+    loadStatusIcons();
     GtkCellRenderer* imageRenderer = gtk_cell_renderer_pixbuf_new();
     GtkTreeViewColumn* imageColumn = gtk_tree_view_column_new_with_attributes("", imageRenderer, "pixbuf", PlayerIconColumn, nullptr);
     gtk_tree_view_column_set_sizing(imageColumn, GTK_TREE_VIEW_COLUMN_FIXED);
@@ -392,9 +394,21 @@ TPlayerList::TPlayerList(const std::filesystem::path& nextApplicationDirectory, 
     g_signal_connect(window, "delete-event", G_CALLBACK(onDelete), this);
 }
 
-TPlayerList::~TPlayerList() { if (pmBlinkSource != 0) g_source_remove(pmBlinkSource); delete localBanWindow; if (onlineIcon != nullptr) g_object_unref(onlineIcon); if (channelIcon != nullptr) g_object_unref(channelIcon); if (channelClosedIcon != nullptr) g_object_unref(channelClosedIcon); if (pmNormalIcon != nullptr) g_object_unref(pmNormalIcon); if (pmGuildIcon != nullptr) g_object_unref(pmGuildIcon); if (pmAdminIcon != nullptr) g_object_unref(pmAdminIcon); if (pmMassIcon != nullptr) g_object_unref(pmMassIcon); if (window != nullptr) gtk_widget_destroy(window); if (store != nullptr) g_object_unref(store); if (guildStore != nullptr) g_object_unref(guildStore); if (serverStore != nullptr) g_object_unref(serverStore); if (channelStore != nullptr) g_object_unref(channelStore); }
+TPlayerList::~TPlayerList() { if (pmBlinkSource != 0) g_source_remove(pmBlinkSource); delete localBanWindow; for (GdkPixbuf* icon : statusIcons) if (icon != nullptr) g_object_unref(icon); if (onlineIcon != nullptr) g_object_unref(onlineIcon); if (channelIcon != nullptr) g_object_unref(channelIcon); if (channelClosedIcon != nullptr) g_object_unref(channelClosedIcon); if (pmNormalIcon != nullptr) g_object_unref(pmNormalIcon); if (pmGuildIcon != nullptr) g_object_unref(pmGuildIcon); if (pmAdminIcon != nullptr) g_object_unref(pmAdminIcon); if (pmMassIcon != nullptr) g_object_unref(pmMassIcon); if (window != nullptr) gtk_widget_destroy(window); if (store != nullptr) g_object_unref(store); if (guildStore != nullptr) g_object_unref(guildStore); if (serverStore != nullptr) g_object_unref(serverStore); if (channelStore != nullptr) g_object_unref(channelStore); }
 void TPlayerList::open(void* nextConnection) { setConnection(nextConnection); rc_on_pm_servers_updated(connection, onPMServers, this); rc_on_pm_guilds_updated(connection, onPMGuilds, this); rc_on_pm_server_players(connection, onPMServerPlayers, this); refresh(); gtk_widget_show_all(window); gtk_window_present(GTK_WINDOW(window)); }
 void TPlayerList::setConnection(void* nextConnection) { connection = nextConnection; }
+void TPlayerList::setStatusList(const char* statuses) {
+    statusNames.clear();
+    std::stringstream stream(statuses == nullptr ? "" : statuses);
+    std::string status;
+    while (std::getline(stream, status, ',')) {
+        while (!status.empty() && std::isspace(static_cast<unsigned char>(status.front()))) status.erase(status.begin());
+        while (!status.empty() && std::isspace(static_cast<unsigned char>(status.back()))) status.pop_back();
+        if (!status.empty()) statusNames.push_back(status);
+    }
+    loadStatusIcons();
+    if (window != nullptr && store != nullptr) refresh();
+}
 void TPlayerList::setAttachAway(bool enabled) { if (statusCombo != nullptr) gtk_combo_box_set_active(GTK_COMBO_BOX(statusCombo), enabled && !gtk_widget_get_visible(window) ? 1 : 0); }
 void TPlayerList::setAwayStatus(bool away) { if (statusCombo == nullptr) return; const int active = away ? 1 : 0; if (gtk_combo_box_get_active(GTK_COMBO_BOX(statusCombo)) != active) gtk_combo_box_set_active(GTK_COMBO_BOX(statusCombo), active); else sendAttachAway(); }
 void TPlayerList::onRefresh(GtkButton*, gpointer data) { static_cast<TPlayerList*>(data)->refresh(); }
@@ -1139,7 +1153,7 @@ void TPlayerList::refresh() {
         const bool admin = players[index].level == nullptr || *players[index].level == '\0';
         gtk_tree_store_append(store, &row, admin ? &admins : &playersGroup);
         const auto pm = pmTypes.find(players[index].id);
-        gtk_tree_store_set(store, &row, PlayerIconColumn, pm != pmTypes.end() && pmIconsVisible ? pmIconFor(pm->second) : onlineIcon, PlayerNickColumn, players[index].nick == nullptr ? "" : players[index].nick, PlayerAccountColumn, players[index].account == nullptr ? "" : players[index].account, PlayerLevelColumn, players[index].level == nullptr ? "" : players[index].level, PlayerIdColumn, players[index].id, PlayerOrderColumn, static_cast<int>(index) + 2, -1);
+        gtk_tree_store_set(store, &row, PlayerIconColumn, pm != pmTypes.end() && pmIconsVisible ? pmIconFor(pm->second) : statusIconFor(player->second), PlayerNickColumn, players[index].nick == nullptr ? "" : players[index].nick, PlayerAccountColumn, players[index].account == nullptr ? "" : players[index].account, PlayerLevelColumn, players[index].level == nullptr ? "" : players[index].level, PlayerIdColumn, players[index].id, PlayerOrderColumn, static_cast<int>(index) + 2, -1);
     }
     int retainedOrder = count + 2;
     for (const auto& [playerId, identity] : pmPlayers) {
@@ -1150,7 +1164,8 @@ void TPlayerList::refresh() {
         GtkTreeIter row;
         gtk_tree_store_append(store, &row, &playersGroup);
         const auto pm = pmTypes.find(playerId);
-        gtk_tree_store_set(store, &row, PlayerIconColumn, pm != pmTypes.end() && pmIconsVisible ? pmIconFor(pm->second) : onlineIcon, PlayerNickColumn, nick.c_str(), PlayerAccountColumn, account.c_str(), PlayerLevelColumn, "Offline", PlayerIdColumn, playerId, PlayerOrderColumn, retainedOrder++, -1);
+        const auto player = serverPlayersById.find(playerId);
+        gtk_tree_store_set(store, &row, PlayerIconColumn, pm != pmTypes.end() && pmIconsVisible ? pmIconFor(pm->second) : (player == serverPlayersById.end() ? onlineIcon : statusIconFor(player->second)), PlayerNickColumn, nick.c_str(), PlayerAccountColumn, account.c_str(), PlayerLevelColumn, "Offline", PlayerIdColumn, playerId, PlayerOrderColumn, retainedOrder++, -1);
     }
     rc_request_pm_server_list(connection);
     rc_request_pm_guild_list(connection);
@@ -1167,11 +1182,32 @@ void TPlayerList::setPlayerProperties(int playerId, const char* properties) {
         break;
     }
     player->second.setProperties(properties == nullptr ? "" : properties);
+    if (store != nullptr) refresh();
 }
 
 std::optional<bool> TPlayerList::localAccountConnected() const {
     for (const auto& [id, player] : serverPlayersById) if (g_ascii_strcasecmp(player.account().c_str(), accountName.c_str()) == 0) return player.connected();
     return std::nullopt;
+}
+
+void TPlayerList::loadStatusIcons() {
+    for (GdkPixbuf* icon : statusIcons) if (icon != nullptr) g_object_unref(icon);
+    statusIcons.clear();
+    for (const std::string& status : statusNames) {
+        std::string fileName = status;
+        std::transform(fileName.begin(), fileName.end(), fileName.begin(), [](unsigned char value) { return static_cast<char>(std::tolower(value)); });
+        if (fileName == "rping") fileName = "role-playing";
+        else if (fileName == "eating") fileName = "eating";
+        else if (fileName == "no pms") fileName = "no pms";
+        const std::filesystem::path path = std::filesystem::path("images") / ("plisticon" + fileName + ".png");
+        statusIcons.push_back(std::filesystem::exists(path) ? gdk_pixbuf_new_from_file(path.string().c_str(), nullptr) : nullptr);
+    }
+}
+
+GdkPixbuf* TPlayerList::statusIconFor(const TServerPlayer& player) const {
+    const int index = player.status();
+    if (index >= 0 && index < static_cast<int>(statusIcons.size()) && statusIcons[index] != nullptr) return statusIcons[index];
+    return onlineIcon;
 }
 
 GdkPixbuf* TPlayerList::pmIconFor(const std::string& type) const {
@@ -1312,7 +1348,8 @@ void TPlayerList::updatePMIcons() {
             int playerId = 0;
             gtk_tree_model_get(GTK_TREE_MODEL(store), &row, PlayerIdColumn, &playerId, -1);
             const auto pm = pmTypes.find(playerId);
-            gtk_tree_store_set(store, &row, PlayerIconColumn, pm != pmTypes.end() && pmIconsVisible ? pmIconFor(pm->second) : onlineIcon, -1);
+            const auto player = serverPlayersById.find(playerId);
+            gtk_tree_store_set(store, &row, PlayerIconColumn, pm != pmTypes.end() && pmIconsVisible ? pmIconFor(pm->second) : (player == serverPlayersById.end() ? onlineIcon : statusIconFor(player->second)), -1);
             valid = gtk_tree_model_iter_next(GTK_TREE_MODEL(store), &row);
         }
         validGroup = gtk_tree_model_iter_next(GTK_TREE_MODEL(store), &group);

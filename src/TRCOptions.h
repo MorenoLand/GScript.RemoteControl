@@ -29,6 +29,7 @@ namespace RC {
         bool syncsyntaxtheme = true;
         bool synccolors = true;
         int chatfontsize = 9;
+        std::string chatfontfamily = "Sans";
         bool globalpms = true;
         bool buddytracking = true;
         bool showbuddies = false;
@@ -48,6 +49,7 @@ namespace RC {
         int scripttabwidth = 2;
         bool scriptusetabs = false;
         int scriptfontsize = 10;
+        std::string scriptfontfamily = "Monospace";
         int formatindentwidth = 2;
         bool formatusetabs = false;
         bool formattrimtrailing = true;

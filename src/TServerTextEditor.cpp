@@ -18,7 +18,7 @@ TServerTextEditor::TServerTextEditor(Kind nextKind, const char* title) : kind(ne
     GtkSourceBuffer* sourceBuffer = language != nullptr ? gtk_source_buffer_new_with_language(language) : gtk_source_buffer_new(nullptr);
     applyRemoteControlSourceStyle(sourceBuffer);
     GtkWidget* text = gtk_source_view_new_with_buffer(sourceBuffer);
-    configureGScriptEditor(text);
+    configureGScriptEditor(text, false);
     g_object_unref(sourceBuffer);
     buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(text));
     gtk_text_view_set_monospace(GTK_TEXT_VIEW(text), true);
@@ -64,6 +64,7 @@ TServerTextEditor::TServerTextEditor(Kind nextKind, const char* title) : kind(ne
 }
 
 TServerTextEditor::~TServerTextEditor() { if (window != nullptr) gtk_widget_destroy(window); }
+void TServerTextEditor::hide() { if (window != nullptr) gtk_widget_hide(window); }
 
 void TServerTextEditor::open(void* nextConnection) {
     connection = nextConnection;

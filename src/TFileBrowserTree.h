@@ -70,6 +70,11 @@ private:
     GdkPixbuf* nwFileIcon = nullptr;
     GdkPixbuf* scriptFileIcon = nullptr;
     GdkPixbuf* gmapFileIcon = nullptr;
+    GdkPixbuf* binaryFileIcon = nullptr;
+    GdkPixbuf* fontFileIcon = nullptr;
+    GdkPixbuf* archiveFileIcon = nullptr;
+    GdkPixbuf* configFileIcon = nullptr;
+    GdkPixbuf* unknownFileIcon = nullptr;
     void* connection = nullptr;
     std::string currentFolder;
     std::string pendingEditPath;

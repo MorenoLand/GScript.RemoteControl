@@ -19,6 +19,7 @@
 #include <gtk/gtk.h>
 #include <gtksourceview/gtksource.h>
 
+
 #ifdef _WIN32
 #include <windows.h>
 #include <gdk/gdkwin32.h>
@@ -26,6 +27,15 @@
 #include <mach-o/dyld.h>
 #else
 #include <unistd.h>
+#endif
+
+#ifdef _WIN32
+    void registerBundledFonts(const std::filesystem::path& applicationDirectory) {
+        const auto font = applicationDirectory / "fonts" / "tempus-sans-itc.ttf";
+        if (std::filesystem::exists(font)) AddFontResourceExW(font.c_str(), FR_PRIVATE, nullptr);
+    }
+#else
+    void registerBundledFonts(const std::filesystem::path&) {}
 #endif
 
 GtkStatusIcon* pmTrayIcon = nullptr;
@@ -357,6 +367,7 @@ int main(int argc, char** argv) {
     const std::filesystem::path certificateBundle = applicationDirectory / "certs" / "ca-bundle.crt";
     if (std::filesystem::is_regular_file(certificateBundle)) g_setenv("SSL_CERT_FILE", certificateBundle.string().c_str(), true);
     configureGtkRuntime(applicationDirectory);
+    registerBundledFonts(applicationDirectory);
     gtk_init(&argc, &argv);
     enableLiveResizePainting();
     gtk_icon_theme_append_search_path(gtk_icon_theme_get_default(), (applicationDirectory / "share" / "icons").string().c_str());

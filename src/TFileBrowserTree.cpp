@@ -17,6 +17,7 @@
 #include <string>
 #include <algorithm>
 #include <cstring>
+#include <cctype>
 #include <functional>
 #include <memory>
 #include <ctime>
@@ -198,12 +199,21 @@ namespace {
     }
 #endif
 
-    GdkPixbuf* fileIcon(const RCFileBrowserEntry& entry, GdkPixbuf* text, GdkPixbuf* nw, GdkPixbuf* script, GdkPixbuf* gmap) {
-        const std::string path = entry.path == nullptr ? "" : entry.path;
-        if (path.ends_with(".nw")) return nw;
-        if (path.ends_with(".gmap")) return gmap;
-        if (path.ends_with(".graal")) return script;
-        return text;
+    GdkPixbuf* fileIcon(const RCFileBrowserEntry& entry, GdkPixbuf* text, GdkPixbuf* nw, GdkPixbuf* script, GdkPixbuf* gmap, GdkPixbuf* binary, GdkPixbuf* font, GdkPixbuf* archive, GdkPixbuf* config, GdkPixbuf* unknown) {
+        std::string path = entry.path == nullptr ? "" : entry.path;
+        std::transform(path.begin(), path.end(), path.begin(), [](unsigned char value) { return static_cast<char>(std::tolower(value)); });
+        if (path.find("config") != std::string::npos || path.find("settings") != std::string::npos || path.find("options") != std::string::npos) return config;
+        const std::size_t extension = path.rfind('.');
+        const std::string suffix = extension == std::string::npos ? "" : path.substr(extension);
+        if (suffix == ".bin" || suffix == ".gs2bc") return binary;
+        if (suffix == ".txt") return text;
+        if (suffix == ".ttf" || suffix == ".otf") return font;
+        if (suffix == ".tar" || suffix == ".zip" || suffix == ".rar" || suffix == ".7z") return archive;
+        if (suffix == ".conf") return config;
+        if (suffix == ".gmap") return gmap;
+        if (suffix == ".graal") return script;
+        if (suffix == ".nw") return nw;
+        return unknown;
     }
 }
 
@@ -290,10 +300,15 @@ TFileBrowserTree::TFileBrowserTree() {
     gtk_box_pack_start(GTK_BOX(root), buttons, false, true, 0);
     closedFolderIcon = loadImage("rcfiles_folderclosed.png");
     openFolderIcon = loadImage("rcfiles_folderopen.png");
-    textFileIcon = loadImage("rcfiles_text.png");
+    textFileIcon = loadImage("rcfiles_text2.png");
     nwFileIcon = loadImage("rcfiles_nw.png");
     scriptFileIcon = loadImage("rcfiles_graal.png");
     gmapFileIcon = loadImage("rcfiles_gmap.png");
+    binaryFileIcon = loadImage("rcfiles_binary.png");
+    fontFileIcon = loadImage("rcfiles_ttf.png");
+    archiveFileIcon = loadImage("rcfiles_archive.png");
+    configFileIcon = loadImage("rcfiles_conf.png");
+    unknownFileIcon = loadImage("rcfiles_unknown.png");
     g_signal_connect(gtk_tree_view_get_selection(GTK_TREE_VIEW(folderView)), "changed", G_CALLBACK(onFolderSelected), this);
     g_signal_connect(folderView, "button-press-event", G_CALLBACK(onFolderButtonPress), this);
     g_signal_connect(fileView, "button-press-event", G_CALLBACK(onFileButtonPress), this);
@@ -348,6 +363,11 @@ TFileBrowserTree::~TFileBrowserTree() {
     if (nwFileIcon != nullptr) g_object_unref(nwFileIcon);
     if (scriptFileIcon != nullptr) g_object_unref(scriptFileIcon);
     if (gmapFileIcon != nullptr) g_object_unref(gmapFileIcon);
+    if (binaryFileIcon != nullptr) g_object_unref(binaryFileIcon);
+    if (fontFileIcon != nullptr) g_object_unref(fontFileIcon);
+    if (archiveFileIcon != nullptr) g_object_unref(archiveFileIcon);
+    if (configFileIcon != nullptr) g_object_unref(configFileIcon);
+    if (unknownFileIcon != nullptr) g_object_unref(unknownFileIcon);
     if (previewWindow != nullptr) gtk_widget_destroy(previewWindow);
     if (window != nullptr) gtk_widget_destroy(window);
     if (folders != nullptr) g_object_unref(folders);
@@ -1175,7 +1195,7 @@ void TFileBrowserTree::refreshFiles(const char* folder, int count) {
         gtk_list_store_append(files, &row);
         const std::string modified = formatModified(entries[index].modified);
         const std::string size = entries[index].size == 0 ? "" : std::to_string(entries[index].size);
-        gtk_list_store_set(files, &row, FileIconColumn, fileIcon(entries[index], textFileIcon, nwFileIcon, scriptFileIcon, gmapFileIcon), FilePathColumn, entries[index].path == nullptr ? "" : entries[index].path, FileRightsColumn, entries[index].rights == nullptr ? "" : entries[index].rights, FileSizeColumn, size.c_str(), FileModifiedColumn, modified.c_str(), FileSizeSortColumn, entries[index].size, FileModifiedSortColumn, entries[index].modified, -1);
+        gtk_list_store_set(files, &row, FileIconColumn, fileIcon(entries[index], textFileIcon, nwFileIcon, scriptFileIcon, gmapFileIcon, binaryFileIcon, fontFileIcon, archiveFileIcon, configFileIcon, unknownFileIcon), FilePathColumn, entries[index].path == nullptr ? "" : entries[index].path, FileRightsColumn, entries[index].rights == nullptr ? "" : entries[index].rights, FileSizeColumn, size.c_str(), FileModifiedColumn, modified.c_str(), FileSizeSortColumn, entries[index].size, FileModifiedSortColumn, entries[index].modified, -1);
         const std::string path = entries[index].path == nullptr ? "" : entries[index].path;
         if (isPreviewImage(path) && previewCache.size() + pendingPreviewDownloads.size() < 50 && previewCache.find(path) == previewCache.end() && pendingPreviewDownloads.find(path) == pendingPreviewDownloads.end()) {
             pendingPreviewDownloads[path] = responseFolder;

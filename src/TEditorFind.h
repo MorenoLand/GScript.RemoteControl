@@ -22,6 +22,7 @@ struct EditorFindState {
 };
 
 inline GtkWidget* editorIconButton(const char* label, const char* icon) { GtkWidget* button = gtk_button_new_with_label(label); GtkWidget* image = gtk_image_new_from_icon_name(icon, GTK_ICON_SIZE_BUTTON); gtk_button_set_image(GTK_BUTTON(button), image); gtk_button_set_always_show_image(GTK_BUTTON(button), true); return button; }
+inline void editorFindButtonIcon(GtkWidget* button, const char* icon) { gtk_button_set_image(GTK_BUTTON(button), gtk_image_new_from_icon_name(icon, GTK_ICON_SIZE_BUTTON)); gtk_button_set_always_show_image(GTK_BUTTON(button), true); gtk_button_box_set_child_non_homogeneous(GTK_BUTTON_BOX(gtk_widget_get_parent(button)), button, true); }
 
 inline bool editorFindWordBoundary(const GtkTextIter& start, const GtkTextIter& end, const std::string& query) {
     if (query.empty()) return true;
@@ -154,22 +155,32 @@ inline EditorFindState* editorFindState(GtkWidget* editor) {
     state->replaceEntry = gtk_entry_new();
     state->fullWords = gtk_check_button_new_with_label("Full words only");
     state->caseSensitive = gtk_check_button_new_with_label("Case sensitive");
+    GtkWidget* searchOptions = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
     gtk_label_set_max_width_chars(GTK_LABEL(gtk_bin_get_child(GTK_BIN(state->fullWords))), 14);
     gtk_label_set_max_width_chars(GTK_LABEL(gtk_bin_get_child(GTK_BIN(state->caseSensitive))), 12);
     gtk_widget_set_hexpand(state->findEntry, true);
     gtk_widget_set_hexpand(state->replaceEntry, true);
+    gtk_box_pack_start(GTK_BOX(searchOptions), state->fullWords, true, false, 0);
+    gtk_box_pack_end(GTK_BOX(searchOptions), state->caseSensitive, true, false, 0);
     gtk_grid_attach(GTK_GRID(grid), findLabel, 0, 0, 1, 1);
-    gtk_grid_attach(GTK_GRID(grid), state->findEntry, 1, 0, 1, 1);
+    gtk_grid_attach(GTK_GRID(grid), state->findEntry, 1, 0, 2, 1);
     gtk_grid_attach(GTK_GRID(grid), state->replaceLabel, 0, 1, 1, 1);
-    gtk_grid_attach(GTK_GRID(grid), state->replaceEntry, 1, 1, 1, 1);
-    gtk_grid_attach(GTK_GRID(grid), state->fullWords, 1, 2, 1, 1);
-    gtk_grid_attach(GTK_GRID(grid), state->caseSensitive, 2, 2, 1, 1);
+    gtk_grid_attach(GTK_GRID(grid), state->replaceEntry, 1, 1, 2, 1);
+    gtk_grid_attach(GTK_GRID(grid), searchOptions, 1, 2, 2, 1);
     gtk_box_pack_start(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(state->dialog))), grid, false, false, 0);
-    gtk_dialog_add_button(GTK_DIALOG(state->dialog), "Close", GTK_RESPONSE_CLOSE);
-    gtk_dialog_add_button(GTK_DIALOG(state->dialog), "Previous", 1);
-    gtk_dialog_add_button(GTK_DIALOG(state->dialog), "Find Next", 2);
-    state->replaceNext = gtk_dialog_add_button(GTK_DIALOG(state->dialog), "Replace Next", 3);
-    state->replaceAll = gtk_dialog_add_button(GTK_DIALOG(state->dialog), "Replace All", 4);
+    GtkWidget* close = gtk_dialog_add_button(GTK_DIALOG(state->dialog), "Close", GTK_RESPONSE_CLOSE);
+    GtkWidget* previous = gtk_dialog_add_button(GTK_DIALOG(state->dialog), "Prev", 1);
+    GtkWidget* next = gtk_dialog_add_button(GTK_DIALOG(state->dialog), "Next", 2);
+    state->replaceNext = gtk_dialog_add_button(GTK_DIALOG(state->dialog), "Replace", 3);
+    state->replaceAll = gtk_dialog_add_button(GTK_DIALOG(state->dialog), "All", 4);
+    GtkWidget* actions = gtk_dialog_get_action_area(GTK_DIALOG(state->dialog));
+    gtk_button_box_set_layout(GTK_BUTTON_BOX(actions), GTK_BUTTONBOX_END);
+    gtk_box_set_spacing(GTK_BOX(actions), 3);
+    editorFindButtonIcon(close, "window-close-symbolic");
+    editorFindButtonIcon(previous, "go-previous-symbolic");
+    editorFindButtonIcon(next, "go-next-symbolic");
+    editorFindButtonIcon(state->replaceNext, "edit-find-replace-symbolic");
+    editorFindButtonIcon(state->replaceAll, "edit-select-all-symbolic");
     g_signal_connect(state->dialog, "response", G_CALLBACK(+[](GtkDialog* dialog, gint response, gpointer data) {
         EditorFindState* find = static_cast<EditorFindState*>(data);
         if (response == GTK_RESPONSE_CLOSE || response == GTK_RESPONSE_DELETE_EVENT) gtk_widget_hide(GTK_WIDGET(dialog));

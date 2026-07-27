@@ -14,6 +14,7 @@ public:
     bool inChannel() const;
     bool inGuild() const;
     bool away() const;
+    int status() const;
 
 private:
     int playerId;
@@ -24,4 +25,5 @@ private:
     bool channelMember = false;
     bool guildMember = false;
     bool playerAway = false;
+    int playerStatus = 0;
 };

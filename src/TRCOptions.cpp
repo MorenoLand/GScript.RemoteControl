@@ -70,6 +70,7 @@ namespace RC {
             else if (key == "chatlogfile") options.chatlogfile = value;
             else if (key == "downloadfolder") options.downloadfolder = value;
             else if (key == "chatfontsize") options.chatfontsize = std::stoi(value);
+            else if (key == "chatfontfamily") options.chatfontfamily = value.empty() ? "Sans" : value;
             else if (key == "globalpms") options.globalpms = isTrue(value);
             else if (key == "buddytracking") options.buddytracking = isTrue(value);
             else if (key == "showbuddies") options.showbuddies = isTrue(value);
@@ -87,6 +88,7 @@ namespace RC {
             else if (key == "scripttabwidth") options.scripttabwidth = std::stoi(value);
             else if (key == "scriptusetabs") options.scriptusetabs = isTrue(value);
             else if (key == "scriptfontsize") options.scriptfontsize = std::stoi(value);
+            else if (key == "scriptfontfamily") options.scriptfontfamily = value.empty() ? "Monospace" : value;
             else if (key == "formatindentwidth") options.formatindentwidth = std::stoi(value);
             else if (key == "formatusetabs") options.formatusetabs = isTrue(value);
             else if (key == "formattrimtrailing") options.formattrimtrailing = isTrue(value);
@@ -154,6 +156,7 @@ namespace RC {
         writeBool(stream, "syncsyntaxtheme", options.syncsyntaxtheme);
         writeBool(stream, "synccolors", options.synccolors);
         stream << "chatfontsize=" << options.chatfontsize << '\n';
+        writeString(stream, "chatfontfamily", options.chatfontfamily);
         writeBool(stream, "globalpms", options.globalpms);
         writeBool(stream, "buddytracking", options.buddytracking);
         writeBool(stream, "showbuddies", options.showbuddies);
@@ -173,6 +176,7 @@ namespace RC {
         stream << "scripttabwidth=" << options.scripttabwidth << '\n';
         writeBool(stream, "scriptusetabs", options.scriptusetabs);
         stream << "scriptfontsize=" << options.scriptfontsize << '\n';
+        writeString(stream, "scriptfontfamily", options.scriptfontfamily);
         stream << "formatindentwidth=" << options.formatindentwidth << '\n';
         writeBool(stream, "formatusetabs", options.formatusetabs);
         writeBool(stream, "formattrimtrailing", options.formattrimtrailing);

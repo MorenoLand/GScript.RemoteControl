@@ -433,6 +433,7 @@ void TRemoteFrame::open(void* nextConnection, int serverIndex, const std::string
     awayStatusApplied = false;
     this->accountName = accountName;
     ncConnectionAttempted = false;
+    ncManuallyDisconnected = false;
     rc_on_connected(connection, onConnected, this);
     rc_on_disconnected(connection, onDisconnected, this);
     rc_on_message(connection, onMessage, this);
@@ -633,7 +634,7 @@ void TRemoteFrame::onLocalNPCData(const char*, const char* content, void* data) 
     GtkSourceBuffer* buffer = language != nullptr ? gtk_source_buffer_new_with_language(language) : gtk_source_buffer_new(nullptr);
     applyRemoteControlSourceStyle(buffer);
     GtkWidget* text = gtk_source_view_new_with_buffer(buffer);
-    configureGScriptEditor(text);
+    configureGScriptEditor(text, false);
     gtk_text_view_set_editable(GTK_TEXT_VIEW(text), false);
     gtk_text_view_set_cursor_visible(GTK_TEXT_VIEW(text), false);
     gtk_text_view_set_monospace(GTK_TEXT_VIEW(text), true);
@@ -769,16 +770,11 @@ gboolean TRemoteFrame::processEvents(gpointer data) {
                 frame->awayStatusApplied = true;
             }
         }
-        if (!frame->ncConnectionAttempted && rc_has_nc_server(frame->connection) != 0 && rc_is_nc_connected(frame->connection) == 0) {
+        if (!frame->ncManuallyDisconnected && !frame->ncConnectionAttempted && rc_has_nc_server(frame->connection) != 0 && rc_is_nc_connected(frame->connection) == 0) {
             frame->ncConnectionAttempted = true;
             rc_connect_to_nc_server(frame->connection);
         }
-        const bool npcServerConnected = rc_is_nc_authenticated(frame->connection) != 0;
-        for (int index = 8; index < 12; ++index) {
-            if (frame->graphicalButtons[index] == nullptr) continue;
-            if (npcServerConnected) gtk_widget_show(frame->graphicalButtons[index]);
-            else gtk_widget_hide(frame->graphicalButtons[index]);
-        }
+        frame->updateNCUi(!frame->ncManuallyDisconnected && rc_is_nc_authenticated(frame->connection) != 0);
         if (frame->playersLabel != nullptr) {
             RCPlayer* players = nullptr;
             const int count = rc_get_players(frame->connection, &players);
@@ -899,7 +895,12 @@ void TRemoteFrame::onPlayerPropertiesChanged(int playerId, const char* propertie
 void TRemoteFrame::onServerData(const char* type, const char* content, void* data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
     const std::string value = content == nullptr ? "" : content;
-    if (type != nullptr && std::string(type) == "toall" && frame->toallsWindow != nullptr) frame->toallsWindow->append(value.c_str());
+    if (type != nullptr && std::string(type) == "statuslist") {
+        if (frame->playerList == nullptr) frame->playerList = new TPlayerList(frame->applicationDirectory, frame->accountName);
+        frame->playerList->setConnection(frame->connection);
+        frame->playerList->setStatusList(value.c_str());
+    }
+    else if (type != nullptr && std::string(type) == "toall" && frame->toallsWindow != nullptr) frame->toallsWindow->append(value.c_str());
     else if (type != nullptr && std::string(type) == "server_text") frame->appendChat(value);
     else if (type != nullptr && std::string(type) == "nc_message") {
         if (frame->options.separatenc) frame->appendChannelMessage("NC", value);
@@ -938,7 +939,7 @@ void TRemoteFrame::graphicalAction(int index) {
     else if (index == 7) onServerOptions(nullptr, this);
 }
 
-void TRemoteFrame::appendChat(const std::string& message, bool suppressUrgency) {
+void TRemoteFrame::appendChat(const std::string& message, bool suppressUrgency, bool suppressEmotes) {
     const bool colorAlert = message.rfind("#ALERT", 0) == 0;
     std::string display = message;
     const bool alert = applyAlertTag(display, !suppressUrgency);
@@ -964,10 +965,10 @@ void TRemoteFrame::appendChat(const std::string& message, bool suppressUrgency) 
             const gint textStartOffset = gtk_text_iter_get_offset(&textStart);
             gtk_text_buffer_get_end_iter(buffer, &end);
             gtk_text_buffer_insert(buffer, &end, (display.substr(separator + 1) + "\n").c_str(), -1);
-            applyEmotes(buffer, textStartOffset, display.substr(separator + 1));
+            if (!suppressEmotes) applyEmotes(buffer, textStartOffset, display.substr(separator + 1));
         } else {
             gtk_text_buffer_insert(buffer, &end, (display + "\n").c_str(), -1);
-            applyEmotes(buffer, startOffset, display);
+            if (!suppressEmotes) applyEmotes(buffer, startOffset, display);
         }
     }
     GtkTextIter linkEnd;
@@ -1008,6 +1009,7 @@ void TRemoteFrame::applyOptions(const RC::RCOptions& previous) {
     if (fileBrowser != nullptr && options.downloadfolder != previous.downloadfolder) fileBrowser->setDownloadFolder(options.downloadfolder);
     if (options.background != previous.background) reloadBackground();
     refreshTheme();
+    if (options.chatfontfamily != previous.chatfontfamily || options.chatfontsize != previous.chatfontsize) for (const auto& entry : channelFields) configureChatField(entry.second);
     for (const auto& entry : chatTags) {
         g_object_set(entry.second.alert, "foreground", options.coloralert.c_str(), nullptr);
         g_object_set(entry.second.bold, "foreground", options.colorchatbold.c_str(), nullptr);
@@ -1158,7 +1160,7 @@ void TRemoteFrame::configureChatField(GtkWidget* field) {
     gdk_color_parse(options.colorchat.c_str(), &chatColor);
     gtk_widget_modify_base(field, GTK_STATE_NORMAL, &chatBackgroundColor);
     gtk_widget_modify_text(field, GTK_STATE_NORMAL, &chatColor);
-    PangoFontDescription* chatFont = pango_font_description_from_string(("Sans " + std::to_string(options.chatfontsize)).c_str());
+    PangoFontDescription* chatFont = pango_font_description_from_string(((options.chatfontfamily.empty() ? std::string("Sans") : options.chatfontfamily) + " " + std::to_string(options.chatfontsize)).c_str());
     gtk_widget_modify_font(field, chatFont);
     pango_font_description_free(chatFont);
     GtkStyleContext* context = gtk_widget_get_style_context(field);
@@ -1172,6 +1174,26 @@ void TRemoteFrame::configureChatField(GtkWidget* field) {
     if (g_object_get_data(G_OBJECT(field), "remote-chat-links") == nullptr) {
         g_signal_connect(field, "button-press-event", G_CALLBACK(onChatLinkClick), this);
         g_object_set_data(G_OBJECT(field), "remote-chat-links", GINT_TO_POINTER(1));
+    }
+}
+
+void TRemoteFrame::updateNCUi(bool connected) {
+    for (int index = 8; index < 12; ++index) {
+        if (graphicalButtons[index] == nullptr) continue;
+        if (connected) gtk_widget_show(graphicalButtons[index]); else gtk_widget_hide(graphicalButtons[index]);
+    }
+    if (npcServerLabel != nullptr) {
+        if (connected) gtk_widget_show(npcServerLabel); else gtk_widget_hide(npcServerLabel);
+        for (GtkWidget* shadow : npcServerLabelShadows) if (shadow != nullptr) { if (connected) gtk_widget_show(shadow); else gtk_widget_hide(shadow); }
+    }
+    setNCChannelVisible(connected && options.separatenc);
+    if (!connected) {
+        if (classList != nullptr) classList->hide();
+        if (weaponList != nullptr) weaponList->hide();
+        if (npcList != nullptr) npcList->hide();
+        if (serverOptionsEditor != nullptr) serverOptionsEditor->hide();
+        if (serverFlagsEditor != nullptr) serverFlagsEditor->hide();
+        if (folderConfigEditor != nullptr) folderConfigEditor->hide();
     }
 }
 
@@ -1433,12 +1455,32 @@ void TRemoteFrame::send() {
     if (chatHistory.empty() || chatHistory.front() != message) chatHistory.insert(chatHistory.begin(), message);
     if (chatHistory.size() > 30) chatHistory.pop_back();
     chatHistoryIndex = -1;
-    if (message == "/rnc") {
+    if (message == "/rchelp") {
+        appendChat("RC commands:");
+        appendChat("  /nc connect (or /nc c) - connect to the NPC server");
+        appendChat("  /nc disconnect (or /nc dc) - disconnect the NPC server");
+        appendChat("  /nc rc - reconnect the NPC server");
+        appendChat("  /reconnect or /rc - reconnect the RC server");
+        appendChat("  /scripthelp2 [query] - search script help");
+        appendChat("  /find [text] or /finddef [text] - find in the current editor");
+        appendChat("  /clear or /clear all - clear the current chat or all chats");
+        appendChat("Emotes: type Kappa, PMNormal, or :v in chat", false, true);
+        gtk_entry_set_text(GTK_ENTRY(editField), "");
+        return;
+    }
+    if (message == "/help") {
+        if (!rc_execute(connection, message.c_str())) appendChat(rc_last_error(connection));
+        appendChat("RC: /rchelp - show Remote Control commands");
+        appendChat("RC emotes: type Kappa, PMNormal, or :v in chat", false, true);
+        gtk_entry_set_text(GTK_ENTRY(editField), "");
+        return;
+    }
+    if (message == "/nc connect" || message == "/nc c" || message == "/nc rc") {
         reconnectNPCServer();
         gtk_entry_set_text(GTK_ENTRY(editField), "");
         return;
     }
-    if (message == "/dnc") {
+    if (message == "/nc disconnect" || message == "/nc dc") {
         disconnectNPCServer();
         gtk_entry_set_text(GTK_ENTRY(editField), "");
         return;
@@ -1477,6 +1519,8 @@ void TRemoteFrame::send() {
 
 void TRemoteFrame::reconnectNPCServer() {
     if (connection == nullptr) return;
+    ncManuallyDisconnected = false;
+    updateNCUi(false);
     if (rc_is_nc_connected(connection) != 0) rc_disconnect_nc(connection);
     ncConnectionAttempted = true;
     if (!rc_connect_to_nc_server(connection)) appendChat(rc_last_error(connection));
@@ -1484,8 +1528,10 @@ void TRemoteFrame::reconnectNPCServer() {
 
 void TRemoteFrame::disconnectNPCServer() {
     if (connection == nullptr) return;
+    ncManuallyDisconnected = true;
     if (!rc_disconnect_nc(connection)) appendChat(rc_last_error(connection));
     ncConnectionAttempted = true;
+    updateNCUi(false);
 }
 
 void TRemoteFrame::reconnectServer() {

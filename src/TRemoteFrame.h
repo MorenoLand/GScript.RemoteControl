@@ -83,12 +83,13 @@ private:
     static void onServerData(const char* type, const char* content, void* data);
     static gboolean scrollChatToBottom(gpointer data);
 
-    void appendChat(const std::string& message, bool suppressUrgency = false);
+    void appendChat(const std::string& message, bool suppressUrgency = false, bool suppressEmotes = false);
     void appendChatLog(const std::string& message) const;
     void applyOptions(const RC::RCOptions& previous);
     void refreshNotebookTheme();
     void sendServerListOptions();
     void updateMassPMAcceptance();
+    void updateNCUi(bool connected);
     void setNCChannelVisible(bool visible);
     void appendChannelMessage(const std::string& channel, const std::string& message);
     void beginFindResults(const std::string& base);
@@ -154,6 +155,7 @@ private:
     guint eventSource = 0;
     gint64 nextNcConnectAttempt = 0;
     bool ncConnectionAttempted = false;
+    bool ncManuallyDisconnected = false;
     bool disconnectHandled = false;
     gint64 lastActivity = 0;
     bool awayNicknameApplied = false;

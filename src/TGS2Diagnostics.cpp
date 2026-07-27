@@ -27,8 +27,8 @@ namespace {
             if (state == State::Code) {
                 if (character == '/' && next == '/') { result[index] = result[index + 1] = ' '; ++index; state = State::LineComment; }
                 else if (character == '/' && next == '*') { result[index] = result[index + 1] = ' '; ++index; state = State::BlockComment; }
-                else if (character == '\'') { result[index] = ' '; state = State::SingleQuote; escaped = false; }
-                else if (character == '"') { result[index] = ' '; state = State::DoubleQuote; escaped = false; }
+                else if (character == '\'') { result[index] = '_'; state = State::SingleQuote; escaped = false; }
+                else if (character == '"') { result[index] = '_'; state = State::DoubleQuote; escaped = false; }
                 continue;
             }
             if (character != '\n' && character != '\r') result[index] = ' ';
@@ -42,7 +42,7 @@ namespace {
             }
             if (escaped) { escaped = false; continue; }
             if (character == '\\') { escaped = true; continue; }
-            if ((state == State::SingleQuote && character == '\'') || (state == State::DoubleQuote && character == '"')) state = State::Code;
+            if ((state == State::SingleQuote && character == '\'') || (state == State::DoubleQuote && character == '"')) { result[index] = '_'; state = State::Code; }
         }
         return result;
     }
@@ -165,16 +165,18 @@ std::vector<GS2Diagnostic> analyzeGS2(const std::string& source, const std::vect
     }
 
     std::map<std::string, FunctionSignature> signatures = {
-        {"abs", {1, 1}}, {"sin", {1, 1}}, {"cos", {1, 1}}, {"tan", {1, 1}}, {"arcsin", {1, 1}}, {"arccos", {1, 1}}, {"arctan", {1, 1}},
-        {"min", {2, 2}}, {"max", {2, 2}}, {"int", {1, 1}}, {"float", {1, 1}}, {"strlen", {1, 1}}, {"tokenize", {1, 1}},
-        {"echo", {1, 1}}, {"say", {1, 1}}, {"say2", {1, 1}}, {"message", {1, 1}}, {"join", {1, 1}}, {"leave", {1, 1}},
+        {"abs", {1, 1}}, {"sin", {1, 1}}, {"char", {1, 1}}, {"cos", {1, 1}}, {"tan", {1, 1}}, {"arcsin", {1, 1}}, {"arccos", {1, 1}}, {"arctan", {1, 1}}, {"vecx", {1, 1}}, {"vecy", {1, 1}}, {"exp", {1, 1}},
+        {"min", {2, 2}}, {"max", {2, 2}}, {"log", {2, 2}}, {"pow", {2, 2}}, {"int", {1, 1}}, {"float", {1, 1}}, {"strlen", {1, 1}}, {"tokenize", {1, 1}}, {"arraylen", {1, 1}}, {"sarraylen", {1, 1}},
+        {"echo", {1, 1}}, {"say", {1, 1}}, {"say2", {1, 1}}, {"message", {1, 1}}, {"join", {1, 1}}, {"leave", {1, 1}}, {"format", {1, -1}}, {"makevar", {1, 1}}, {"setarray", {2, 2}},
         {"putnpc", {3, 3}}, {"putnpc2", {3, 3}}, {"putexplosion", {3, 3}}, {"findplayer", {1, 1}}, {"findnpc", {1, 1}}, {"findlevel", {1, 1}},
-        {"settimer", {1, 1}}, {"sleep", {1, 1}}, {"waitfor", {1, 1}}, {"triggeraction", {5, 5}}, {"random", {0, 2}}
+        {"settimer", {1, 1}}, {"sleep", {1, 1}}, {"waitfor", {2, 3}}, {"getangle", {2, 2}}, {"getdir", {2, 2}}, {"triggeraction", {5, 5}}, {"random", {2, 2}}
     };
     const std::set<std::string> knownCalls = {"if", "elseif", "for", "while", "switch", "with", "format", "makevar", "requesttext", "sendtext", "sendtorc", "sendtonc", "savelines", "loadlines", "addtiledef", "addtiledef2", "setarray", "insertarray", "deletearray", "replacearray", "cleararray", "arraylen", "getstringkeys", "getstringvalue", "setstring", "deletestring", "strequals", "starts", "ends", "contains", "positions", "substring", "trim", "lowercase", "uppercase"};
-    for (const GS2ApiFunction& function : apiFunctions) signatures[lower(function.name)] = {function.minimumParameters, function.maximumParameters};
-    const std::set<std::string> deprecatedFunctions = {"say", "putnpc"};
-    const std::set<std::string> deprecatedCommands = {"setcharprop", "setlevel", "setlevel2", "setani", "setimg", "setshape", "seteffect", "setcoloreffect"};
+    for (const GS2ApiFunction& function : apiFunctions) {
+        const std::string name = lower(function.name);
+        signatures[name] = {function.minimumParameters, function.maximumParameters};
+        variables.insert(name);
+    }
     for (const Call& call : collectCalls(masked)) {
         const std::string name = lower(call.name);
         if (name == "join") {
@@ -184,9 +186,8 @@ std::vector<GS2Diagnostic> analyzeGS2(const std::string& source, const std::vect
             if (std::regex_search(arguments, classMatch, std::regex(R"(^\s*["']([^"']+)["'])"))) className = " '" + classMatch.str(1) + "'";
             add(diagnostics, GS2DiagnosticSeverity::Info, call.start, call.start + call.name.size(), "join() imports members from class" + className + "; availability depends on the connected server");
         }
-        if (deprecatedFunctions.count(name) != 0) add(diagnostics, GS2DiagnosticSeverity::Warning, call.start, call.start + call.name.size(), call.name + "() is deprecated GS1-era functionality");
         const auto signature = signatures.find(name);
-        if (reportUnknownFunctions && signature != signatures.end() && (call.arguments < signature->second.minimum || (signature->second.maximum >= 0 && call.arguments > signature->second.maximum))) {
+        if (reportUnknownFunctions && signature != signatures.end() && signature->second.minimum >= 0 && (call.arguments < signature->second.minimum || (signature->second.maximum >= 0 && call.arguments > signature->second.maximum))) {
             const std::string expected = signature->second.maximum < 0 ? std::to_string(signature->second.minimum) + "+" : signature->second.minimum == signature->second.maximum ? std::to_string(signature->second.minimum) : std::to_string(signature->second.minimum) + "-" + std::to_string(signature->second.maximum);
             add(diagnostics, GS2DiagnosticSeverity::Warning, call.start, call.start + call.name.size(), call.name + "() expects " + expected + " argument(s), got " + std::to_string(call.arguments));
         }
@@ -203,10 +204,6 @@ std::vector<GS2Diagnostic> analyzeGS2(const std::string& source, const std::vect
         if (variables.count(name) == 0 && !std::regex_search(prefix, std::regex(R"(\b(?:const|var|temp)\s*$)"))) add(diagnostics, GS2DiagnosticSeverity::Info, start, start + match->length(1), "Likely implicit variable '" + match->str(1) + "'; declare it if local");
     }
 
-    for (const std::string& command : deprecatedCommands) {
-        const std::regex commandExpression("\\b" + command + "\\b", std::regex::icase);
-        for (std::sregex_iterator match(masked.begin(), masked.end(), commandExpression), end; match != end; ++match) add(diagnostics, GS2DiagnosticSeverity::Warning, static_cast<std::size_t>(match->position()), static_cast<std::size_t>(match->position() + match->length()), match->str() + " is deprecated GS1 syntax");
-    }
     const std::regex hashSyntax(R"(#[a-zA-Z]\s*\()");
     for (std::sregex_iterator match(masked.begin(), masked.end(), hashSyntax), end; match != end; ++match) add(diagnostics, GS2DiagnosticSeverity::Warning, static_cast<std::size_t>(match->position()), static_cast<std::size_t>(match->position() + match->length()), "Deprecated GS1 hash-string syntax");
     std::sort(diagnostics.begin(), diagnostics.end(), [](const GS2Diagnostic& left, const GS2Diagnostic& right) { return left.start < right.start || (left.start == right.start && left.severity > right.severity); });

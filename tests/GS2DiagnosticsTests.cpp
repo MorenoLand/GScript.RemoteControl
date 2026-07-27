@@ -48,6 +48,18 @@ function oncreated() {
     assert(variadic.minimumParameters == 1 && variadic.maximumParameters == -1);
     const auto metadataOverridesFallback = analyzeGS2("waitfor(object, event); waitfor(object, event, 3); trigger(\"event\", 1, 2, 3);", {optional, variadic});
     assert(!has(metadataOverridesFallback, GS2DiagnosticSeverity::Warning, "expects"));
+    const auto stringArgument = analyzeGS2("new GuiScrollCtrl(\"GUI Explorer\");", {gs2ApiFunction("GuiScrollCtrl", {"profile"})});
+    assert(!has(stringArgument, GS2DiagnosticSeverity::Warning, "GuiScrollCtrl() expects"));
+    const auto importedGuiApi = analyzeGS2("new GuiMLTextCtrl(\"StaffConsole\");\nVisible = false;", {gs2ApiFunction("GuiMLTextCtrl", {"name"}), {"Visible", -1, -1}});
+    assert(!has(importedGuiApi, GS2DiagnosticSeverity::Warning, "GuiMLTextCtrl() expects"));
+    assert(!has(importedGuiApi, GS2DiagnosticSeverity::Info, "Likely implicit variable 'Visible'"));
+    const auto parserBuiltins = analyzeGS2("getAngle(x, y); waitfor(object, event); random(1, 2);");
+    assert(!has(parserBuiltins, GS2DiagnosticSeverity::Warning, "getAngle() expects"));
+    assert(!has(parserBuiltins, GS2DiagnosticSeverity::Warning, "waitfor() expects"));
+    assert(!has(parserBuiltins, GS2DiagnosticSeverity::Warning, "random() expects"));
+    const auto parserArray = analyzeGS2("setarray(values, index); format(\"%s\", value, extra);");
+    assert(!has(parserArray, GS2DiagnosticSeverity::Warning, "setarray() expects"));
+    assert(!has(parserArray, GS2DiagnosticSeverity::Warning, "format() expects"));
     const auto mixedCase = analyzeGS2("function OnActionServerside() { ABS(1); LocalHelper(); }\nfunction localhelper() {}");
     assert(!has(mixedCase, GS2DiagnosticSeverity::Warning, "Event casing"));
     assert(!has(mixedCase, GS2DiagnosticSeverity::Warning, "ABS"));

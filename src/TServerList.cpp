@@ -49,10 +49,12 @@ namespace {
     }
 
     int getServerListIcon(const std::string& value) {
-        if (value.size() < 2 || value[1] != ' ') return -1;
+        if (value.size() < 2 || value[1] != ' ') return 2;
         if (value[0] == 'P') return 0;
         if (value[0] == 'U') return 1;
-        return -1;
+        if (value[0] == '3') return 3;
+        if (value[0] == 'H') return 2;
+        return 2;
     }
 
     std::string getServerListName(const std::string& value) {
@@ -95,6 +97,12 @@ TServerList::TServerList(std::function<void()> onClose, std::function<void(void*
     if (error != nullptr) g_error_free(error);
     error = nullptr;
     serverIcons[1] = gdk_pixbuf_new_from_file("images/rcicon_uc.png", &error);
+    if (error != nullptr) g_error_free(error);
+    error = nullptr;
+    serverIcons[2] = gdk_pixbuf_new_from_file("images/rcicon_bronze.png", &error);
+    if (error != nullptr) g_error_free(error);
+    error = nullptr;
+    serverIcons[3] = gdk_pixbuf_new_from_file("images/rcicon_silver.png", &error);
     if (error != nullptr) g_error_free(error);
 
     store = gtk_list_store_new(5, GDK_TYPE_PIXBUF, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_INT, G_TYPE_INT);

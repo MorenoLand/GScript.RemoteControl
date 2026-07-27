@@ -62,6 +62,7 @@ TScriptList::TScriptList(std::string nextType) : type(std::move(nextType)) {
 }
 
 TScriptList::~TScriptList() { if (classList == this) classList = nullptr; if (weaponList == this) weaponList = nullptr; if (window != nullptr) gtk_widget_destroy(window); if (store != nullptr) g_object_unref(store); }
+void TScriptList::hide() { if (window != nullptr) gtk_widget_hide(window); }
 
 void TScriptList::open(void* nextConnection) {
     connection = nextConnection;

@@ -66,6 +66,7 @@ TNPCList::TNPCList(std::string accountName) : accountName(std::move(accountName)
     g_signal_connect(window, "delete-event", G_CALLBACK(onDelete), this);
 }
 TNPCList::~TNPCList() { if (window != nullptr) gtk_widget_destroy(window); if (store != nullptr) g_object_unref(store); }
+void TNPCList::hide() { if (window != nullptr) gtk_widget_hide(window); }
 void TNPCList::open(void* nextConnection) { connection = nextConnection; rc_on_npc_added(connection, onNPCChanged, this); rc_on_npc_deleted(connection, [](int, void* data) { static_cast<TNPCList*>(data)->refresh(); }, this); refresh(); gtk_widget_show_all(window); gtk_window_present(GTK_WINDOW(window)); }
 void TNPCList::onRefresh(GtkButton*, gpointer data) { static_cast<TNPCList*>(data)->refresh(); }
 void TNPCList::onAdd(GtkButton*, gpointer data) {
@@ -298,7 +299,7 @@ void TNPCList::showFlagsEditor(int id, const char* flags) {
     GtkSourceBuffer* sourceBuffer = language != nullptr ? gtk_source_buffer_new_with_language(language) : gtk_source_buffer_new(nullptr);
     applyRemoteControlSourceStyle(sourceBuffer);
     GtkWidget* text = gtk_source_view_new_with_buffer(sourceBuffer);
-    configureGScriptEditor(text);
+    configureGScriptEditor(text, false);
     gtk_text_view_set_monospace(GTK_TEXT_VIEW(text), true);
     gtk_text_buffer_set_text(GTK_TEXT_BUFFER(sourceBuffer), flags, -1);
     backupEditorText("npcflags", std::to_string(id), flags, false);
@@ -331,7 +332,7 @@ void TNPCList::showAttributes(int id, const char* attributes) {
     GtkSourceBuffer* sourceBuffer = language != nullptr ? gtk_source_buffer_new_with_language(language) : gtk_source_buffer_new(nullptr);
     applyRemoteControlSourceStyle(sourceBuffer);
     GtkWidget* text = gtk_source_view_new_with_buffer(sourceBuffer);
-    configureGScriptEditor(text);
+    configureGScriptEditor(text, false);
     gtk_widget_set_name(text, "NPCAttributes");
     gtk_text_view_set_editable(GTK_TEXT_VIEW(text), false);
     gtk_text_view_set_cursor_visible(GTK_TEXT_VIEW(text), false);

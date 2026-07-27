@@ -24,6 +24,7 @@ namespace {
 
     int tabWidth = 2;
     int scriptFontSize = 10;
+    std::string scriptFontFamily = "Monospace";
     constexpr gint minimapFontSize = 3;
     bool useTabs = false;
     bool showLineNumbers = true;
@@ -37,9 +38,25 @@ namespace {
     std::string completionSource = "https://api.gscript.dev/";
     std::filesystem::path completionCacheFile;
     unsigned int completionRequest = 0;
+    bool apiDefinitionsLoading = false;
+    bool apiDefinitionsLoaded = false;
     std::vector<GtkWidget*> completionEditors;
     struct ApiDefinition { std::string name; std::string type; std::vector<std::string> params; std::string returns; std::string scope; std::string description; std::string example; };
     std::vector<ApiDefinition> apiDefinitions;
+    std::string lowerText(std::string value);
+    std::vector<ApiDefinition> referenceApiDefinitions() {
+        const std::vector<std::pair<std::string, std::vector<std::string>>> constructors = {
+            {"GuiControl", {"name"}}, {"GuiMLTextCtrl", {"name"}}, {"GuiScrollCtrl", {"name"}}, {"GuiTextCtrl", {"name"}},
+            {"GuiTextEditCtrl", {"name"}}, {"GuiTextListCtrl", {"name"}}, {"GuiArrayCtrl", {"name"}}, {"GuiButtonCtrl", {"name"}},
+            {"GuiBitmapCtrl", {"name"}}, {"GuiBitmapButtonCtrl", {"name"}}, {"GuiCheckBoxCtrl", {"name"}}, {"GuiContainer", {"name"}},
+            {"GuiWindowCtrl", {"name"}}, {"GuiCanvas", {"name"}}, {"GuiPopUpMenuCtrl", {"name"}}, {"GuiShowImgCtrl", {"name"}},
+            {"GuiStretchCtrl", {"name"}}, {"GuiProgressCtrl", {"name"}}, {"GuiRadioCtrl", {"name"}}
+        };
+        std::vector<ApiDefinition> definitions;
+        for (const auto& constructor : constructors) definitions.push_back({constructor.first, "class", constructor.second, {}, {}, {}, {}});
+        definitions.push_back({"visible", "property", {}, {}, {}, {}, {}});
+        return definitions;
+    }
     typedef struct _RemoteCompletionProvider { GObject parent; GtkWidget* editor; } RemoteCompletionProvider;
     typedef struct _RemoteCompletionProviderClass { GObjectClass parentClass; } RemoteCompletionProviderClass;
     struct EditorCompletionState { GtkWidget* editor; RemoteCompletionProvider* provider; GtkWidget* signaturePopover; GtkWidget* signatureLabel; };
@@ -57,7 +74,7 @@ namespace {
     #define REMOTE_COMPLETION_PROVIDER(value) (G_TYPE_CHECK_INSTANCE_CAST((value), REMOTE_TYPE_COMPLETION_PROVIDER, RemoteCompletionProvider))
 
     void setEditorFontSize(GtkWidget* editor, int size) {
-        PangoFontDescription* font = pango_font_description_from_string(("Monospace " + std::to_string(size)).c_str());
+        PangoFontDescription* font = pango_font_description_from_string((scriptFontFamily + " " + std::to_string(size)).c_str());
         gtk_widget_override_font(editor, font);
         pango_font_description_free(font);
         g_object_set_data(G_OBJECT(editor), "script-font-size", GINT_TO_POINTER(size));
@@ -93,7 +110,7 @@ namespace {
         g_free(text);
         std::vector<GS2ApiFunction> enabledApiFunctions;
         if (lspEnabled) for (const ApiDefinition& definition : apiDefinitions) enabledApiFunctions.push_back(gs2ApiFunction(definition.name, definition.params));
-        state->diagnostics = analyzeGS2(state->source, enabledApiFunctions, !lspEnabled || !apiDefinitions.empty());
+        state->diagnostics = analyzeGS2(state->source, enabledApiFunctions, !lspEnabled || (!apiDefinitionsLoading && apiDefinitionsLoaded && !apiDefinitions.empty()));
         for (const GS2Diagnostic& diagnostic : state->diagnostics) {
             const std::size_t startByte = std::min(diagnostic.start, state->source.size());
             const std::size_t endByte = std::min(diagnostic.end, state->source.size());
@@ -580,8 +597,14 @@ namespace {
 
     gboolean applyCompletionText(gpointer data) {
         const auto* payload = static_cast<CompletionPayload*>(data);
-        if (payload->request == completionRequest && !payload->definitions.empty()) {
+        if (payload->request == completionRequest) {
             apiDefinitions = payload->definitions;
+            for (const ApiDefinition& reference : referenceApiDefinitions()) {
+                const auto existing = std::find_if(apiDefinitions.begin(), apiDefinitions.end(), [&reference](const ApiDefinition& definition) { return lowerText(definition.name) == lowerText(reference.name); });
+                if (existing == apiDefinitions.end()) apiDefinitions.push_back(reference);
+            }
+            apiDefinitionsLoaded = !payload->definitions.empty();
+            apiDefinitionsLoading = false;
             for (const auto& state : diagnosticsStates) if (scriptDiagnosticsEnabled) runEditorDiagnostics(state.get());
         }
         return G_SOURCE_REMOVE;
@@ -589,6 +612,8 @@ namespace {
 
     void startCompletionLoad() {
         const unsigned int request = ++completionRequest;
+        apiDefinitionsLoading = true;
+        apiDefinitionsLoaded = false;
         const std::string source = completionSource;
         std::thread([request, source] {
             auto* payload = new CompletionPayload{request, fetchCompletionDefinitions(source)};
@@ -1026,6 +1051,7 @@ void setGScriptEditorOptions(const RC::RCOptions& options) {
     const bool sourceChanged = completionSource != options.autocompletesource;
     tabWidth = std::max(1, options.scripttabwidth);
     scriptFontSize = std::max(6, options.scriptfontsize);
+    scriptFontFamily = options.scriptfontfamily.empty() ? "Monospace" : options.scriptfontfamily;
     useTabs = options.scriptusetabs;
     showLineNumbers = options.showlinenumbers;
     showMinimap = options.minimap;
@@ -1038,7 +1064,7 @@ void setGScriptEditorOptions(const RC::RCOptions& options) {
     for (GtkWidget* editor : completionEditors) applyEditorOptions(editor);
     if (wasLspEnabled != lspEnabled) for (GtkWidget* editor : completionEditors) setCompletionProvider(editor, lspEnabled);
     completionSource = options.autocompletesource.empty() ? "https://api.gscript.dev/" : options.autocompletesource;
-    if (sourceChanged || (!wasLspEnabled && lspEnabled)) { apiDefinitions.clear(); if (lspEnabled) startCompletionLoad(); }
+    if (sourceChanged || (!wasLspEnabled && lspEnabled)) { apiDefinitions.clear(); apiDefinitionsLoaded = false; apiDefinitionsLoading = false; if (lspEnabled) startCompletionLoad(); }
     else if (lspEnabled && apiDefinitions.empty()) startCompletionLoad();
     for (const auto& state : diagnosticsStates) {
         if (scriptDiagnosticsEnabled) runEditorDiagnostics(state.get());
@@ -1166,7 +1192,7 @@ void refreshGScriptEditorTheme() {
     }
 }
 
-void configureGScriptEditor(GtkWidget* editor) {
+void configureGScriptEditor(GtkWidget* editor, bool script) {
     if (!GTK_SOURCE_IS_VIEW(editor)) return;
     applyEditorOptions(editor);
     if (completionEditors.empty() && lspEnabled) startCompletionLoad();
@@ -1189,14 +1215,17 @@ void configureGScriptEditor(GtkWidget* editor) {
         gdk_rgba_parse(&errorColor, "#f44747");
         gdk_rgba_parse(&warningColor, "#e5a50a");
         gdk_rgba_parse(&infoColor, "#4aa3df");
-        auto diagnostics = std::make_unique<EditorDiagnosticsState>();
-        diagnostics->editor = editor;
-        diagnostics->errorTag = gtk_text_buffer_create_tag(editorBuffer, nullptr, "underline", PANGO_UNDERLINE_ERROR, "underline-rgba", &errorColor, nullptr);
-        diagnostics->warningTag = gtk_text_buffer_create_tag(editorBuffer, nullptr, "underline", PANGO_UNDERLINE_ERROR, "underline-rgba", &warningColor, nullptr);
-        diagnostics->infoTag = gtk_text_buffer_create_tag(editorBuffer, nullptr, "underline", PANGO_UNDERLINE_SINGLE, "underline-rgba", &infoColor, nullptr);
-        diagnostics->timeout = 0;
-        EditorDiagnosticsState* diagnosticsPointer = diagnostics.get();
-        diagnosticsStates.push_back(std::move(diagnostics));
+        EditorDiagnosticsState* diagnosticsPointer = nullptr;
+        if (script) {
+            auto diagnostics = std::make_unique<EditorDiagnosticsState>();
+            diagnostics->editor = editor;
+            diagnostics->errorTag = gtk_text_buffer_create_tag(editorBuffer, nullptr, "underline", PANGO_UNDERLINE_ERROR, "underline-rgba", &errorColor, nullptr);
+            diagnostics->warningTag = gtk_text_buffer_create_tag(editorBuffer, nullptr, "underline", PANGO_UNDERLINE_ERROR, "underline-rgba", &warningColor, nullptr);
+            diagnostics->infoTag = gtk_text_buffer_create_tag(editorBuffer, nullptr, "underline", PANGO_UNDERLINE_SINGLE, "underline-rgba", &infoColor, nullptr);
+            diagnostics->timeout = 0;
+            diagnosticsPointer = diagnostics.get();
+            diagnosticsStates.push_back(std::move(diagnostics));
+        }
         gtk_widget_add_events(editor, GDK_BUTTON_PRESS_MASK);
         g_signal_connect(editor, "button-press-event", G_CALLBACK(multiSelectionButtonPress), multiSelectionPointer);
         g_signal_connect(editor, "key-press-event", G_CALLBACK(multiSelectionKeyPress), multiSelectionPointer);
@@ -1205,11 +1234,13 @@ void configureGScriptEditor(GtkWidget* editor) {
             EditorMultiSelectionState* state = static_cast<EditorMultiSelectionState*>(data);
             if (!state->applying) refreshMultiSelections(state);
         }), multiSelectionPointer);
-        g_signal_connect(editorBuffer, "changed", G_CALLBACK(+[](GtkTextBuffer*, gpointer data) {
-            EditorDiagnosticsState* state = static_cast<EditorDiagnosticsState*>(data);
-            if (scriptDiagnosticsEnabled) scheduleEditorDiagnostics(state);
-        }), diagnosticsPointer);
-        if (scriptDiagnosticsEnabled) scheduleEditorDiagnostics(diagnosticsPointer);
+        if (diagnosticsPointer != nullptr) {
+            g_signal_connect(editorBuffer, "changed", G_CALLBACK(+[](GtkTextBuffer*, gpointer data) {
+                EditorDiagnosticsState* state = static_cast<EditorDiagnosticsState*>(data);
+                if (scriptDiagnosticsEnabled) scheduleEditorDiagnostics(state);
+            }), diagnosticsPointer);
+            if (scriptDiagnosticsEnabled) scheduleEditorDiagnostics(diagnosticsPointer);
+        }
         auto* provider = REMOTE_COMPLETION_PROVIDER(g_object_new(REMOTE_TYPE_COMPLETION_PROVIDER, nullptr));
         provider->editor = editor;
         GtkWidget* signaturePopover = gtk_popover_new(editor);

@@ -5,7 +5,10 @@ void TServerPlayer::setIdentity(const char* account, const char* nick, const cha
 void TServerPlayer::setProperties(std::string_view properties) {
     for (std::size_t offset = 0; offset + 1 < properties.size();) {
         const unsigned char property = static_cast<unsigned char>(properties[offset]);
-        if (property == 'q') {
+        if (property == 53) {
+            playerStatus = static_cast<unsigned char>(properties[offset + 1]);
+            offset += 2;
+        } else if (property == 'q') {
             const unsigned char flags = static_cast<unsigned char>(properties[offset + 1]) - 0x20;
             clientConnected = (flags & 0x01) != 0;
             channelMember = (flags & 0x02) != 0;
@@ -23,3 +26,4 @@ bool TServerPlayer::connected() const { return clientConnected; }
 bool TServerPlayer::inChannel() const { return channelMember; }
 bool TServerPlayer::inGuild() const { return guildMember; }
 bool TServerPlayer::away() const { return playerAway; }
+int TServerPlayer::status() const { return playerStatus; }

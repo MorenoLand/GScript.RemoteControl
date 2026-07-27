@@ -8,6 +8,7 @@ public:
     explicit TNPCList(std::string accountName);
     ~TNPCList();
     void open(void* connection);
+    void hide();
 private:
     static void onRefresh(GtkButton*, gpointer data);
     static void onAdd(GtkButton*, gpointer data);

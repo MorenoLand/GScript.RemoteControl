@@ -9,6 +9,7 @@ public:
     TServerTextEditor(Kind kind, const char* title);
     ~TServerTextEditor();
     void open(void* connection);
+    void hide();
     void setContent(const char* content);
 private:
     static void onSave(GtkButton*, gpointer data);

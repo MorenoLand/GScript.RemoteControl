@@ -81,7 +81,7 @@ private:
     GtkWidget* descriptionField = nullptr;
     GtkWidget* statusField = nullptr;
     GtkWidget* refreshButton = nullptr;
-    GdkPixbuf* serverIcons[2] = {nullptr, nullptr};
+    GdkPixbuf* serverIcons[4] = {nullptr, nullptr, nullptr, nullptr};
     std::jthread worker;
     std::mutex connectionMutex;
     void* connection = nullptr;
