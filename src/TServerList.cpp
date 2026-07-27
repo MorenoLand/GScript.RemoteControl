@@ -17,24 +17,9 @@ namespace {
 
     std::filesystem::path listserverSettingsPath() { return std::filesystem::path(g_get_user_config_dir()) / "GScriptRC" / "listservers.conf"; }
 
-    bool parseListserverEndpoint(const std::string& endpoint, std::string& host, int& port) {
-        const std::size_t separator = endpoint.rfind(':');
-        if (separator == std::string::npos) return false;
-        host = endpoint.substr(0, separator);
-        port = std::atoi(endpoint.substr(separator + 1).c_str());
-        return !host.empty() && port > 0 && port <= 65535;
-    }
-
     std::string savedListserverText(const SavedListServer& server) { return server.name + " — " + server.host + ":" + std::to_string(server.port); }
 
-    void saveListserverEndpoints(const std::vector<SavedListServer>& endpoints) {
-        const std::filesystem::path path = listserverSettingsPath();
-        std::error_code error;
-        std::filesystem::create_directories(path.parent_path(), error);
-        if (error) return;
-        std::ofstream stream(path, std::ios::trunc);
-        for (const SavedListServer& endpoint : endpoints) stream << endpoint.name << '\t' << endpoint.host << '\t' << endpoint.port << '\n';
-    }
+    void saveListserverEndpoints(const std::vector<SavedListServer>& endpoints) { RC::saveListServerProfiles(listserverSettingsPath(), endpoints); }
 
     int getServerListIcon(const std::string& value) {
         if (value.size() < 2 || value[1] != ' ') return -1;
@@ -51,21 +36,7 @@ namespace {
 
 TServerList::TServerList(std::function<void()> onClose, std::function<void(void*, int, const std::string&, const std::string&, const std::string&)> onConnected, std::function<void()> onServerSelected, bool nextDarkMode, const std::string& nextTheme, std::function<void(bool, const std::string&)> onThemeChanged) : onCloseCallback(std::move(onClose)), onConnectedCallback(std::move(onConnected)), onServerSelectedCallback(std::move(onServerSelected)), onThemeChangedCallback(std::move(onThemeChanged)), darkMode(nextDarkMode), theme(nextTheme) {
     listserverHost = defaultListserverHost;
-    std::ifstream endpointStream(listserverSettingsPath());
-    std::string endpoint;
-    while (std::getline(endpointStream, endpoint)) {
-        const std::size_t first = endpoint.find('\t');
-        const std::size_t second = first == std::string::npos ? std::string::npos : endpoint.find('\t', first + 1);
-        if (first != std::string::npos && second != std::string::npos) {
-            const int port = std::atoi(endpoint.substr(second + 1).c_str());
-            if (port > 0 && port <= 65535) listserverEndpoints.push_back({endpoint.substr(0, first), endpoint.substr(first + 1, second - first - 1), port});
-        } else {
-            std::string host;
-            int port = 0;
-            if (parseListserverEndpoint(endpoint, host, port)) listserverEndpoints.push_back({host, host, port});
-        }
-    }
-    if (listserverEndpoints.empty()) listserverEndpoints.push_back({"Official", defaultListserverHost, listserverPort});
+    listserverEndpoints = RC::loadListServerProfiles(listserverSettingsPath(), defaultListserverHost, listserverPort);
     listserverName = listserverEndpoints.front().name;
     listserverHost = listserverEndpoints.front().host;
     listserverPort = listserverEndpoints.front().port;
@@ -257,13 +228,13 @@ void TServerList::show() {
 }
 
 void TServerList::openListServerSettings() {
-    struct SettingsState { TServerList* serverList; GtkWidget* endpoint; GtkWidget* name; GtkWidget* host; GtkWidget* port; GtkWidget* theme; GtkWidget* error; };
+    struct SettingsState { TServerList* serverList; GtkWidget* endpoint; GtkWidget* name; GtkWidget* host; GtkWidget* port; GtkWidget* theme; GtkWidget* error; std::vector<SavedListServer> endpoints; };
     GtkWidget* dialog = gtk_dialog_new();
     gtk_window_set_title(GTK_WINDOW(dialog), "RC settings");
     gtk_window_set_transient_for(GTK_WINDOW(dialog), GTK_WINDOW(window));
     gtk_window_set_modal(GTK_WINDOW(dialog), true);
     gtk_window_set_destroy_with_parent(GTK_WINDOW(dialog), true);
-    gtk_window_set_default_size(GTK_WINDOW(dialog), 330, -1);
+    gtk_window_set_default_size(GTK_WINDOW(dialog), 312, -1);
     gtk_window_set_resizable(GTK_WINDOW(dialog), false);
     GtkWidget* actionArea = gtk_dialog_get_action_area(GTK_DIALOG(dialog));
     gtk_widget_set_no_show_all(actionArea, true);
@@ -334,7 +305,7 @@ void TServerList::openListServerSettings() {
     GtkWidget* themeRow = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 5);
     gtk_container_set_border_width(GTK_CONTAINER(themeRow), 6);
     GtkWidget* themeLabel = gtk_label_new("Theme:");
-    GtkWidget* cancelButton = gtk_button_new_with_label("Cancel");
+    GtkWidget* cancelButton = gtk_button_new_with_label("Close");
     GtkWidget* saveButton = gtk_button_new_with_label("Save");
     gtk_widget_set_can_default(saveButton, true);
     gtk_widget_grab_default(saveButton);
@@ -344,7 +315,7 @@ void TServerList::openListServerSettings() {
     gtk_box_pack_start(GTK_BOX(themeRow), cancelButton, false, false, 0);
     gtk_box_pack_start(GTK_BOX(themeRow), saveButton, false, false, 0);
     gtk_box_pack_start(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), themeRow, false, false, 0);
-    auto* state = new SettingsState{this, endpoint, name, host, port, theme, error};
+    auto* state = new SettingsState{this, endpoint, name, host, port, theme, error, listserverEndpoints};
     g_signal_connect(newEndpoint, "clicked", G_CALLBACK(+[](GtkButton*, gpointer data) {
         auto* state = static_cast<SettingsState*>(data);
         gtk_combo_box_set_active(GTK_COMBO_BOX(state->endpoint), -1);
@@ -356,15 +327,12 @@ void TServerList::openListServerSettings() {
     g_signal_connect(removeEndpoint, "clicked", G_CALLBACK(+[](GtkButton*, gpointer data) {
         auto* state = static_cast<SettingsState*>(data);
         const int index = gtk_combo_box_get_active(GTK_COMBO_BOX(state->endpoint));
-        auto& endpoints = state->serverList->listserverEndpoints;
-        if (index >= 0 && static_cast<std::size_t>(index) < endpoints.size()) endpoints.erase(endpoints.begin() + index);
-        if (endpoints.empty()) endpoints.push_back({"Official", defaultListserverHost, 14922});
-        state->serverList->listserverName = endpoints.front().name;
-        state->serverList->listserverHost = endpoints.front().host;
-        state->serverList->listserverPort = endpoints.front().port;
-        saveListserverEndpoints(endpoints);
+        if (index < 0 || static_cast<std::size_t>(index) >= state->endpoints.size()) return;
+        const SavedListServer& selected = state->endpoints[static_cast<std::size_t>(index)];
+        if (selected.name == "Official" && selected.host == defaultListserverHost && selected.port == 14922) { gtk_label_set_text(GTK_LABEL(state->error), "The Official profile is always available."); return; }
+        state->endpoints.erase(state->endpoints.begin() + index);
         gtk_combo_box_text_remove_all(GTK_COMBO_BOX_TEXT(state->endpoint));
-        for (const SavedListServer& value : endpoints) gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(state->endpoint), savedListserverText(value).c_str());
+        for (const SavedListServer& value : state->endpoints) gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(state->endpoint), savedListserverText(value).c_str());
         gtk_combo_box_set_active(GTK_COMBO_BOX(state->endpoint), 0);
     }), state);
     g_signal_connect(cancelButton, "clicked", G_CALLBACK(+[](GtkButton*, gpointer data) { gtk_dialog_response(GTK_DIALOG(data), GTK_RESPONSE_CANCEL); }), dialog);
@@ -372,19 +340,12 @@ void TServerList::openListServerSettings() {
     g_signal_connect(endpoint, "changed", G_CALLBACK(+[](GtkComboBox* combo, gpointer data) {
         auto* state = static_cast<SettingsState*>(data);
         const int index = gtk_combo_box_get_active(combo);
-        if (index < 0 || static_cast<std::size_t>(index) >= state->serverList->listserverEndpoints.size()) return;
-        const SavedListServer& selected = state->serverList->listserverEndpoints[static_cast<std::size_t>(index)];
+        if (index < 0 || static_cast<std::size_t>(index) >= state->endpoints.size()) return;
+        const SavedListServer& selected = state->endpoints[static_cast<std::size_t>(index)];
         gtk_entry_set_text(GTK_ENTRY(state->name), selected.name.c_str());
         gtk_entry_set_text(GTK_ENTRY(state->host), selected.host.c_str());
         gtk_entry_set_text(GTK_ENTRY(state->port), std::to_string(selected.port).c_str());
-    }), state);
-    g_signal_connect(theme, "changed", G_CALLBACK(+[](GtkComboBox*, gpointer data) {
-        auto* state = static_cast<SettingsState*>(data);
-        const char* selected = gtk_combo_box_get_active_id(GTK_COMBO_BOX(state->theme));
-        if (selected == nullptr) return;
-        state->serverList->theme = selected;
-        state->serverList->darkMode = state->serverList->theme != "light";
-        state->serverList->onThemeChangedCallback(state->serverList->darkMode, state->serverList->theme);
+        gtk_label_set_text(GTK_LABEL(state->error), "");
     }), state);
     g_signal_connect(dialog, "response", G_CALLBACK(+[](GtkDialog* settings, gint response, gpointer data) {
         auto* state = static_cast<SettingsState*>(data);
@@ -394,12 +355,40 @@ void TServerList::openListServerSettings() {
         const int port = std::atoi(gtk_entry_get_text(GTK_ENTRY(state->port)));
         if (name.empty() || host.empty() || port <= 0 || port > 65535) { gtk_label_set_text(GTK_LABEL(state->error), "Enter a name, host, and port from 1 to 65535."); return; }
         const int index = gtk_combo_box_get_active(GTK_COMBO_BOX(state->endpoint));
-        if (index >= 0 && static_cast<std::size_t>(index) < state->serverList->listserverEndpoints.size()) state->serverList->listserverEndpoints.erase(state->serverList->listserverEndpoints.begin() + index);
-        state->serverList->setListServer(name, host, port);
-        state->serverList->theme = gtk_combo_box_get_active_id(GTK_COMBO_BOX(state->theme));
+        std::size_t savedIndex = state->endpoints.size();
+        SavedListServer saved;
+        saved.name = name;
+        saved.host = host;
+        saved.port = port;
+        if (index >= 0 && static_cast<std::size_t>(index) < state->endpoints.size()) {
+            savedIndex = static_cast<std::size_t>(index);
+            state->endpoints[savedIndex] = saved;
+        } else {
+            state->endpoints.push_back(saved);
+        }
+        bool hasOfficial = false;
+        for (const SavedListServer& endpoint : state->endpoints) if (endpoint.name == "Official" && endpoint.host == defaultListserverHost && endpoint.port == 14922) hasOfficial = true;
+        if (!hasOfficial) {
+            SavedListServer official;
+            official.name = "Official";
+            official.host = defaultListserverHost;
+            official.port = 14922;
+            state->endpoints.insert(state->endpoints.begin(), official);
+            ++savedIndex;
+        }
+        state->serverList->listserverEndpoints = state->endpoints;
+        state->serverList->listserverName = name;
+        state->serverList->listserverHost = host;
+        state->serverList->listserverPort = port;
+        saveListserverEndpoints(state->endpoints);
+        const char* selectedTheme = gtk_combo_box_get_active_id(GTK_COMBO_BOX(state->theme));
+        if (selectedTheme != nullptr) state->serverList->theme = selectedTheme;
         state->serverList->darkMode = state->serverList->theme != "light";
         state->serverList->onThemeChangedCallback(state->serverList->darkMode, state->serverList->theme);
-        gtk_widget_destroy(GTK_WIDGET(settings));
+        gtk_combo_box_text_remove_all(GTK_COMBO_BOX_TEXT(state->endpoint));
+        for (const SavedListServer& value : state->endpoints) gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(state->endpoint), savedListserverText(value).c_str());
+        gtk_combo_box_set_active(GTK_COMBO_BOX(state->endpoint), static_cast<int>(savedIndex));
+        gtk_label_set_text(GTK_LABEL(state->error), "Saved.");
     }), state);
     g_signal_connect(dialog, "destroy", G_CALLBACK(+[](GtkWidget*, gpointer data) { delete static_cast<SettingsState*>(data); }), state);
     gtk_widget_show_all(dialog);

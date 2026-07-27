@@ -37,7 +37,7 @@ TStartFrame::TStartFrame(RC::RCOptions& options, const std::filesystem::path& ap
     gtk_widget_set_name(window, "StartFrame");
     gtk_window_set_title(GTK_WINDOW(window), "Remote Control");
     gtk_window_set_position(GTK_WINDOW(window), GTK_WIN_POS_CENTER);
-    gtk_window_set_default_size(GTK_WINDOW(window), 280, 220);
+    gtk_window_set_default_size(GTK_WINDOW(window), 264, 220);
     gtk_window_set_resizable(GTK_WINDOW(window), true);
 
     GtkWidget* root = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
@@ -77,21 +77,22 @@ TStartFrame::TStartFrame(RC::RCOptions& options, const std::filesystem::path& ap
     gtk_widget_set_name(accountCombo, "AccountPicker");
     accountField = gtk_bin_get_child(GTK_BIN(accountCombo));
     gtk_widget_set_name(accountField, "AccountField");
-    gtk_entry_set_placeholder_text(GTK_ENTRY(accountField), "Add an account");
+    gtk_entry_set_placeholder_text(GTK_ENTRY(accountField), nullptr);
     accountManageButton = gtk_button_new_from_icon_name("document-edit-symbolic", GTK_ICON_SIZE_MENU);
     gtk_widget_set_name(accountManageButton, "AccountManageButton");
     gtk_style_context_add_class(gtk_widget_get_style_context(accountManageButton), "account-manage-button");
     gtk_style_context_add_class(gtk_widget_get_style_context(accountManageButton), "flat");
     gtk_widget_set_halign(accountManageButton, GTK_ALIGN_END);
     gtk_widget_set_valign(accountManageButton, GTK_ALIGN_CENTER);
-    gtk_widget_set_margin_end(accountManageButton, 32);
+    gtk_widget_set_margin_end(accountManageButton, 40);
     gtk_widget_set_size_request(accountManageButton, 20, 20);
+    gtk_widget_add_events(accountManageButton, GDK_ENTER_NOTIFY_MASK | GDK_LEAVE_NOTIFY_MASK);
     gtk_widget_set_can_focus(accountManageButton, true);
     gtk_widget_set_focus_on_click(accountManageButton, true);
     gtk_widget_set_tooltip_text(accountManageButton, "Manage accounts");
     atk_object_set_name(gtk_widget_get_accessible(accountManageButton), "Manage accounts");
     GtkCssProvider* accountCss = gtk_css_provider_new();
-    gtk_css_provider_load_from_data(accountCss, "#AccountField { padding-right: 24px; } #AccountManageButton, #AccountManageButton:hover, #AccountManageButton:active, #AccountManageButton:focus { min-width: 20px; min-height: 20px; padding: 0; border: none; border-radius: 2px; box-shadow: none; background-image: none; background-color: transparent; }", -1, nullptr);
+    gtk_css_provider_load_from_data(accountCss, "#AccountField { padding-right: 48px; } #AccountManageButton, #AccountManageButton:hover, #AccountManageButton:active, #AccountManageButton:focus { min-width: 20px; min-height: 20px; padding: 0; border: none; border-radius: 2px; box-shadow: none; background-image: none; background-color: transparent; }", -1, nullptr);
     gtk_style_context_add_provider(gtk_widget_get_style_context(accountField), GTK_STYLE_PROVIDER(accountCss), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION + 1);
     gtk_style_context_add_provider(gtk_widget_get_style_context(accountManageButton), GTK_STYLE_PROVIDER(accountCss), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION + 1);
     g_object_unref(accountCss);
@@ -137,6 +138,8 @@ TStartFrame::TStartFrame(RC::RCOptions& options, const std::filesystem::path& ap
     g_signal_connect(accountManageButton, "clicked", G_CALLBACK(TStartFrame::onManageAccounts), this);
     g_signal_connect(accountEvent, "enter-notify-event", G_CALLBACK(TStartFrame::onAccountPointerEnter), this);
     g_signal_connect(accountEvent, "leave-notify-event", G_CALLBACK(TStartFrame::onAccountPointerLeave), this);
+    g_signal_connect(accountManageButton, "enter-notify-event", G_CALLBACK(TStartFrame::onAccountManagePointerEnter), this);
+    g_signal_connect(accountManageButton, "leave-notify-event", G_CALLBACK(TStartFrame::onAccountManagePointerLeave), this);
     g_signal_connect(accountField, "focus-in-event", G_CALLBACK(TStartFrame::onAccountFocusIn), this);
     g_signal_connect(accountField, "focus-out-event", G_CALLBACK(TStartFrame::onAccountFocusOut), this);
     g_signal_connect(listServerSettings, "clicked", G_CALLBACK(TStartFrame::onListServerSettings), this);
@@ -181,7 +184,22 @@ gboolean TStartFrame::onAccountPointerEnter(GtkWidget*, GdkEventCrossing*, gpoin
 gboolean TStartFrame::onAccountPointerLeave(GtkWidget*, GdkEventCrossing* event, gpointer data) {
     TStartFrame* frame = static_cast<TStartFrame*>(data);
     if (event->detail != GDK_NOTIFY_INFERIOR) frame->accountHovered = false;
-    if (event->detail != GDK_NOTIFY_INFERIOR && !gtk_widget_has_focus(frame->accountField)) gtk_widget_hide(frame->accountManageButton);
+    g_idle_add(+[](gpointer value) -> gboolean {
+        TStartFrame* frame = static_cast<TStartFrame*>(value);
+        if (!frame->accountHovered && !frame->accountManageHovered && !gtk_widget_has_focus(frame->accountField) && !gtk_widget_has_focus(frame->accountManageButton)) gtk_widget_hide(frame->accountManageButton);
+        return G_SOURCE_REMOVE;
+    }, frame);
+    return false;
+}
+gboolean TStartFrame::onAccountManagePointerEnter(GtkWidget*, GdkEventCrossing*, gpointer data) { TStartFrame* frame = static_cast<TStartFrame*>(data); frame->accountManageHovered = true; gtk_widget_show(frame->accountManageButton); return false; }
+gboolean TStartFrame::onAccountManagePointerLeave(GtkWidget*, GdkEventCrossing*, gpointer data) {
+    TStartFrame* frame = static_cast<TStartFrame*>(data);
+    frame->accountManageHovered = false;
+    g_idle_add(+[](gpointer value) -> gboolean {
+        TStartFrame* frame = static_cast<TStartFrame*>(value);
+        if (!frame->accountHovered && !frame->accountManageHovered && !gtk_widget_has_focus(frame->accountField) && !gtk_widget_has_focus(frame->accountManageButton)) gtk_widget_hide(frame->accountManageButton);
+        return G_SOURCE_REMOVE;
+    }, frame);
     return false;
 }
 gboolean TStartFrame::onAccountFocusIn(GtkWidget*, GdkEventFocus*, gpointer data) { gtk_widget_show(static_cast<TStartFrame*>(data)->accountManageButton); return false; }
@@ -189,7 +207,7 @@ gboolean TStartFrame::onAccountFocusOut(GtkWidget*, GdkEventFocus*, gpointer dat
     TStartFrame* frame = static_cast<TStartFrame*>(data);
     g_idle_add(+[](gpointer value) -> gboolean {
         TStartFrame* frame = static_cast<TStartFrame*>(value);
-        if (!frame->accountHovered && !gtk_widget_has_focus(frame->accountField) && !gtk_widget_has_focus(frame->accountManageButton)) gtk_widget_hide(frame->accountManageButton);
+        if (!frame->accountHovered && !frame->accountManageHovered && !gtk_widget_has_focus(frame->accountField) && !gtk_widget_has_focus(frame->accountManageButton)) gtk_widget_hide(frame->accountManageButton);
         return G_SOURCE_REMOVE;
     }, frame);
     return false;

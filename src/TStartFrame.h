@@ -34,6 +34,8 @@ private:
     static void onAccountEntryChanged(GtkEditable*, gpointer data);
     static gboolean onAccountPointerEnter(GtkWidget*, GdkEventCrossing*, gpointer data);
     static gboolean onAccountPointerLeave(GtkWidget*, GdkEventCrossing*, gpointer data);
+    static gboolean onAccountManagePointerEnter(GtkWidget*, GdkEventCrossing*, gpointer data);
+    static gboolean onAccountManagePointerLeave(GtkWidget*, GdkEventCrossing*, gpointer data);
     static gboolean onAccountFocusIn(GtkWidget*, GdkEventFocus*, gpointer data);
     static gboolean onAccountFocusOut(GtkWidget*, GdkEventFocus*, gpointer data);
     static void onCancel(GtkButton*, gpointer data);
@@ -60,6 +62,7 @@ private:
     GtkWidget* accountField = nullptr;
     GtkWidget* accountManageButton = nullptr;
     bool accountHovered = false;
+    bool accountManageHovered = false;
     GtkWidget* passwordField = nullptr;
     GtkWidget* passwordCheck = nullptr;
     GtkWidget* graphicsCheck = nullptr;

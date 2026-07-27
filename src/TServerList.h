@@ -1,5 +1,6 @@
 #pragma once
 
+#include <filesystem>
 #include <functional>
 #include <gtk/gtk.h>
 #include <memory>
@@ -15,6 +16,11 @@ struct SavedListServer {
     std::string host;
     int port = 14922;
 };
+
+namespace RC {
+std::vector<SavedListServer> loadListServerProfiles(const std::filesystem::path& path, const std::string& defaultHost, int defaultPort);
+bool saveListServerProfiles(const std::filesystem::path& path, const std::vector<SavedListServer>& endpoints);
+}
 
 class TServerList {
 public:
