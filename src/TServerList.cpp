@@ -258,9 +258,16 @@ void TServerList::show() {
 
 void TServerList::openListServerSettings() {
     struct SettingsState { TServerList* serverList; GtkWidget* endpoint; GtkWidget* name; GtkWidget* host; GtkWidget* port; GtkWidget* theme; GtkWidget* error; };
-    GtkWidget* dialog = gtk_dialog_new_with_buttons("RC settings", GTK_WINDOW(window), GTK_DIALOG_MODAL, "Cancel", GTK_RESPONSE_CANCEL, "Save", GTK_RESPONSE_OK, nullptr);
+    GtkWidget* dialog = gtk_dialog_new();
+    gtk_window_set_title(GTK_WINDOW(dialog), "RC settings");
+    gtk_window_set_transient_for(GTK_WINDOW(dialog), GTK_WINDOW(window));
+    gtk_window_set_modal(GTK_WINDOW(dialog), true);
+    gtk_window_set_destroy_with_parent(GTK_WINDOW(dialog), true);
     gtk_window_set_default_size(GTK_WINDOW(dialog), 330, -1);
     gtk_window_set_resizable(GTK_WINDOW(dialog), false);
+    GtkWidget* actionArea = gtk_dialog_get_action_area(GTK_DIALOG(dialog));
+    gtk_widget_set_no_show_all(actionArea, true);
+    gtk_widget_hide(actionArea);
     GtkWidget* frame = gtk_frame_new(" Saved list servers ");
     gtk_container_set_border_width(GTK_CONTAINER(frame), 6);
     gtk_box_pack_start(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), frame, true, true, 0);
@@ -324,12 +331,19 @@ void TServerList::openListServerSettings() {
     gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(theme), "catppuccin", "Catppuccin Mocha");
     gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(theme), "light", "Light");
     gtk_combo_box_set_active_id(GTK_COMBO_BOX(theme), this->theme.c_str());
-    GtkWidget* themeGrid = gtk_grid_new();
-    gtk_grid_set_column_spacing(GTK_GRID(themeGrid), 6);
-    gtk_container_set_border_width(GTK_CONTAINER(themeGrid), 8);
-    gtk_grid_attach(GTK_GRID(themeGrid), gtk_label_new("Theme:"), 0, 0, 1, 1);
-    gtk_grid_attach(GTK_GRID(themeGrid), theme, 1, 0, 1, 1);
-    gtk_box_pack_start(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), themeGrid, false, false, 0);
+    GtkWidget* themeRow = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 5);
+    gtk_container_set_border_width(GTK_CONTAINER(themeRow), 6);
+    GtkWidget* themeLabel = gtk_label_new("Theme:");
+    GtkWidget* cancelButton = gtk_button_new_with_label("Cancel");
+    GtkWidget* saveButton = gtk_button_new_with_label("Save");
+    gtk_widget_set_can_default(saveButton, true);
+    gtk_widget_grab_default(saveButton);
+    gtk_box_pack_start(GTK_BOX(themeRow), themeLabel, false, false, 0);
+    gtk_box_pack_start(GTK_BOX(themeRow), theme, false, false, 0);
+    gtk_box_pack_start(GTK_BOX(themeRow), gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0), true, true, 0);
+    gtk_box_pack_start(GTK_BOX(themeRow), cancelButton, false, false, 0);
+    gtk_box_pack_start(GTK_BOX(themeRow), saveButton, false, false, 0);
+    gtk_box_pack_start(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), themeRow, false, false, 0);
     auto* state = new SettingsState{this, endpoint, name, host, port, theme, error};
     g_signal_connect(newEndpoint, "clicked", G_CALLBACK(+[](GtkButton*, gpointer data) {
         auto* state = static_cast<SettingsState*>(data);
@@ -353,6 +367,8 @@ void TServerList::openListServerSettings() {
         for (const SavedListServer& value : endpoints) gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(state->endpoint), savedListserverText(value).c_str());
         gtk_combo_box_set_active(GTK_COMBO_BOX(state->endpoint), 0);
     }), state);
+    g_signal_connect(cancelButton, "clicked", G_CALLBACK(+[](GtkButton*, gpointer data) { gtk_dialog_response(GTK_DIALOG(data), GTK_RESPONSE_CANCEL); }), dialog);
+    g_signal_connect(saveButton, "clicked", G_CALLBACK(+[](GtkButton*, gpointer data) { gtk_dialog_response(GTK_DIALOG(data), GTK_RESPONSE_OK); }), dialog);
     g_signal_connect(endpoint, "changed", G_CALLBACK(+[](GtkComboBox* combo, gpointer data) {
         auto* state = static_cast<SettingsState*>(data);
         const int index = gtk_combo_box_get_active(combo);
