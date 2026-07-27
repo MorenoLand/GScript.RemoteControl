@@ -31,6 +31,11 @@ private:
     static void onListServerSettings(GtkButton*, gpointer data);
     static void onManageAccounts(GtkButton*, gpointer data);
     static void onAccountChanged(GtkComboBox*, gpointer data);
+    static void onAccountEntryChanged(GtkEditable*, gpointer data);
+    static gboolean onAccountPointerEnter(GtkWidget*, GdkEventCrossing*, gpointer data);
+    static gboolean onAccountPointerLeave(GtkWidget*, GdkEventCrossing*, gpointer data);
+    static gboolean onAccountFocusIn(GtkWidget*, GdkEventFocus*, gpointer data);
+    static gboolean onAccountFocusOut(GtkWidget*, GdkEventFocus*, gpointer data);
     static void onCancel(GtkButton*, gpointer data);
     static void onDestroy(GtkWidget*, gpointer data);
     static gboolean onDelete(GtkWidget*, GdkEvent*, gpointer data);
@@ -52,6 +57,9 @@ private:
     GtkWidget* window = nullptr;
     GtkWidget* nicknameField = nullptr;
     GtkWidget* accountCombo = nullptr;
+    GtkWidget* accountField = nullptr;
+    GtkWidget* accountManageButton = nullptr;
+    bool accountHovered = false;
     GtkWidget* passwordField = nullptr;
     GtkWidget* passwordCheck = nullptr;
     GtkWidget* graphicsCheck = nullptr;

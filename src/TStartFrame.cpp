@@ -66,16 +66,33 @@ TStartFrame::TStartFrame(RC::RCOptions& options, const std::filesystem::path& ap
     GtkWidget* accountLabel = gtk_label_new("Account:");
     gtk_widget_set_size_request(accountLabel, 80, -1);
     gtk_label_set_xalign(GTK_LABEL(accountLabel), 0.0F);
-    GtkWidget* accountRow = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
-    accountCombo = gtk_combo_box_text_new();
+    GtkWidget* accountRow = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 3);
+    GtkWidget* accountEvent = gtk_event_box_new();
+    gtk_event_box_set_visible_window(GTK_EVENT_BOX(accountEvent), false);
+    gtk_widget_add_events(accountEvent, GDK_ENTER_NOTIFY_MASK | GDK_LEAVE_NOTIFY_MASK);
+    GtkWidget* accountOverlay = gtk_overlay_new();
+    gtk_widget_set_hexpand(accountOverlay, true);
+    accountCombo = gtk_combo_box_text_new_with_entry();
     gtk_widget_set_hexpand(accountCombo, true);
     gtk_widget_set_name(accountCombo, "AccountPicker");
-    GtkWidget* manageButton = gtk_button_new_from_icon_name("document-edit-symbolic", GTK_ICON_SIZE_BUTTON);
-    gtk_widget_set_size_request(manageButton, 34, -1);
-    gtk_widget_set_tooltip_text(manageButton, "Add, edit, select, or delete accounts");
+    accountField = gtk_bin_get_child(GTK_BIN(accountCombo));
+    gtk_widget_set_name(accountField, "AccountField");
+    gtk_entry_set_placeholder_text(GTK_ENTRY(accountField), "Add an account");
+    accountManageButton = gtk_button_new_from_icon_name("document-edit-symbolic", GTK_ICON_SIZE_MENU);
+    gtk_widget_set_name(accountManageButton, "AccountManageButton");
+    gtk_style_context_add_class(gtk_widget_get_style_context(accountManageButton), "account-manage-button");
+    gtk_widget_set_halign(accountManageButton, GTK_ALIGN_END);
+    gtk_widget_set_valign(accountManageButton, GTK_ALIGN_CENTER);
+    gtk_widget_set_margin_end(accountManageButton, 27);
+    gtk_widget_set_size_request(accountManageButton, 22, 22);
+    gtk_widget_set_tooltip_text(accountManageButton, "Manage accounts");
+    atk_object_set_name(gtk_widget_get_accessible(accountManageButton), "Manage accounts");
+    gtk_widget_set_no_show_all(accountManageButton, true);
+    gtk_container_add(GTK_CONTAINER(accountOverlay), accountCombo);
+    gtk_overlay_add_overlay(GTK_OVERLAY(accountOverlay), accountManageButton);
+    gtk_container_add(GTK_CONTAINER(accountEvent), accountOverlay);
     gtk_box_pack_start(GTK_BOX(accountRow), accountLabel, false, false, 0);
-    gtk_box_pack_start(GTK_BOX(accountRow), accountCombo, true, true, 0);
-    gtk_box_pack_end(GTK_BOX(accountRow), manageButton, false, false, 0);
+    gtk_box_pack_start(GTK_BOX(accountRow), accountEvent, true, true, 0);
     gtk_box_pack_start(GTK_BOX(optionsBox), accountRow, false, true, 0);
 
     addField("Password:", passwordField, true);
@@ -94,8 +111,10 @@ TStartFrame::TStartFrame(RC::RCOptions& options, const std::filesystem::path& ap
 
     GtkWidget* buttons = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 5);
     gtk_container_set_border_width(GTK_CONTAINER(buttons), 5);
-    GtkWidget* listServerSettings = gtk_button_new_with_label("Settings");
+    GtkWidget* listServerSettings = gtk_button_new_from_icon_name("preferences-system-symbolic", GTK_ICON_SIZE_BUTTON);
+    gtk_widget_set_size_request(listServerSettings, 42, -1);
     gtk_widget_set_tooltip_text(listServerSettings, "List server settings");
+    atk_object_set_name(gtk_widget_get_accessible(listServerSettings), "List server settings");
     gtk_box_pack_start(GTK_BOX(buttons), listServerSettings, false, false, 0);
     gtk_box_pack_start(GTK_BOX(buttons), gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0), true, true, 0);
     GtkWidget* connectButton = gtk_button_new_with_label("OK");
@@ -106,7 +125,12 @@ TStartFrame::TStartFrame(RC::RCOptions& options, const std::filesystem::path& ap
 
     g_signal_connect(connectButton, "clicked", G_CALLBACK(TStartFrame::onConnect), this);
     g_signal_connect(accountCombo, "changed", G_CALLBACK(TStartFrame::onAccountChanged), this);
-    g_signal_connect(manageButton, "clicked", G_CALLBACK(TStartFrame::onManageAccounts), this);
+    g_signal_connect(accountField, "changed", G_CALLBACK(TStartFrame::onAccountEntryChanged), this);
+    g_signal_connect(accountManageButton, "clicked", G_CALLBACK(TStartFrame::onManageAccounts), this);
+    g_signal_connect(accountEvent, "enter-notify-event", G_CALLBACK(TStartFrame::onAccountPointerEnter), this);
+    g_signal_connect(accountEvent, "leave-notify-event", G_CALLBACK(TStartFrame::onAccountPointerLeave), this);
+    g_signal_connect(accountField, "focus-in-event", G_CALLBACK(TStartFrame::onAccountFocusIn), this);
+    g_signal_connect(accountField, "focus-out-event", G_CALLBACK(TStartFrame::onAccountFocusOut), this);
     g_signal_connect(listServerSettings, "clicked", G_CALLBACK(TStartFrame::onListServerSettings), this);
     g_signal_connect(cancelButton, "clicked", G_CALLBACK(onCancel), this);
     g_signal_connect(window, "delete-event", G_CALLBACK(onDelete), this);
@@ -120,7 +144,7 @@ TStartFrame::~TStartFrame() { if (window != nullptr) gtk_widget_destroy(window);
 void TStartFrame::show() { gtk_widget_show_all(window); gtk_window_present(GTK_WINDOW(window)); }
 void TStartFrame::toggleVisibility() { if (gtk_widget_get_visible(window)) gtk_widget_hide(window); else show(); }
 bool TStartFrame::mcpVisible() const { return gtk_widget_get_visible(window); }
-std::string TStartFrame::mcpAccount() const { return selectedAccount; }
+std::string TStartFrame::mcpAccount() const { return getText(accountField); }
 std::string TStartFrame::mcpNickname() const { return getText(nicknameField); }
 bool TStartFrame::mcpHasPassword() const { return !getText(passwordField).empty(); }
 
@@ -142,7 +166,25 @@ void TStartFrame::onAccountChanged(GtkComboBox* combo, gpointer data) {
     if (value == nullptr) return;
     const std::string account = value;
     g_free(value);
-    if (account != "Add an account" && account != frame->selectedAccount) frame->selectAccount(account);
+    if (account != frame->selectedAccount) frame->selectAccount(account);
+}
+void TStartFrame::onAccountEntryChanged(GtkEditable* editable, gpointer data) { static_cast<TStartFrame*>(data)->selectedAccount = gtk_entry_get_text(GTK_ENTRY(editable)); }
+gboolean TStartFrame::onAccountPointerEnter(GtkWidget*, GdkEventCrossing*, gpointer data) { TStartFrame* frame = static_cast<TStartFrame*>(data); frame->accountHovered = true; gtk_widget_show(frame->accountManageButton); return false; }
+gboolean TStartFrame::onAccountPointerLeave(GtkWidget*, GdkEventCrossing* event, gpointer data) {
+    TStartFrame* frame = static_cast<TStartFrame*>(data);
+    if (event->detail != GDK_NOTIFY_INFERIOR) frame->accountHovered = false;
+    if (event->detail != GDK_NOTIFY_INFERIOR && !gtk_widget_has_focus(frame->accountField)) gtk_widget_hide(frame->accountManageButton);
+    return false;
+}
+gboolean TStartFrame::onAccountFocusIn(GtkWidget*, GdkEventFocus*, gpointer data) { gtk_widget_show(static_cast<TStartFrame*>(data)->accountManageButton); return false; }
+gboolean TStartFrame::onAccountFocusOut(GtkWidget*, GdkEventFocus*, gpointer data) {
+    TStartFrame* frame = static_cast<TStartFrame*>(data);
+    g_idle_add(+[](gpointer value) -> gboolean {
+        TStartFrame* frame = static_cast<TStartFrame*>(value);
+        if (!frame->accountHovered && !gtk_widget_has_focus(frame->accountField) && !gtk_widget_has_focus(frame->accountManageButton)) gtk_widget_hide(frame->accountManageButton);
+        return G_SOURCE_REMOVE;
+    }, frame);
+    return false;
 }
 void TStartFrame::onCancel(GtkButton*, gpointer) { if (gtk_main_level() > 0) gtk_main_quit(); }
 void TStartFrame::onDestroy(GtkWidget*, gpointer data) { static_cast<TStartFrame*>(data)->window = nullptr; if (gtk_main_level() > 0) gtk_main_quit(); }
@@ -154,14 +196,14 @@ void TStartFrame::selectAccount(const std::string& accountName) {
     int active = accounts.entries().empty() ? 0 : -1;
     for (std::size_t index = 0; index < accounts.entries().size(); ++index) if (accounts.entries()[index].name == selectedAccount) { active = static_cast<int>(index); break; }
     gtk_combo_box_set_active(GTK_COMBO_BOX(accountCombo), active);
+    gtk_entry_set_text(GTK_ENTRY(accountField), selectedAccount.c_str());
     gtk_entry_set_text(GTK_ENTRY(passwordField), accounts.passwordFor(selectedAccount).c_str());
     gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(passwordCheck), accounts.passwordFor(selectedAccount).empty());
 }
 
 void TStartFrame::refreshAccountMenu() {
     gtk_combo_box_text_remove_all(GTK_COMBO_BOX_TEXT(accountCombo));
-    if (accounts.entries().empty()) gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(accountCombo), "Add an account");
-    else for (const RC::RCAccount& account : accounts.entries()) gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(accountCombo), account.name.c_str());
+    for (const RC::RCAccount& account : accounts.entries()) gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(accountCombo), account.name.c_str());
 }
 
 bool TStartFrame::editAccount(const std::string& accountName) {
@@ -275,7 +317,8 @@ void TStartFrame::openAccountManager() {
 }
 
 void TStartFrame::connect() {
-    if (selectedAccount.empty()) { openAccountManager(); if (selectedAccount.empty()) return; }
+    selectedAccount = getText(accountField);
+    if (selectedAccount.empty()) { gtk_widget_grab_focus(accountField); return; }
     options.nickname = getText(nicknameField);
     options.dontsavepassword = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(passwordCheck));
     options.graphicalmenu = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(graphicsCheck));

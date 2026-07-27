@@ -258,20 +258,27 @@ void TServerList::show() {
 
 void TServerList::openListServerSettings() {
     struct SettingsState { TServerList* serverList; GtkWidget* endpoint; GtkWidget* name; GtkWidget* host; GtkWidget* port; GtkWidget* theme; GtkWidget* error; };
-    constexpr int NewEndpoint = 1000;
-    constexpr int RemoveEndpoint = 1001;
-    GtkWidget* dialog = gtk_dialog_new_with_buttons("RC settings", GTK_WINDOW(window), GTK_DIALOG_MODAL, "New", NewEndpoint, "Remove", RemoveEndpoint, "Cancel", GTK_RESPONSE_CANCEL, "Save", GTK_RESPONSE_OK, nullptr);
-    gtk_window_set_default_size(GTK_WINDOW(dialog), 390, -1);
+    GtkWidget* dialog = gtk_dialog_new_with_buttons("RC settings", GTK_WINDOW(window), GTK_DIALOG_MODAL, "Cancel", GTK_RESPONSE_CANCEL, "Save", GTK_RESPONSE_OK, nullptr);
+    gtk_window_set_default_size(GTK_WINDOW(dialog), 330, -1);
     gtk_window_set_resizable(GTK_WINDOW(dialog), false);
     GtkWidget* frame = gtk_frame_new(" Saved list servers ");
-    gtk_container_set_border_width(GTK_CONTAINER(frame), 8);
+    gtk_container_set_border_width(GTK_CONTAINER(frame), 6);
     gtk_box_pack_start(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), frame, true, true, 0);
     GtkWidget* grid = gtk_grid_new();
-    gtk_container_set_border_width(GTK_CONTAINER(grid), 8);
-    gtk_grid_set_row_spacing(GTK_GRID(grid), 5);
-    gtk_grid_set_column_spacing(GTK_GRID(grid), 6);
+    gtk_container_set_border_width(GTK_CONTAINER(grid), 6);
+    gtk_grid_set_row_spacing(GTK_GRID(grid), 4);
+    gtk_grid_set_column_spacing(GTK_GRID(grid), 5);
     gtk_container_add(GTK_CONTAINER(frame), grid);
     GtkWidget* endpoint = gtk_combo_box_text_new();
+    gtk_widget_set_hexpand(endpoint, true);
+    GtkWidget* newEndpoint = gtk_button_new_from_icon_name("list-add-symbolic", GTK_ICON_SIZE_MENU);
+    GtkWidget* removeEndpoint = gtk_button_new_from_icon_name("edit-delete-symbolic", GTK_ICON_SIZE_MENU);
+    gtk_widget_set_size_request(newEndpoint, 26, 26);
+    gtk_widget_set_size_request(removeEndpoint, 26, 26);
+    gtk_widget_set_tooltip_text(newEndpoint, "New list server profile");
+    gtk_widget_set_tooltip_text(removeEndpoint, "Delete selected list server profile");
+    atk_object_set_name(gtk_widget_get_accessible(newEndpoint), "New list server profile");
+    atk_object_set_name(gtk_widget_get_accessible(removeEndpoint), "Delete selected list server profile");
     GtkWidget* name = gtk_entry_new();
     GtkWidget* host = gtk_entry_new();
     GtkWidget* port = gtk_entry_new();
@@ -284,13 +291,23 @@ void TServerList::openListServerSettings() {
     gtk_label_set_xalign(GTK_LABEL(error), 0.0F);
     GtkWidget* endpointLabel = gtk_label_new("Saved profile:");
     gtk_label_set_xalign(GTK_LABEL(endpointLabel), 0.0F);
+    GtkWidget* endpointRow = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
+    gtk_box_pack_start(GTK_BOX(endpointRow), endpoint, true, true, 0);
+    gtk_box_pack_start(GTK_BOX(endpointRow), newEndpoint, false, false, 0);
+    gtk_box_pack_start(GTK_BOX(endpointRow), removeEndpoint, false, false, 0);
+    GtkWidget* nameLabel = gtk_label_new("Name:");
+    GtkWidget* hostLabel = gtk_label_new("Host:");
+    GtkWidget* portLabel = gtk_label_new("Port:");
+    gtk_label_set_xalign(GTK_LABEL(nameLabel), 0.0F);
+    gtk_label_set_xalign(GTK_LABEL(hostLabel), 0.0F);
+    gtk_label_set_xalign(GTK_LABEL(portLabel), 0.0F);
     gtk_grid_attach(GTK_GRID(grid), endpointLabel, 0, 0, 2, 1);
-    gtk_grid_attach(GTK_GRID(grid), endpoint, 0, 1, 2, 1);
-    gtk_grid_attach(GTK_GRID(grid), gtk_label_new("Name:"), 0, 2, 1, 1);
+    gtk_grid_attach(GTK_GRID(grid), endpointRow, 0, 1, 2, 1);
+    gtk_grid_attach(GTK_GRID(grid), nameLabel, 0, 2, 1, 1);
     gtk_grid_attach(GTK_GRID(grid), name, 1, 2, 1, 1);
-    gtk_grid_attach(GTK_GRID(grid), gtk_label_new("Host:"), 0, 3, 1, 1);
+    gtk_grid_attach(GTK_GRID(grid), hostLabel, 0, 3, 1, 1);
     gtk_grid_attach(GTK_GRID(grid), host, 1, 3, 1, 1);
-    gtk_grid_attach(GTK_GRID(grid), gtk_label_new("Port:"), 0, 4, 1, 1);
+    gtk_grid_attach(GTK_GRID(grid), portLabel, 0, 4, 1, 1);
     gtk_grid_attach(GTK_GRID(grid), port, 1, 4, 1, 1);
     gtk_grid_attach(GTK_GRID(grid), error, 0, 5, 2, 1);
     GtkWidget* theme = gtk_combo_box_text_new();
@@ -314,6 +331,28 @@ void TServerList::openListServerSettings() {
     gtk_grid_attach(GTK_GRID(themeGrid), theme, 1, 0, 1, 1);
     gtk_box_pack_start(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), themeGrid, false, false, 0);
     auto* state = new SettingsState{this, endpoint, name, host, port, theme, error};
+    g_signal_connect(newEndpoint, "clicked", G_CALLBACK(+[](GtkButton*, gpointer data) {
+        auto* state = static_cast<SettingsState*>(data);
+        gtk_combo_box_set_active(GTK_COMBO_BOX(state->endpoint), -1);
+        gtk_entry_set_text(GTK_ENTRY(state->name), "");
+        gtk_entry_set_text(GTK_ENTRY(state->host), "");
+        gtk_entry_set_text(GTK_ENTRY(state->port), "14922");
+        gtk_widget_grab_focus(state->name);
+    }), state);
+    g_signal_connect(removeEndpoint, "clicked", G_CALLBACK(+[](GtkButton*, gpointer data) {
+        auto* state = static_cast<SettingsState*>(data);
+        const int index = gtk_combo_box_get_active(GTK_COMBO_BOX(state->endpoint));
+        auto& endpoints = state->serverList->listserverEndpoints;
+        if (index >= 0 && static_cast<std::size_t>(index) < endpoints.size()) endpoints.erase(endpoints.begin() + index);
+        if (endpoints.empty()) endpoints.push_back({"Official", defaultListserverHost, 14922});
+        state->serverList->listserverName = endpoints.front().name;
+        state->serverList->listserverHost = endpoints.front().host;
+        state->serverList->listserverPort = endpoints.front().port;
+        saveListserverEndpoints(endpoints);
+        gtk_combo_box_text_remove_all(GTK_COMBO_BOX_TEXT(state->endpoint));
+        for (const SavedListServer& value : endpoints) gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(state->endpoint), savedListserverText(value).c_str());
+        gtk_combo_box_set_active(GTK_COMBO_BOX(state->endpoint), 0);
+    }), state);
     g_signal_connect(endpoint, "changed", G_CALLBACK(+[](GtkComboBox* combo, gpointer data) {
         auto* state = static_cast<SettingsState*>(data);
         const int index = gtk_combo_box_get_active(combo);
@@ -333,28 +372,6 @@ void TServerList::openListServerSettings() {
     }), state);
     g_signal_connect(dialog, "response", G_CALLBACK(+[](GtkDialog* settings, gint response, gpointer data) {
         auto* state = static_cast<SettingsState*>(data);
-        if (response == NewEndpoint) {
-            gtk_combo_box_set_active(GTK_COMBO_BOX(state->endpoint), -1);
-            gtk_entry_set_text(GTK_ENTRY(state->name), "");
-            gtk_entry_set_text(GTK_ENTRY(state->host), "");
-            gtk_entry_set_text(GTK_ENTRY(state->port), "14922");
-            gtk_widget_grab_focus(state->name);
-            return;
-        }
-        if (response == RemoveEndpoint) {
-            const int index = gtk_combo_box_get_active(GTK_COMBO_BOX(state->endpoint));
-            auto& endpoints = state->serverList->listserverEndpoints;
-            if (index >= 0 && static_cast<std::size_t>(index) < endpoints.size()) endpoints.erase(endpoints.begin() + index);
-            if (endpoints.empty()) endpoints.push_back({"Official", defaultListserverHost, 14922});
-            state->serverList->listserverName = endpoints.front().name;
-            state->serverList->listserverHost = endpoints.front().host;
-            state->serverList->listserverPort = endpoints.front().port;
-            saveListserverEndpoints(endpoints);
-            gtk_combo_box_text_remove_all(GTK_COMBO_BOX_TEXT(state->endpoint));
-            for (const SavedListServer& value : endpoints) gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(state->endpoint), savedListserverText(value).c_str());
-            gtk_combo_box_set_active(GTK_COMBO_BOX(state->endpoint), 0);
-            return;
-        }
         if (response != GTK_RESPONSE_OK) { gtk_widget_destroy(GTK_WIDGET(settings)); return; }
         const std::string name = gtk_entry_get_text(GTK_ENTRY(state->name));
         const std::string host = gtk_entry_get_text(GTK_ENTRY(state->host));
