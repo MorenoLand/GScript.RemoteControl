@@ -9,7 +9,7 @@
 
 namespace {
     struct FunctionSignature { int minimum; int maximum; };
-    struct Call { std::string name; std::size_t start; std::size_t open; std::size_t close; int arguments; };
+    struct Call { std::string name; std::size_t start; std::size_t open; std::size_t close; int arguments; bool constructor; };
 
     std::string lower(std::string value) {
         std::transform(value.begin(), value.end(), value.begin(), [](unsigned char character) { return static_cast<char>(std::tolower(character)); });
@@ -83,7 +83,12 @@ namespace {
             }
             if (depth != 0) continue;
             --close;
-            calls.push_back({match->str(1), start, open, close, argumentCount(masked, open, close)});
+            std::size_t previous = start;
+            while (previous > 0 && std::isspace(static_cast<unsigned char>(masked[previous - 1])) != 0) --previous;
+            const std::size_t tokenEnd = previous;
+            while (previous > 0 && identifierCharacter(masked[previous - 1])) --previous;
+            const bool constructor = tokenEnd > previous && lower(masked.substr(previous, tokenEnd - previous)) == "new";
+            calls.push_back({match->str(1), start, open, close, argumentCount(masked, open, close), constructor});
         }
         return calls;
     }
@@ -171,7 +176,7 @@ std::vector<GS2Diagnostic> analyzeGS2(const std::string& source, const std::vect
         {"putnpc", {3, 3}}, {"putnpc2", {3, 3}}, {"putexplosion", {3, 3}}, {"findplayer", {1, 1}}, {"findnpc", {1, 1}}, {"findlevel", {1, 1}},
         {"settimer", {1, 1}}, {"sleep", {1, 1}}, {"waitfor", {2, 3}}, {"getangle", {2, 2}}, {"getdir", {2, 2}}, {"triggeraction", {5, 5}}, {"random", {2, 2}}
     };
-    const std::set<std::string> knownCalls = {"if", "elseif", "for", "while", "switch", "with", "format", "makevar", "requesttext", "sendtext", "sendtorc", "sendtonc", "savelines", "loadlines", "addtiledef", "addtiledef2", "setarray", "insertarray", "deletearray", "replacearray", "cleararray", "arraylen", "getstringkeys", "getstringvalue", "setstring", "deletestring", "strequals", "starts", "ends", "contains", "positions", "substring", "trim", "lowercase", "uppercase"};
+    const std::set<std::string> knownCalls = {"if", "elseif", "for", "while", "switch", "with", "new", "format", "makevar", "requesttext", "sendtext", "sendtorc", "sendtonc", "savelines", "loadlines", "addtiledef", "addtiledef2", "setarray", "insertarray", "deletearray", "replacearray", "cleararray", "arraylen", "getstringkeys", "getstringvalue", "setstring", "deletestring", "strequals", "starts", "ends", "contains", "positions", "substring", "trim", "lowercase", "uppercase"};
     for (const GS2ApiFunction& function : apiFunctions) {
         const std::string name = lower(function.name);
         signatures[name] = {function.minimumParameters, function.maximumParameters};
@@ -187,11 +192,11 @@ std::vector<GS2Diagnostic> analyzeGS2(const std::string& source, const std::vect
             add(diagnostics, GS2DiagnosticSeverity::Info, call.start, call.start + call.name.size(), "join() imports members from class" + className + "; availability depends on the connected server");
         }
         const auto signature = signatures.find(name);
-        if (reportUnknownFunctions && signature != signatures.end() && signature->second.minimum >= 0 && (call.arguments < signature->second.minimum || (signature->second.maximum >= 0 && call.arguments > signature->second.maximum))) {
+        if (!call.constructor && reportUnknownFunctions && signature != signatures.end() && signature->second.minimum >= 0 && (call.arguments < signature->second.minimum || (signature->second.maximum >= 0 && call.arguments > signature->second.maximum))) {
             const std::string expected = signature->second.maximum < 0 ? std::to_string(signature->second.minimum) + "+" : signature->second.minimum == signature->second.maximum ? std::to_string(signature->second.minimum) : std::to_string(signature->second.minimum) + "-" + std::to_string(signature->second.maximum);
             add(diagnostics, GS2DiagnosticSeverity::Warning, call.start, call.start + call.name.size(), call.name + "() expects " + expected + " argument(s), got " + std::to_string(call.arguments));
         }
-        if (reportUnknownFunctions && signature == signatures.end() && knownCalls.count(name) == 0 && declarations.count(name) == 0 && knownEvents.count(name) == 0) add(diagnostics, GS2DiagnosticSeverity::Warning, call.start, call.start + call.name.size(), "Unknown function '" + call.name + "'");
+        if (!call.constructor && reportUnknownFunctions && signature == signatures.end() && knownCalls.count(name) == 0 && declarations.count(name) == 0 && knownEvents.count(name) == 0) add(diagnostics, GS2DiagnosticSeverity::Warning, call.start, call.start + call.name.size(), "Unknown function '" + call.name + "'");
     }
 
     const std::regex assignment(R"(\b([A-Za-z_][A-Za-z0-9_]*)\s*(?:\+=|-=|\*=|\/=|%=|=(?!=)))");

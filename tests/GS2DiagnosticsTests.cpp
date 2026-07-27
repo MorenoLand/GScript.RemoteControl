@@ -50,6 +50,9 @@ function oncreated() {
     assert(!has(metadataOverridesFallback, GS2DiagnosticSeverity::Warning, "expects"));
     const auto stringArgument = analyzeGS2("new GuiScrollCtrl(\"GUI Explorer\");", {gs2ApiFunction("GuiScrollCtrl", {"profile"})});
     assert(!has(stringArgument, GS2DiagnosticSeverity::Warning, "GuiScrollCtrl() expects"));
+    const auto guiProfileConstructor = analyzeGS2("new GuiControlProfile(\"Classic_BackProfile\") { modal = false; }");
+    assert(!has(guiProfileConstructor, GS2DiagnosticSeverity::Warning, "Unknown function 'new'"));
+    assert(!has(guiProfileConstructor, GS2DiagnosticSeverity::Warning, "GuiControlProfile() expects"));
     const auto importedGuiApi = analyzeGS2("new GuiMLTextCtrl(\"StaffConsole\");\nVisible = false;", {gs2ApiFunction("GuiMLTextCtrl", {"name"}), {"Visible", -1, -1}});
     assert(!has(importedGuiApi, GS2DiagnosticSeverity::Warning, "GuiMLTextCtrl() expects"));
     assert(!has(importedGuiApi, GS2DiagnosticSeverity::Info, "Likely implicit variable 'Visible'"));
