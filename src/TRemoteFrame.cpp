@@ -143,7 +143,7 @@ TRemoteFrame::TRemoteFrame(const RC::RCOptions& nextOptions, const std::filesyst
 
     GtkWidget* root = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
     gtk_container_add(GTK_CONTAINER(window), root);
-    GtkWidget* graphicalContainer = nullptr;
+    graphicalContainer = nullptr;
 
     if (!options.graphicalmenu) {
         GtkWidget* menuBar = gtk_menu_bar_new();

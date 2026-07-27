@@ -75,6 +75,8 @@ void TLevelList::apply() {
     GtkTextIter end;
     gtk_text_buffer_get_bounds(buffer, &start, &end);
     gchar* content = gtk_text_buffer_get_text(buffer, &start, &end, false);
-    rc_send_nc_packet(connection, PLI_NC_LEVELLISTSET, content == nullptr ? "" : content, content == nullptr ? 0 : static_cast<int>(strlen(content)));
+    char* tokenized = rc_gtokenize(content == nullptr ? "" : content);
+    rc_send_nc_packet(connection, PLI_NC_LEVELLISTSET, tokenized == nullptr ? "" : tokenized, tokenized == nullptr ? 0 : static_cast<int>(strlen(tokenized)));
+    rc_free(tokenized);
     g_free(content);
 }
