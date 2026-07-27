@@ -18,6 +18,7 @@ namespace {
 
     constexpr std::array<unsigned char, 8> fileMagic = {'G', 'S', 'R', 'C', 'A', 'C', 'C', '1'};
     constexpr std::array<unsigned char, 4> passwordMagic = {'P', 'W', 'G', '1'};
+    constexpr const char* accountFormat = "GScriptRCAccounts2";
     constexpr std::size_t keySize = 32;
     constexpr std::size_t nonceSize = 12;
     constexpr std::size_t tagSize = 16;
@@ -44,6 +45,19 @@ namespace {
         if (offset + 4 > input.size()) return false;
         value = static_cast<std::uint32_t>(input[offset]) | (static_cast<std::uint32_t>(input[offset + 1]) << 8) | (static_cast<std::uint32_t>(input[offset + 2]) << 16) | (static_cast<std::uint32_t>(input[offset + 3]) << 24);
         offset += 4;
+        return true;
+    }
+
+    void appendUint64(std::vector<unsigned char>& output, std::uint64_t value) {
+        appendUint32(output, static_cast<std::uint32_t>(value));
+        appendUint32(output, static_cast<std::uint32_t>(value >> 32));
+    }
+
+    bool readUint64(const std::vector<unsigned char>& input, std::size_t& offset, std::uint64_t& value) {
+        std::uint32_t low = 0;
+        std::uint32_t high = 0;
+        if (!readUint32(input, offset, low) || !readUint32(input, offset, high)) return false;
+        value = static_cast<std::uint64_t>(low) | (static_cast<std::uint64_t>(high) << 32);
         return true;
     }
 
@@ -139,11 +153,13 @@ namespace {
         return true;
     }
 
-    std::vector<unsigned char> serialize(const std::string& selected, const std::vector<RC::RCAccount>& accounts, const std::array<unsigned char, keySize>& key) {
+    std::vector<unsigned char> serialize(std::uint64_t selectedId, const std::vector<RC::RCAccount>& accounts, const std::array<unsigned char, keySize>& key) {
         std::vector<unsigned char> output;
-        appendString(output, selected);
+        appendString(output, accountFormat);
+        appendUint64(output, selectedId);
         appendUint32(output, static_cast<std::uint32_t>(accounts.size()));
         for (const RC::RCAccount& account : accounts) {
+            appendUint64(output, account.id);
             appendString(output, account.name);
             appendString(output, encodePassword(account.password, key));
             appendUint32(output, static_cast<std::uint32_t>(account.listServers.size()));
@@ -152,22 +168,46 @@ namespace {
         return output;
     }
 
-    bool deserialize(const std::vector<unsigned char>& input, const std::array<unsigned char, keySize>& key, std::string& selected, std::vector<RC::RCAccount>& accounts, bool& migratedLegacy) {
+    bool deserialize(const std::vector<unsigned char>& input, const std::array<unsigned char, keySize>& key, std::string& selected, std::uint64_t& selectedId, std::vector<RC::RCAccount>& accounts, bool& migratedLegacy) {
         std::size_t offset = 0;
+        std::string header;
         std::uint32_t accountCount = 0;
-        if (!readString(input, offset, selected) || !readUint32(input, offset, accountCount) || accountCount > 1000) return false;
+        if (!readString(input, offset, header)) return false;
+        const bool currentFormat = header == accountFormat;
+        if (currentFormat) {
+            if (!readUint64(input, offset, selectedId)) return false;
+        } else {
+            selected = header;
+            selectedId = 0;
+            migratedLegacy = true;
+        }
+        if (!readUint32(input, offset, accountCount) || accountCount > 1000) return false;
         std::vector<RC::RCAccount> parsed;
+        std::uint64_t nextId = 1;
         for (std::uint32_t accountIndex = 0; accountIndex < accountCount; ++accountIndex) {
             RC::RCAccount account;
             std::string encodedPassword;
             std::uint32_t serverCount = 0;
+            if (currentFormat) {
+                if (!readUint64(input, offset, account.id) || account.id == 0) return false;
+                nextId = std::max(nextId, account.id + 1);
+            } else {
+                account.id = nextId++;
+            }
             if (!readString(input, offset, account.name) || !readString(input, offset, encodedPassword) || !decodePassword(encodedPassword, key, account.password, migratedLegacy) || !readUint32(input, offset, serverCount) || serverCount > 1000) return false;
             for (std::uint32_t serverIndex = 0; serverIndex < serverCount; ++serverIndex) {
                 std::string server;
                 if (!readString(input, offset, server)) return false;
                 appendUnique(account.listServers, server);
             }
-            if (!account.name.empty()) parsed.push_back(std::move(account));
+            if (account.listServers.size() > 1) { account.listServers.resize(1); migratedLegacy = true; }
+            if (!account.name.empty()) {
+                const bool duplicate = std::any_of(parsed.begin(), parsed.end(), [&](const RC::RCAccount& current) { return lower(current.name) == lower(account.name) && current.password == account.password && current.listServers == account.listServers; });
+                if (duplicate) {
+                    if (selectedId == account.id) selectedId = parsed[static_cast<std::size_t>(std::find_if(parsed.begin(), parsed.end(), [&](const RC::RCAccount& current) { return lower(current.name) == lower(account.name) && current.password == account.password && current.listServers == account.listServers; }) - parsed.begin())].id;
+                    migratedLegacy = true;
+                } else parsed.push_back(std::move(account));
+            }
         }
         if (offset != input.size()) return false;
         accounts = std::move(parsed);
@@ -271,13 +311,21 @@ namespace RC {
         std::vector<unsigned char> plaintext;
         if (!loadOrCreateKey(storageDirectory, key) || !readFile(storageDirectory / "accounts.dat", encrypted)) { OPENSSL_cleanse(key.data(), key.size()); return false; }
         bool migratedLegacy = false;
-        const bool ok = decrypt(encrypted, key, plaintext) && deserialize(plaintext, key, activeAccount, accountEntries, migratedLegacy);
+        const bool ok = decrypt(encrypted, key, plaintext) && deserialize(plaintext, key, activeAccount, activeAccountId, accountEntries, migratedLegacy);
         OPENSSL_cleanse(key.data(), key.size());
         if (!plaintext.empty()) OPENSSL_cleanse(plaintext.data(), plaintext.size());
         if (!ok) return false;
         rebuildNames();
-        activePassword = passwordFor(activeAccount);
-        if (activeAccount.empty() && !accountEntries.empty()) { activeAccount = accountEntries.front().name; activePassword = accountEntries.front().password; }
+        activeAccountIndex = indexForId(activeAccountId);
+        std::ifstream selectedIndexFile(storageDirectory / "selected-account");
+        std::size_t storedIndex = 0;
+        if (activeAccountIndex == static_cast<std::size_t>(-1) && selectedIndexFile >> storedIndex && storedIndex < accountEntries.size()) { activeAccountIndex = storedIndex; migratedLegacy = true; }
+        if (activeAccountIndex == static_cast<std::size_t>(-1)) for (std::size_t index = 0; index < accountEntries.size(); ++index) if (lower(accountEntries[index].name) == lower(activeAccount)) { activeAccountIndex = index; break; }
+        if (activeAccountIndex == static_cast<std::size_t>(-1) && !accountEntries.empty()) activeAccountIndex = 0;
+        if (activeAccountIndex != static_cast<std::size_t>(-1)) { activeAccount = accountEntries[activeAccountIndex].name; activeAccountId = accountEntries[activeAccountIndex].id; }
+        nextAccountId = 1;
+        for (const RCAccount& account : accountEntries) nextAccountId = std::max(nextAccountId, account.id + 1);
+        activePassword = activeAccountIndex == static_cast<std::size_t>(-1) ? std::string() : accountEntries[activeAccountIndex].password;
         if (migratedLegacy) persist();
         return true;
     }
@@ -285,9 +333,10 @@ namespace RC {
     bool RCAccounts::persist() {
         std::array<unsigned char, keySize> key = {};
         if (!loadOrCreateKey(storageDirectory, key)) return false;
-        std::vector<unsigned char> plaintext = serialize(activeAccount, accountEntries, key);
+        std::vector<unsigned char> plaintext = serialize(activeAccountId, accountEntries, key);
         std::vector<unsigned char> encrypted;
         const bool ok = encrypt(plaintext, key, encrypted) && writePrivateFile(storageDirectory / "accounts.dat", encrypted);
+        if (ok) { std::ofstream selectedIndexFile(storageDirectory / "selected-account", std::ios::trunc); if (activeAccountIndex != static_cast<std::size_t>(-1)) selectedIndexFile << activeAccountIndex << '\n'; }
         OPENSSL_cleanse(key.data(), key.size());
         if (!plaintext.empty()) OPENSSL_cleanse(plaintext.data(), plaintext.size());
         return ok;
@@ -296,6 +345,13 @@ namespace RC {
     const std::vector<std::string>& RCAccounts::names() const { return accountNames; }
     const std::vector<RCAccount>& RCAccounts::entries() const { return accountEntries; }
     const std::string& RCAccounts::accountName() const { return activeAccount; }
+    std::size_t RCAccounts::activeIndex() const { return activeAccountIndex; }
+    std::uint64_t RCAccounts::activeId() const { return activeAccountId; }
+    std::uint64_t RCAccounts::idForIndex(std::size_t index) const { return index < accountEntries.size() ? accountEntries[index].id : 0; }
+    std::size_t RCAccounts::indexForId(std::uint64_t id) const {
+        const auto found = std::find_if(accountEntries.begin(), accountEntries.end(), [&](const RCAccount& account) { return account.id == id; });
+        return found == accountEntries.end() ? static_cast<std::size_t>(-1) : static_cast<std::size_t>(found - accountEntries.begin());
+    }
     const std::string& RCAccounts::password() const { return activePassword; }
 
     std::string RCAccounts::passwordFor(const std::string& accountName) const {
@@ -303,23 +359,40 @@ namespace RC {
         const auto found = std::find_if(accountEntries.begin(), accountEntries.end(), [&](const RCAccount& account) { return lower(account.name) == target; });
         return found == accountEntries.end() ? std::string() : found->password;
     }
+    std::string RCAccounts::passwordForIndex(std::size_t index) const { return index < accountEntries.size() ? accountEntries[index].password : std::string(); }
 
     std::vector<std::string> RCAccounts::listServersFor(const std::string& accountName) const {
         const std::string target = lower(accountName);
         const auto found = std::find_if(accountEntries.begin(), accountEntries.end(), [&](const RCAccount& account) { return lower(account.name) == target; });
         return found == accountEntries.end() ? std::vector<std::string>() : found->listServers;
     }
+    std::vector<std::string> RCAccounts::listServersForIndex(std::size_t index) const { return index < accountEntries.size() ? accountEntries[index].listServers : std::vector<std::string>(); }
 
     void RCAccounts::save(const std::string& accountName, const std::string& password, bool dontSavePassword, const std::string& listServer) {
         if (accountName.empty()) return;
         const std::string target = lower(accountName);
         auto found = std::find_if(accountEntries.begin(), accountEntries.end(), [&](const RCAccount& account) { return lower(account.name) == target; });
-        if (found == accountEntries.end()) { accountEntries.push_back({accountName, {}, {}}); found = std::prev(accountEntries.end()); }
+        if (found == accountEntries.end()) { accountEntries.push_back({nextAccountId++, accountName, {}, {}}); found = std::prev(accountEntries.end()); }
         found->name = accountName;
         found->password = dontSavePassword ? std::string() : password;
-        appendUnique(found->listServers, listServer);
+        found->listServers.clear();
+        if (!listServer.empty()) found->listServers.push_back(listServer);
         activeAccount = accountName;
         activePassword = found->password;
+        activeAccountIndex = static_cast<std::size_t>(found - accountEntries.begin());
+        activeAccountId = found->id;
+        rebuildNames();
+        persist();
+    }
+    void RCAccounts::saveAt(std::size_t index, const std::string& password, bool dontSavePassword, const std::string& listServer) {
+        if (index >= accountEntries.size()) return;
+        accountEntries[index].password = dontSavePassword ? std::string() : password;
+        accountEntries[index].listServers.clear();
+        if (!listServer.empty()) accountEntries[index].listServers.push_back(listServer);
+        activeAccount = accountEntries[index].name;
+        activePassword = accountEntries[index].password;
+        activeAccountIndex = index;
+        activeAccountId = accountEntries[index].id;
         rebuildNames();
         persist();
     }
@@ -333,14 +406,29 @@ namespace RC {
     void RCAccounts::update(const std::string& previousName, const std::string& accountName, const std::string& password, bool dontSavePassword, const std::vector<std::string>& listServers) {
         if (accountName.empty()) return;
         const std::string previousTarget = lower(previousName);
-        auto found = std::find_if(accountEntries.begin(), accountEntries.end(), [&](const RCAccount& account) { return lower(account.name) == previousTarget; });
-        if (found == accountEntries.end()) { accountEntries.push_back({}); found = std::prev(accountEntries.end()); }
+        auto found = previousName.empty() ? accountEntries.end() : std::find_if(accountEntries.begin(), accountEntries.end(), [&](const RCAccount& account) { return lower(account.name) == previousTarget; });
+        if (found == accountEntries.end()) { accountEntries.push_back({nextAccountId++, {}, {}, {}}); found = std::prev(accountEntries.end()); }
         found->name = accountName;
         found->password = dontSavePassword ? std::string() : password;
         found->listServers.clear();
-        for (const std::string& server : listServers) appendUnique(found->listServers, server);
+        if (!listServers.empty()) found->listServers.push_back(listServers.front());
         activeAccount = accountName;
         activePassword = found->password;
+        activeAccountIndex = static_cast<std::size_t>(found - accountEntries.begin());
+        activeAccountId = found->id;
+        rebuildNames();
+        persist();
+    }
+    void RCAccounts::updateAt(std::size_t index, const std::string& accountName, const std::string& password, bool dontSavePassword, const std::vector<std::string>& listServers) {
+        if (index >= accountEntries.size() || accountName.empty()) return;
+        accountEntries[index].name = accountName;
+        accountEntries[index].password = dontSavePassword ? std::string() : password;
+        accountEntries[index].listServers.clear();
+        if (!listServers.empty()) accountEntries[index].listServers.push_back(listServers.front());
+        activeAccount = accountName;
+        activePassword = accountEntries[index].password;
+        activeAccountIndex = index;
+        activeAccountId = accountEntries[index].id;
         rebuildNames();
         persist();
     }
@@ -348,7 +436,16 @@ namespace RC {
     void RCAccounts::remove(const std::string& accountName) {
         const std::string target = lower(accountName);
         accountEntries.erase(std::remove_if(accountEntries.begin(), accountEntries.end(), [&](const RCAccount& account) { return lower(account.name) == target; }), accountEntries.end());
-        if (lower(activeAccount) == target) { activeAccount = accountEntries.empty() ? std::string() : accountEntries.front().name; activePassword = passwordFor(activeAccount); }
+        if (lower(activeAccount) == target) { activeAccountIndex = accountEntries.empty() ? static_cast<std::size_t>(-1) : 0; activeAccount = accountEntries.empty() ? std::string() : accountEntries.front().name; activePassword = accountEntries.empty() ? std::string() : accountEntries.front().password; activeAccountId = accountEntries.empty() ? 0 : accountEntries.front().id; }
+        rebuildNames();
+        persist();
+    }
+    void RCAccounts::removeAt(std::size_t index) {
+        if (index >= accountEntries.size()) return;
+        const bool active = activeAccountIndex == index;
+        accountEntries.erase(accountEntries.begin() + static_cast<std::ptrdiff_t>(index));
+        if (active) { activeAccountIndex = accountEntries.empty() ? static_cast<std::size_t>(-1) : 0; activeAccount = accountEntries.empty() ? std::string() : accountEntries.front().name; activePassword = accountEntries.empty() ? std::string() : accountEntries.front().password; activeAccountId = accountEntries.empty() ? 0 : accountEntries.front().id; }
+        else if (activeAccountIndex > index && activeAccountIndex != static_cast<std::size_t>(-1)) --activeAccountIndex;
         rebuildNames();
         persist();
     }

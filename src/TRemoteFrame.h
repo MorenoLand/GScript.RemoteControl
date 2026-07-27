@@ -65,6 +65,7 @@ private:
     static void onLocalNPCSubmit(GtkDialog*, gint response, gpointer data);
     static void onLocalNPCData(const char* level, const char* content, void* data);
     static gboolean onEditKey(GtkWidget*, GdkEventKey*, gpointer data);
+    static gboolean onActivityEvent(GtkWidget*, GdkEvent*, gpointer data);
     static gboolean onWindowKey(GtkWidget*, GdkEventKey*, gpointer data);
     static gboolean onFindResultClick(GtkWidget*, GdkEventButton*, gpointer data);
     static gboolean onDelete(GtkWidget*, GdkEvent*, gpointer data);
@@ -139,6 +140,7 @@ private:
     int currentServerIndex = -1;
     std::string serverName;
     std::string nickname;
+    std::string baseNickname;
     std::string accountName;
     int trayPlayerCount = -1;
     int normalWindowWidth = 500;
@@ -153,6 +155,9 @@ private:
     gint64 nextNcConnectAttempt = 0;
     bool ncConnectionAttempted = false;
     bool disconnectHandled = false;
+    gint64 lastActivity = 0;
+    bool awayNicknameApplied = false;
+    bool awayStatusApplied = false;
     bool suppressReconnectDisconnect = false;
     TPlayerList* playerList = nullptr;
     TFileBrowserTree* fileBrowser = nullptr;

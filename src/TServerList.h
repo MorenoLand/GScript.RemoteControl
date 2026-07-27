@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <functional>
 #include <gtk/gtk.h>
+#include <cstdint>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -27,7 +28,8 @@ public:
     TServerList(std::function<void()> onClose, std::function<void(void*, int, const std::string&, const std::string&, const std::string&)> onConnected, std::function<void()> onServerSelected, bool darkMode, const std::string& theme, std::function<void(bool, const std::string&)> onThemeChanged);
     ~TServerList();
 
-    void open(const std::string& account, const std::string& password, const std::string& nickname);
+    void open(std::uint64_t accountId, const std::string& account, const std::string& password, const std::string& nickname, const std::string& listServer);
+    void setLoginParent(GtkWindow* parent) { loginParent = parent; }
     void reopen();
     void show();
     void openListServerSettings();
@@ -70,6 +72,7 @@ private:
     std::function<void()> onServerSelectedCallback;
     std::function<void(bool, const std::string&)> onThemeChangedCallback;
     GtkWidget* window = nullptr;
+    GtkWindow* loginParent = nullptr;
     GtkListStore* store = nullptr;
     GtkWidget* tree = nullptr;
     GtkWidget* languageField = nullptr;
@@ -82,6 +85,7 @@ private:
     std::jthread worker;
     std::mutex connectionMutex;
     void* connection = nullptr;
+    std::uint64_t accountId = 0;
     std::string account;
     std::string password;
     std::string nickname;

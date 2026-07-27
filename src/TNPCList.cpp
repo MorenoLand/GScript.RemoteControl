@@ -1,4 +1,5 @@
 #include "TNPCList.h"
+#include "TButtonIcons.h"
 #include "TBackup.h"
 #include "TEditorFind.h"
 #include "TGScriptEditor.h"
@@ -49,6 +50,10 @@ TNPCList::TNPCList(std::string accountName) : accountName(std::move(accountName)
     GtkWidget* add = gtk_button_new_with_label("Add");
     GtkWidget* remove = gtk_button_new_with_label("Delete");
     GtkWidget* close = gtk_button_new_with_label("Close");
+    applyGtkButtonIcon(refresh, GTK_STOCK_REFRESH);
+    applyGtkButtonIcon(add, GTK_STOCK_ADD);
+    applyGtkButtonIcon(remove, GTK_STOCK_DELETE);
+    applyGtkButtonIcon(close, GTK_STOCK_CLOSE);
     gtk_container_add(GTK_CONTAINER(buttons), refresh);
     gtk_container_add(GTK_CONTAINER(buttons), add);
     gtk_container_add(GTK_CONTAINER(buttons), remove);

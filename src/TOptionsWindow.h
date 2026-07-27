@@ -22,12 +22,16 @@ private:
     static void onBrowseLog(GtkButton*, gpointer data);
     static void onBrowseAutocompleteSource(GtkButton*, gpointer data);
     static void onBrowseBackground(GtkButton*, gpointer data);
+    static void onPageChanged(GtkNotebook*, GtkWidget*, guint, gpointer data);
     static gboolean onDelete(GtkWidget*, GdkEvent*, gpointer data);
     void save();
     void applyThemeSelection();
     void applySyntaxThemeSelection();
     void applySyntaxThemeSync();
+    void resizeToPage(GtkWidget* page);
+    static gboolean animateResize(gpointer data);
     GtkWidget* window = nullptr;
+    GtkWidget* notebook = nullptr;
     GtkWidget* nickname = nullptr;
     GtkWidget* downloadFolder = nullptr;
     GtkWidget* logFile = nullptr;
@@ -36,6 +40,9 @@ private:
     GtkWidget* ignoreMassClient = nullptr;
     GtkWidget* globalPMs = nullptr;
     GtkWidget* attachAway = nullptr;
+    GtkWidget* afkEnabled = nullptr;
+    GtkWidget* afkTimeout = nullptr;
+    GtkWidget* optionAnimations = nullptr;
     GtkWidget* buddies = nullptr;
     GtkWidget* separateNC = nullptr;
     GtkWidget* timestamps = nullptr;
@@ -95,4 +102,6 @@ private:
     std::filesystem::path applicationDirectory;
     std::function<void(const RC::RCOptions&)> onSaved;
     bool saving = false;
+    guint animationSource = 0;
+    int animationTargetHeight = 400;
 };

@@ -16,6 +16,7 @@ public:
     void open(void* connection);
     void setConnection(void* connection);
     void setAttachAway(bool enabled);
+    void setAwayStatus(bool away);
     void handleBanData(const char* account, const char* computerId, const char* details);
     void handleBanListData(const char* type, const char* account, const char* content);
     void handlePlayerRights(const char* account, int rights, const char* ipRange, const char* folderAccess);

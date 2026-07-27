@@ -138,6 +138,15 @@ namespace {
         return true;
     }
 
+    gboolean requeryEditorTooltip(gpointer data) {
+        GtkWidget* editor = GTK_WIDGET(data);
+        gtk_widget_trigger_tooltip_query(editor);
+        g_object_unref(editor);
+        return G_SOURCE_REMOVE;
+    }
+
+    void preserveEditorTooltip(GtkWidget* editor) { g_idle_add(requeryEditorTooltip, g_object_ref(editor)); }
+
     EditorMultiSelectionState* multiSelectionState(GtkWidget* editor) {
         const auto state = std::find_if(multiSelectionStates.begin(), multiSelectionStates.end(), [editor](const auto& value) { return value->editor == editor; });
         return state == multiSelectionStates.end() ? nullptr : state->get();
@@ -335,8 +344,9 @@ namespace {
         return TRUE;
     }
 
-    gboolean multiSelectionKeyPress(GtkWidget*, GdkEventKey* event, gpointer data) {
+    gboolean multiSelectionKeyPress(GtkWidget* editor, GdkEventKey* event, gpointer data) {
         EditorMultiSelectionState* state = static_cast<EditorMultiSelectionState*>(data);
+        preserveEditorTooltip(editor);
         const bool control = (event->state & GDK_CONTROL_MASK) != 0;
         const bool alt = (event->state & GDK_MOD1_MASK) != 0;
         if (event->keyval == GDK_KEY_Escape && !state->selections.empty()) { clearMultiSelections(state); return TRUE; }
@@ -1242,6 +1252,7 @@ void configureGScriptEditor(GtkWidget* editor) {
         if (mark == gtk_text_buffer_get_insert(buffer)) updateSignatureHint(GTK_WIDGET(data));
     }), editor);
     g_signal_connect(editor, "key-press-event", G_CALLBACK(+[](GtkWidget* widget, GdkEventKey* event, gpointer) {
+        preserveEditorTooltip(widget);
         if ((event->state & GDK_CONTROL_MASK) == 0 || event->keyval != GDK_KEY_l) return static_cast<gboolean>(FALSE);
         GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(widget));
         GtkTextIter start;
@@ -1326,6 +1337,12 @@ void addGScriptEditorLineStatus(GtkDialog* dialog, GtkWidget* editor) {
         else remaining = g_list_append(remaining, button);
     }
     g_list_free(children);
+    auto addButtonIcon = [](GtkWidget* button, const char* icon) { if (button != nullptr) { gtk_button_set_image(GTK_BUTTON(button), gtk_image_new_from_icon_name(icon, GTK_ICON_SIZE_BUTTON)); gtk_button_set_always_show_image(GTK_BUTTON(button), true); } };
+    addButtonIcon(goToLine, "go-jump-symbolic");
+    addButtonIcon(format, "format-text-bold-symbolic");
+    addButtonIcon(find, "edit-find-symbolic");
+    addButtonIcon(apply, "document-save-symbolic");
+    addButtonIcon(close, "window-close-symbolic");
     gtk_widget_set_margin_start(status, 5);
     gtk_widget_set_margin_end(status, 5);
     gtk_widget_set_margin_top(actions, 3);

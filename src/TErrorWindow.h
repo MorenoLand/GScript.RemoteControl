@@ -1,13 +1,15 @@
 #pragma once
 
+#include <algorithm>
 #include <gtk/gtk.h>
 
-inline GtkWidget* createErrorWindow(const char* title, const char* message) {
+inline GtkWidget* createErrorWindow(const char* title, const char* message, GtkWindow* parent = nullptr) {
     GtkWidget* window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
     gtk_widget_set_name(window, "ErrorWindow");
     gtk_container_set_border_width(GTK_CONTAINER(window), 5);
     gtk_window_set_title(GTK_WINDOW(window), title == nullptr ? "Question" : title);
-    gtk_window_set_position(GTK_WINDOW(window), GTK_WIN_POS_CENTER);
+    if (parent != nullptr) { gtk_window_set_transient_for(GTK_WINDOW(window), parent); gtk_window_set_modal(GTK_WINDOW(window), true); gtk_window_set_position(GTK_WINDOW(window), GTK_WIN_POS_CENTER_ON_PARENT); }
+    else gtk_window_set_position(GTK_WINDOW(window), GTK_WIN_POS_CENTER);
     gtk_window_set_default_size(GTK_WINDOW(window), 400, 120);
     gtk_window_set_resizable(GTK_WINDOW(window), false);
     GtkWidget* box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
@@ -25,6 +27,19 @@ inline GtkWidget* createErrorWindow(const char* title, const char* message) {
     gtk_container_add(GTK_CONTAINER(buttons), button);
     g_signal_connect(button, "clicked", G_CALLBACK(+[](GtkButton*, gpointer data) { gtk_widget_destroy(GTK_WIDGET(data)); }), window);
     gtk_widget_show_all(window);
+    if (parent != nullptr) {
+        struct Placement { GtkWidget* dialog; GtkWindow* parent; };
+        g_idle_add(+[](gpointer data) -> gboolean {
+            auto* placement = static_cast<Placement*>(data);
+            gint parentX = 0, parentY = 0, parentWidth = 0, parentHeight = 0, dialogWidth = 0, dialogHeight = 0;
+            gtk_window_get_position(placement->parent, &parentX, &parentY);
+            gtk_window_get_size(placement->parent, &parentWidth, &parentHeight);
+            gtk_window_get_size(GTK_WINDOW(placement->dialog), &dialogWidth, &dialogHeight);
+            gtk_window_move(GTK_WINDOW(placement->dialog), parentX + std::max(0, (parentWidth - dialogWidth) / 2), parentY + std::max(0, (parentHeight - dialogHeight) / 2));
+            delete placement;
+            return G_SOURCE_REMOVE;
+        }, new Placement{window, parent});
+    }
     gtk_widget_grab_focus(button);
     return window;
 }

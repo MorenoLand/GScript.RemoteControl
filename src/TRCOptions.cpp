@@ -60,6 +60,9 @@ namespace RC {
             else if (key == "nohtmlinpms") options.nohtmlinpms = isTrue(value);
             else if (key == "nohtmlimages") options.nohtmlimages = isTrue(value);
             else if (key == "attachaway") options.attachaway = isTrue(value);
+            else if (key == "afkenabled") options.afkenabled = isTrue(value);
+            else if (key == "afktimeout") options.afktimeout = std::clamp(std::stoi(value), 1, 1440);
+            else if (key == "optionsanimations") options.optionsanimations = isTrue(value);
             else if (key == "logrcchat") options.logrcchat = isTrue(value);
             else if (key == "separatefindresults") options.separatefindresults = isTrue(value);
             else if (key == "separatenc") options.separatenc = isTrue(value);
@@ -136,6 +139,9 @@ namespace RC {
         writeBool(stream, "nohtmlinpms", options.nohtmlinpms);
         writeBool(stream, "nohtmlimages", options.nohtmlimages);
         writeBool(stream, "attachaway", options.attachaway);
+        writeBool(stream, "afkenabled", options.afkenabled);
+        stream << "afktimeout=" << options.afktimeout << '\n';
+        writeBool(stream, "optionsanimations", options.optionsanimations);
         writeBool(stream, "logrcchat", options.logrcchat);
         writeBool(stream, "separatefindresults", options.separatefindresults);
         writeString(stream, "chatlogfile", options.chatlogfile);

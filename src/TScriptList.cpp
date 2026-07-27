@@ -1,4 +1,5 @@
 #include "TScriptList.h"
+#include "TButtonIcons.h"
 #include "TBackup.h"
 #include "TEditorFind.h"
 #include "TGScriptEditor.h"
@@ -43,6 +44,10 @@ TScriptList::TScriptList(std::string nextType) : type(std::move(nextType)) {
     GtkWidget* addButton = type == "weapons" ? gtk_button_new_with_label("Add") : nullptr;
     GtkWidget* deleteButton = gtk_button_new_with_label("Delete");
     GtkWidget* closeButton = gtk_button_new_with_label("Close");
+    applyGtkButtonIcon(editButton, GTK_STOCK_EDIT);
+    if (addButton != nullptr) applyGtkButtonIcon(addButton, GTK_STOCK_ADD);
+    applyGtkButtonIcon(deleteButton, GTK_STOCK_DELETE);
+    applyGtkButtonIcon(closeButton, GTK_STOCK_CLOSE);
     gtk_container_add(GTK_CONTAINER(buttons), editButton);
     if (addButton != nullptr) gtk_container_add(GTK_CONTAINER(buttons), addButton);
     gtk_container_add(GTK_CONTAINER(buttons), deleteButton);

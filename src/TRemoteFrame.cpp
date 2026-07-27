@@ -309,6 +309,14 @@ TRemoteFrame::TRemoteFrame(const RC::RCOptions& nextOptions, const std::filesyst
     gtk_box_pack_start(GTK_BOX(root), editField, false, false, 0);
 
     g_signal_connect(editField, "key-press-event", G_CALLBACK(onEditKey), this);
+    gtk_widget_add_events(window, GDK_BUTTON_PRESS_MASK | GDK_POINTER_MOTION_MASK);
+    gtk_widget_add_events(chatField, GDK_POINTER_MOTION_MASK);
+    gtk_widget_add_events(notebook, GDK_POINTER_MOTION_MASK);
+    g_signal_connect(window, "button-press-event", G_CALLBACK(onActivityEvent), this);
+    g_signal_connect(window, "motion-notify-event", G_CALLBACK(onActivityEvent), this);
+    g_signal_connect(editField, "key-press-event", G_CALLBACK(onActivityEvent), this);
+    g_signal_connect(chatField, "motion-notify-event", G_CALLBACK(onActivityEvent), this);
+    g_signal_connect(notebook, "motion-notify-event", G_CALLBACK(onActivityEvent), this);
     g_signal_connect(window, "key-press-event", G_CALLBACK(onWindowKey), this);
     g_signal_connect(window, "configure-event", G_CALLBACK(onConfigure), this);
     g_signal_connect(window, "window-state-event", G_CALLBACK(onWindowState), this);
@@ -383,6 +391,12 @@ TRemoteFrame::~TRemoteFrame() {
     *callbackAlive = false;
     if (eventSource != 0) g_source_remove(eventSource);
     if (backgroundAnimationSource != 0) g_source_remove(backgroundAnimationSource);
+    GList* toplevels = gtk_window_list_toplevels();
+    for (GList* current = toplevels; current != nullptr; current = current->next) {
+        GtkWidget* candidate = GTK_WIDGET(current->data);
+        if (GTK_IS_WINDOW(candidate) && g_object_get_data(G_OBJECT(candidate), "rc-afk-frame") == this) { g_signal_handlers_disconnect_by_func(candidate, reinterpret_cast<gpointer>(G_CALLBACK(onActivityEvent)), this); g_object_set_data(G_OBJECT(candidate), "rc-afk-frame", nullptr); }
+    }
+    g_list_free(toplevels);
     if (window != nullptr) gtk_widget_destroy(window);
     if (notebookTabProvider != nullptr) { gtk_style_context_remove_provider_for_screen(gdk_screen_get_default(), GTK_STYLE_PROVIDER(notebookTabProvider)); g_object_unref(notebookTabProvider); }
     if (backgroundPixbuf != nullptr) g_object_unref(backgroundPixbuf);
@@ -408,10 +422,15 @@ void TRemoteFrame::open(void* nextConnection, int serverIndex, const std::string
     connection = nextConnection;
     currentServerIndex = serverIndex;
     this->serverName = serverName;
+    gtk_window_set_title(GTK_WINDOW(window), (std::string("Remote Control (") + serverName + ")").c_str());
     trayPlayerCount = -1;
     setBackupServerName(serverName);
     disconnectHandled = false;
     this->nickname = nickname;
+    baseNickname = nickname;
+    lastActivity = g_get_monotonic_time();
+    awayNicknameApplied = false;
+    awayStatusApplied = false;
     this->accountName = accountName;
     ncConnectionAttempted = false;
     rc_on_connected(connection, onConnected, this);
@@ -428,7 +447,7 @@ void TRemoteFrame::open(void* nextConnection, int serverIndex, const std::string
     rc_on_ban_data(connection, onBanData, this);
     rc_on_ban_list_data(connection, onBanListData, this);
     setNCChannelVisible(options.separatenc);
-    const std::string serverText = options.labelservers + " " + serverName;
+    const std::string serverText = options.labelservers.empty() ? serverName : options.labelservers + " " + serverName;
     if (serverLabel != nullptr) gtk_label_set_text(GTK_LABEL(serverLabel), serverText.c_str());
     for (GtkWidget* shadow : serverLabelShadows) if (shadow != nullptr) gtk_label_set_text(GTK_LABEL(shadow), serverText.c_str());
     if (eventSource == 0) eventSource = g_timeout_add(50, processEvents, this);
@@ -726,6 +745,30 @@ gboolean TRemoteFrame::processEvents(gpointer data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
     if (frame->connection != nullptr) {
         rc_process_events(frame->connection);
+        GList* toplevels = gtk_window_list_toplevels();
+        for (GList* current = toplevels; current != nullptr; current = current->next) {
+            GtkWidget* candidate = GTK_WIDGET(current->data);
+            if (candidate == frame->window || !GTK_IS_WINDOW(candidate)) continue;
+            if (g_object_get_data(G_OBJECT(candidate), "rc-afk-frame") != frame) {
+                g_object_set_data(G_OBJECT(candidate), "rc-afk-frame", frame);
+                gtk_widget_add_events(candidate, GDK_KEY_PRESS_MASK | GDK_BUTTON_PRESS_MASK | GDK_POINTER_MOTION_MASK);
+                g_signal_connect(candidate, "key-press-event", G_CALLBACK(onActivityEvent), frame);
+                g_signal_connect(candidate, "button-press-event", G_CALLBACK(onActivityEvent), frame);
+                g_signal_connect(candidate, "motion-notify-event", G_CALLBACK(onActivityEvent), frame);
+            }
+        }
+        g_list_free(toplevels);
+        if (frame->options.afkenabled && !frame->awayNicknameApplied && frame->lastActivity > 0 && g_get_monotonic_time() - frame->lastActivity >= static_cast<gint64>(std::max(1, frame->options.afktimeout)) * 60 * G_USEC_PER_SEC) {
+            std::string lower = frame->baseNickname;
+            std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char value) { return static_cast<char>(std::tolower(value)); });
+            if (!frame->baseNickname.empty() && lower.find("away") == std::string::npos && lower.find("dnd") == std::string::npos && lower.find("do not disturb") == std::string::npos && lower.find("busy") == std::string::npos) {
+                frame->nickname = frame->baseNickname + " - Away";
+                rc_set_nickname(frame->connection, frame->nickname.c_str());
+                frame->awayNicknameApplied = true;
+                if (frame->playerList != nullptr) frame->playerList->setAwayStatus(true); else { const char payload[] = {'U', static_cast<char>(1 + 32)}; rc_send_raw_packet(frame->connection, PLI_PLAYERPROPS, payload, sizeof(payload)); }
+                frame->awayStatusApplied = true;
+            }
+        }
         if (!frame->ncConnectionAttempted && rc_has_nc_server(frame->connection) != 0 && rc_is_nc_connected(frame->connection) == 0) {
             frame->ncConnectionAttempted = true;
             rc_connect_to_nc_server(frame->connection);
@@ -739,9 +782,11 @@ gboolean TRemoteFrame::processEvents(gpointer data) {
         if (frame->playersLabel != nullptr) {
             RCPlayer* players = nullptr;
             const int count = rc_get_players(frame->connection, &players);
-            const std::string playerText = frame->options.labelplayers + " " + std::to_string(count);
+            const std::string playerText = frame->options.labelplayers.empty() ? std::to_string(count) : frame->options.labelplayers + " " + std::to_string(count);
             gtk_label_set_text(GTK_LABEL(frame->playersLabel), playerText.c_str());
             for (GtkWidget* shadow : frame->playersLabelShadows) if (shadow != nullptr) gtk_label_set_text(GTK_LABEL(shadow), playerText.c_str());
+            const std::string playerLabel = frame->options.labelplayers.empty() ? "Players:" : frame->options.labelplayers;
+            gtk_window_set_title(GTK_WINDOW(frame->window), (std::string("Remote Control (") + frame->serverName + ") (" + playerLabel + " " + std::to_string(count) + ")").c_str());
             if (count != frame->trayPlayerCount) {
                 frame->trayPlayerCount = count;
                 remote_control_set_tray_label(frame->serverName.c_str(), count);
@@ -779,7 +824,7 @@ void TRemoteFrame::onDisconnected(const char* reason, void* data) {
     }
     gtk_widget_hide(frame->window);
     frame->onCloseCallback();
-    createErrorWindow("Connection Error", reason == nullptr ? "You have been disconnected!" : reason);
+        createErrorWindow("Connection Error", reason == nullptr ? "You have been disconnected!" : reason, GTK_WINDOW(frame->window));
 }
 
 void TRemoteFrame::onMessage(const char* message, void* data) {
@@ -787,6 +832,21 @@ void TRemoteFrame::onMessage(const char* message, void* data) {
     const std::string value = message == nullptr ? "" : message;
     if (frame->options.separatefindresults && frame->appendFindResult(value)) return;
     frame->appendChat(value);
+}
+
+gboolean TRemoteFrame::onActivityEvent(GtkWidget*, GdkEvent*, gpointer data) {
+    TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
+    frame->lastActivity = g_get_monotonic_time();
+    if (frame->awayNicknameApplied && frame->connection != nullptr) {
+        frame->nickname = frame->baseNickname;
+        rc_set_nickname(frame->connection, frame->nickname.c_str());
+        frame->awayNicknameApplied = false;
+        if (frame->awayStatusApplied) {
+            if (frame->playerList != nullptr) frame->playerList->setAwayStatus(false); else { const char payload[] = {'U', static_cast<char>(32)}; rc_send_raw_packet(frame->connection, PLI_PLAYERPROPS, payload, sizeof(payload)); }
+            frame->awayStatusApplied = false;
+        }
+    }
+    return false;
 }
 
 bool TRemoteFrame::mcpOpenView(const std::string& view, std::string& error) {
@@ -938,6 +998,8 @@ void TRemoteFrame::appendChatLog(const std::string& message) const {
 void TRemoteFrame::applyOptions(const RC::RCOptions& previous) {
     updateMcpGuiBridgeOptions(options);
     nickname = options.nickname;
+    baseNickname = nickname;
+    if (!options.afkenabled && awayNicknameApplied && connection != nullptr) { nickname = baseNickname; rc_set_nickname(connection, nickname.c_str()); awayNicknameApplied = false; if (awayStatusApplied) { if (playerList != nullptr) playerList->setAwayStatus(false); else { const char payload[] = {'U', static_cast<char>(32)}; rc_send_raw_packet(connection, PLI_PLAYERPROPS, payload, sizeof(payload)); } awayStatusApplied = false; } }
     if (connection != nullptr && nickname != previous.nickname) rc_set_nickname(connection, nickname.c_str());
     if (connection != nullptr && (options.nomassmessages != previous.nomassmessages || options.nomassifclienton != previous.nomassifclienton)) updateMassPMAcceptance();
     if (connection != nullptr && (options.globalpms != previous.globalpms || options.buddytracking != previous.buddytracking || options.showbuddies != previous.showbuddies)) sendServerListOptions();
@@ -951,7 +1013,7 @@ void TRemoteFrame::applyOptions(const RC::RCOptions& previous) {
         g_object_set(entry.second.bold, "foreground", options.colorchatbold.c_str(), nullptr);
     }
     if (serverLabel != nullptr && (options.labelservers != previous.labelservers || options.colorlabel != previous.colorlabel || options.colorlabelback != previous.colorlabelback)) {
-        const std::string text = options.labelservers + " " + serverName;
+        const std::string text = options.labelservers.empty() ? serverName : options.labelservers + " " + serverName;
         GdkColor foreground;
         GdkColor background;
         gdk_color_parse(options.colorlabel.c_str(), &foreground);
@@ -963,7 +1025,7 @@ void TRemoteFrame::applyOptions(const RC::RCOptions& previous) {
     if (playersLabel != nullptr && (options.labelplayers != previous.labelplayers || options.colorlabel != previous.colorlabel || options.colorlabelback != previous.colorlabelback)) {
         RCPlayer* players = nullptr;
         const int count = connection == nullptr ? 0 : rc_get_players(connection, &players);
-        const std::string text = options.labelplayers + " " + std::to_string(count);
+        const std::string text = options.labelplayers.empty() ? std::to_string(count) : options.labelplayers + " " + std::to_string(count);
         GdkColor foreground;
         GdkColor background;
         gdk_color_parse(options.colorlabel.c_str(), &foreground);

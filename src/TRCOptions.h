@@ -14,6 +14,9 @@ namespace RC {
         bool nohtmlinpms = false;
         bool nohtmlimages = false;
         bool attachaway = true;
+        bool afkenabled = false;
+        int afktimeout = 15;
+        bool optionsanimations = true;
         bool logrcchat = false;
         bool separatefindresults = true;
         std::string chatlogfile = ".\\logs\\log.txt";
@@ -48,8 +51,8 @@ namespace RC {
         int formatindentwidth = 2;
         bool formatusetabs = false;
         bool formattrimtrailing = true;
-        bool removelinecomments = true;
-        bool removeblockcomments = true;
+        bool removelinecomments = false;
+        bool removeblockcomments = false;
         bool preserveclientside = true;
         std::vector<std::string> webbrowsers = {"firefox", "mozilla", "konqueror", "netscape"};
         std::string background = "rc_graalonline2.jpg";

@@ -1,4 +1,5 @@
 #include "TPlayerList.h"
+#include "TButtonIcons.h"
 #include "TBackup.h"
 #include "TEditorFind.h"
 #include "TGScriptEditor.h"
@@ -168,6 +169,7 @@ namespace {
         gtk_container_add(GTK_CONTAINER(scrolled), field);
         gtk_box_pack_start(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(history))), scrolled, true, true, 0);
         GtkWidget* find = gtk_button_new_with_label("Find");
+        applyGtkButtonIcon(find, GTK_STOCK_FIND);
         gtk_widget_set_tooltip_text(find, "Find (Ctrl+F)");
         gtk_container_add(GTK_CONTAINER(gtk_dialog_get_action_area(GTK_DIALOG(history))), find);
         g_signal_connect(find, "clicked", G_CALLBACK(editorFind), field);
@@ -370,7 +372,11 @@ TPlayerList::TPlayerList(const std::filesystem::path& nextApplicationDirectory, 
     GtkWidget* refreshButton = gtk_button_new_with_label("Refresh");
     GtkWidget* massPMButton = gtk_button_new_with_label("Mass PM");
     GtkWidget* adminMessageButton = gtk_button_new_with_label("Admin Message");
-    GtkWidget* closeButton = gtk_button_new_with_label("Close");
+        GtkWidget* closeButton = gtk_button_new_with_label("Close");
+        applyGtkButtonIcon(refreshButton, GTK_STOCK_REFRESH);
+        applyGtkButtonIcon(massPMButton, GTK_STOCK_JUMP_TO);
+        applyGtkButtonIcon(adminMessageButton, GTK_STOCK_DIALOG_WARNING);
+        applyGtkButtonIcon(closeButton, GTK_STOCK_CLOSE);
     for (GtkWidget* button : {refreshButton, massPMButton, adminMessageButton, closeButton}) gtk_widget_set_size_request(button, -1, 28);
     gtk_container_add(GTK_CONTAINER(buttons), refreshButton);
     gtk_container_add(GTK_CONTAINER(buttons), massPMButton);
@@ -390,6 +396,7 @@ TPlayerList::~TPlayerList() { if (pmBlinkSource != 0) g_source_remove(pmBlinkSou
 void TPlayerList::open(void* nextConnection) { setConnection(nextConnection); rc_on_pm_servers_updated(connection, onPMServers, this); rc_on_pm_guilds_updated(connection, onPMGuilds, this); rc_on_pm_server_players(connection, onPMServerPlayers, this); refresh(); gtk_widget_show_all(window); gtk_window_present(GTK_WINDOW(window)); }
 void TPlayerList::setConnection(void* nextConnection) { connection = nextConnection; }
 void TPlayerList::setAttachAway(bool enabled) { if (statusCombo != nullptr) gtk_combo_box_set_active(GTK_COMBO_BOX(statusCombo), enabled && !gtk_widget_get_visible(window) ? 1 : 0); }
+void TPlayerList::setAwayStatus(bool away) { if (statusCombo == nullptr) return; const int active = away ? 1 : 0; if (gtk_combo_box_get_active(GTK_COMBO_BOX(statusCombo)) != active) gtk_combo_box_set_active(GTK_COMBO_BOX(statusCombo), active); else sendAttachAway(); }
 void TPlayerList::onRefresh(GtkButton*, gpointer data) { static_cast<TPlayerList*>(data)->refresh(); }
 void TPlayerList::onMassPM(GtkButton*, gpointer data) { static_cast<TPlayerList*>(data)->sendMassPM(); }
 void TPlayerList::onAdminMessage(GtkButton*, gpointer data) { static_cast<TPlayerList*>(data)->sendAdminMessage(); }
@@ -548,7 +555,7 @@ void TPlayerList::handleBanListData(const char* type, const char* account, const
 void TPlayerList::handlePlayerRights(const char* account, int rights, const char* ipRange, const char* folderAccess) {
     if (account == nullptr || *account == '\0') return;
     struct RightsState { TPlayerList* list; std::string account; GtkWidget* ipRange; GtkWidget* folderAccess; GtkWidget* checks[20]{}; };
-    GtkWidget* dialog = gtk_dialog_new_with_buttons(("Edit Rights of " + std::string(account)).c_str(), GTK_WINDOW(window), GTK_DIALOG_DESTROY_WITH_PARENT, "Cancel", GTK_RESPONSE_CANCEL, "Apply", GTK_RESPONSE_ACCEPT, nullptr);
+    GtkWidget* dialog = gtk_dialog_new_with_buttons(("Edit Rights of " + std::string(account)).c_str(), GTK_WINDOW(window), GTK_DIALOG_DESTROY_WITH_PARENT, "Close", GTK_RESPONSE_CANCEL, "Apply", GTK_RESPONSE_ACCEPT, nullptr);
     gtk_widget_set_name(dialog, "EditRightsWindow");
     gtk_window_set_default_size(GTK_WINDOW(dialog), 460, 420);
     GtkWidget* notebook = gtk_notebook_new();
@@ -789,7 +796,7 @@ void TPlayerList::handlePlayerAttributes(const char* account, const char*, const
     gtk_container_set_border_width(GTK_CONTAINER(footer), 5);
     gtk_box_set_spacing(GTK_BOX(footer), 5);
     GtkWidget* apply = gtk_button_new_with_label("Apply");
-    GtkWidget* cancel = gtk_button_new_with_label("Cancel");
+    GtkWidget* cancel = gtk_button_new_with_label("Close");
     gtk_widget_set_size_request(apply, 80, 24);
     gtk_widget_set_size_request(cancel, 80, 24);
     gtk_container_add(GTK_CONTAINER(footer), apply);
@@ -955,7 +962,7 @@ void TPlayerList::handlePlayerText(const char* type, const char* account, const 
     }
     struct TextState { TPlayerList* list; std::string account; std::string type; GtkWidget* text; };
     const std::string title = (dataType == "profile" ? "Profile of " : "Edit Comments of ") + std::string(account);
-    GtkWidget* dialog = gtk_dialog_new_with_buttons(title.c_str(), GTK_WINDOW(window), GTK_DIALOG_DESTROY_WITH_PARENT, "Cancel", GTK_RESPONSE_CANCEL, "Save", GTK_RESPONSE_ACCEPT, nullptr);
+    GtkWidget* dialog = gtk_dialog_new_with_buttons(title.c_str(), GTK_WINDOW(window), GTK_DIALOG_DESTROY_WITH_PARENT, "Close", GTK_RESPONSE_CANCEL, "Save", GTK_RESPONSE_ACCEPT, nullptr);
     gtk_window_set_default_size(GTK_WINDOW(dialog), 420, 280);
     GtkWidget* scrolled = gtk_scrolled_window_new(nullptr, nullptr);
     GtkWidget* text = gtk_text_view_new();
@@ -1251,6 +1258,8 @@ void TPlayerList::openPrivateMessage(int playerId, const char* account, const ch
     gtk_button_box_set_layout(GTK_BUTTON_BOX(buttons), GTK_BUTTONBOX_END);
     GtkWidget* history = gtk_button_new_with_label("History");
     GtkWidget* send = gtk_button_new_with_label("Send");
+    applyGtkButtonIcon(history, GTK_STOCK_OPEN);
+    applyGtkButtonIcon(send, GTK_STOCK_EXECUTE);
     gtk_widget_set_size_request(history, 76, 28);
     gtk_widget_set_size_request(send, 76, 28);
     gtk_container_add(GTK_CONTAINER(buttons), history);

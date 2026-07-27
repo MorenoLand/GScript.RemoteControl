@@ -167,6 +167,8 @@ inline void editorFormatCode(GtkButton*, gpointer data) { replaceEditorText(GTK_
 
 inline GtkWidget* createEditorFormatButton(GtkWidget* editor) {
     GtkWidget* button = gtk_button_new_with_label("Format");
+    gtk_button_set_image(GTK_BUTTON(button), gtk_image_new_from_icon_name("format-text-bold-symbolic", GTK_ICON_SIZE_BUTTON));
+    gtk_button_set_always_show_image(GTK_BUTTON(button), true);
     g_signal_connect(button, "clicked", G_CALLBACK(editorFormatCode), editor);
     gtk_widget_set_tooltip_text(button, "Format using Formatter Options");
     return button;

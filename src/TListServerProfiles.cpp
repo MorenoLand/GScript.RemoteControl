@@ -22,9 +22,14 @@ std::vector<SavedListServer> loadListServerProfiles(const std::filesystem::path&
         const std::string host = line.substr(0, separator);
         if (!host.empty() && port > 0 && port <= 65535) endpoints.push_back({host, host, port});
     }
-    bool hasOfficial = false;
-    for (const SavedListServer& endpoint : endpoints) if (endpoint.name == "Official" && endpoint.host == defaultHost && endpoint.port == defaultPort) hasOfficial = true;
-    if (!hasOfficial) endpoints.insert(endpoints.begin(), {"Official", defaultHost, defaultPort});
+    bool hasRetail = false;
+    for (SavedListServer& endpoint : endpoints) {
+        if ((endpoint.name == "Official" || endpoint.name == "Retail") && endpoint.host == defaultHost && endpoint.port == defaultPort) {
+            endpoint.name = "Retail";
+            hasRetail = true;
+        }
+    }
+    if (!hasRetail) endpoints.insert(endpoints.begin(), {"Retail", defaultHost, defaultPort});
     return endpoints;
 }
 

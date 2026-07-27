@@ -1,10 +1,13 @@
 #include "TStartFrame.h"
+#include "TAccountPresentation.h"
+#include "TButtonIcons.h"
 
 #include <algorithm>
 #include <sstream>
 #include <utility>
 
 namespace {
+    enum AccountColumns { AccountNameColumn, AccountMarkupColumn, AccountDetailColumn, AccountIndexColumn, AccountColumnCount };
 
     std::vector<std::string> splitServers(const std::string& value) {
         std::vector<std::string> servers;
@@ -23,10 +26,55 @@ namespace {
         return servers;
     }
 
-    std::string joinServers(const std::vector<std::string>& servers) {
-        std::string result;
-        for (std::size_t index = 0; index < servers.size(); ++index) { if (index != 0) result += ", "; result += servers[index]; }
-        return result;
+    struct AccountServerPickerOption { std::string label; std::string value; };
+    struct AccountServerPickerState { GtkWidget* combo; std::filesystem::path profilePath; std::vector<AccountServerPickerOption> options; std::string selected; bool refreshing = false; };
+
+    void refreshAccountServerPicker(AccountServerPickerState* state) {
+        state->refreshing = true;
+        gtk_combo_box_text_remove_all(GTK_COMBO_BOX_TEXT(state->combo));
+        for (const AccountServerPickerOption& option : state->options) gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(state->combo), option.label.c_str());
+        const auto selected = std::find_if(state->options.begin(), state->options.end(), [&](const AccountServerPickerOption& option) { return option.value == state->selected; });
+        gtk_combo_box_set_active(GTK_COMBO_BOX(state->combo), selected == state->options.end() ? -1 : static_cast<int>(selected - state->options.begin()));
+        atk_object_set_description(gtk_widget_get_accessible(state->combo), state->selected.empty() ? "No list-server profile selected" : state->selected.c_str());
+        state->refreshing = false;
+    }
+
+    void loadAccountServerPicker(AccountServerPickerState* state) {
+        const std::vector<SavedListServer> profiles = RC::loadListServerProfiles(state->profilePath, "listserver.graalonline.com", 14922);
+        state->options.clear();
+        for (const SavedListServer& profile : profiles) state->options.push_back({profile.name, RC::listServerAssociation(profile)});
+        if (!state->selected.empty()) state->selected = RC::normalizeListServerAssociation(state->selected, profiles);
+        if (!state->selected.empty() && std::none_of(state->options.begin(), state->options.end(), [&](const AccountServerPickerOption& option) { return option.value == state->selected; })) state->options.push_back({state->selected, state->selected});
+        refreshAccountServerPicker(state);
+    }
+
+    void onAccountServerPicked(GtkComboBox* combo, gpointer data) {
+        auto* state = static_cast<AccountServerPickerState*>(data);
+        if (state->refreshing) return;
+        const int index = gtk_combo_box_get_active(combo);
+        if (index < 0 || static_cast<std::size_t>(index) >= state->options.size()) return;
+        state->selected = state->options[static_cast<std::size_t>(index)].value;
+        refreshAccountServerPicker(state);
+    }
+
+    struct AccountServerSettingsState { TStartFrame::ListServerSettingsCallback* openSettings; GtkWindow* editDialog; AccountServerPickerState* picker; };
+
+    void onAccountServerSettingsClosed(GtkWidget*, gpointer data) { loadAccountServerPicker(static_cast<AccountServerPickerState*>(data)); }
+
+    void onAccountServerSettings(GtkButton*, gpointer data) {
+        auto* state = static_cast<AccountServerSettingsState*>(data);
+        if (!*state->openSettings) return;
+        (*state->openSettings)();
+        GList* windows = gtk_window_list_toplevels();
+        for (GList* item = windows; item != nullptr; item = item->next) {
+            GtkWidget* candidate = GTK_WIDGET(item->data);
+            if (g_strcmp0(gtk_window_get_title(GTK_WINDOW(candidate)), "RC settings") != 0) continue;
+            gtk_window_set_transient_for(GTK_WINDOW(candidate), state->editDialog);
+            g_signal_connect(candidate, "destroy", G_CALLBACK(onAccountServerSettingsClosed), state->picker);
+            gtk_window_present(GTK_WINDOW(candidate));
+            break;
+        }
+        g_list_free(windows);
     }
 
 }
@@ -72,12 +120,24 @@ TStartFrame::TStartFrame(RC::RCOptions& options, const std::filesystem::path& ap
     gtk_widget_add_events(accountEvent, GDK_ENTER_NOTIFY_MASK | GDK_LEAVE_NOTIFY_MASK);
     GtkWidget* accountOverlay = gtk_overlay_new();
     gtk_widget_set_hexpand(accountOverlay, true);
-    accountCombo = gtk_combo_box_text_new_with_entry();
+    GtkListStore* accountModel = gtk_list_store_new(AccountColumnCount, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_INT);
+    accountCombo = gtk_combo_box_new_with_model_and_entry(GTK_TREE_MODEL(accountModel));
+    g_object_unref(accountModel);
+    gtk_combo_box_set_entry_text_column(GTK_COMBO_BOX(accountCombo), AccountNameColumn);
+    gtk_combo_box_set_popup_fixed_width(GTK_COMBO_BOX(accountCombo), false);
+    gtk_cell_layout_clear(GTK_CELL_LAYOUT(accountCombo));
+    GtkCellRenderer* accountRenderer = gtk_cell_renderer_text_new();
+    g_object_set(accountRenderer, "ellipsize", PANGO_ELLIPSIZE_END, "max-width-chars", 34, nullptr);
+    gtk_cell_layout_pack_start(GTK_CELL_LAYOUT(accountCombo), accountRenderer, true);
+    gtk_cell_layout_add_attribute(GTK_CELL_LAYOUT(accountCombo), accountRenderer, "markup", AccountMarkupColumn);
     gtk_widget_set_hexpand(accountCombo, true);
     gtk_widget_set_name(accountCombo, "AccountPicker");
     accountField = gtk_bin_get_child(GTK_BIN(accountCombo));
     gtk_widget_set_name(accountField, "AccountField");
+    gtk_widget_set_tooltip_text(accountCombo, nullptr);
+    gtk_widget_set_tooltip_text(accountField, nullptr);
     gtk_entry_set_placeholder_text(GTK_ENTRY(accountField), nullptr);
+    gtk_entry_set_width_chars(GTK_ENTRY(accountField), 8);
     accountManageButton = gtk_button_new_from_icon_name("document-edit-symbolic", GTK_ICON_SIZE_MENU);
     gtk_widget_set_name(accountManageButton, "AccountManageButton");
     gtk_style_context_add_class(gtk_widget_get_style_context(accountManageButton), "account-manage-button");
@@ -92,7 +152,7 @@ TStartFrame::TStartFrame(RC::RCOptions& options, const std::filesystem::path& ap
     gtk_widget_set_tooltip_text(accountManageButton, "Manage accounts");
     atk_object_set_name(gtk_widget_get_accessible(accountManageButton), "Manage accounts");
     GtkCssProvider* accountCss = gtk_css_provider_new();
-    gtk_css_provider_load_from_data(accountCss, "#AccountField { padding-right: 48px; } #AccountManageButton, #AccountManageButton:hover, #AccountManageButton:active, #AccountManageButton:focus { min-width: 20px; min-height: 20px; padding: 0; border: none; border-radius: 2px; box-shadow: none; background-image: none; background-color: transparent; }", -1, nullptr);
+    gtk_css_provider_load_from_data(accountCss, "#AccountField { padding-right: 52px; } #AccountManageButton, #AccountManageButton:hover, #AccountManageButton:active, #AccountManageButton:focus { min-width: 20px; min-height: 20px; padding: 0; border: none; border-radius: 2px; box-shadow: none; background-image: none; background-color: transparent; }", -1, nullptr);
     gtk_style_context_add_provider(gtk_widget_get_style_context(accountField), GTK_STYLE_PROVIDER(accountCss), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION + 1);
     gtk_style_context_add_provider(gtk_widget_get_style_context(accountManageButton), GTK_STYLE_PROVIDER(accountCss), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION + 1);
     g_object_unref(accountCss);
@@ -127,7 +187,11 @@ TStartFrame::TStartFrame(RC::RCOptions& options, const std::filesystem::path& ap
     gtk_box_pack_start(GTK_BOX(buttons), listServerSettings, false, false, 0);
     gtk_box_pack_start(GTK_BOX(buttons), gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0), true, true, 0);
     GtkWidget* connectButton = gtk_button_new_with_label("OK");
-    GtkWidget* cancelButton = gtk_button_new_with_label("Cancel");
+    GtkWidget* cancelButton = gtk_button_new_with_label("Close");
+    gtk_button_set_image(GTK_BUTTON(connectButton), gtk_image_new_from_stock(GTK_STOCK_OK, GTK_ICON_SIZE_BUTTON));
+    gtk_button_set_image(GTK_BUTTON(cancelButton), gtk_image_new_from_stock(GTK_STOCK_CLOSE, GTK_ICON_SIZE_BUTTON));
+    gtk_button_set_always_show_image(GTK_BUTTON(connectButton), true);
+    gtk_button_set_always_show_image(GTK_BUTTON(cancelButton), true);
     gtk_box_pack_end(GTK_BOX(buttons), cancelButton, false, false, 0);
     gtk_box_pack_end(GTK_BOX(buttons), connectButton, false, false, 0);
     gtk_box_pack_start(GTK_BOX(root), buttons, false, true, 0);
@@ -148,7 +212,9 @@ TStartFrame::TStartFrame(RC::RCOptions& options, const std::filesystem::path& ap
     g_signal_connect(window, "destroy", G_CALLBACK(onDestroy), this);
 
     refreshAccountMenu();
+    requestedAccountIndex = accounts.activeIndex() == static_cast<std::size_t>(-1) ? -1 : static_cast<int>(accounts.activeIndex());
     selectAccount(accounts.accountName());
+    requestedAccountIndex = -1;
 }
 
 TStartFrame::~TStartFrame() { if (window != nullptr) gtk_widget_destroy(window); }
@@ -173,13 +239,41 @@ void TStartFrame::onListServerSettings(GtkButton*, gpointer data) { TStartFrame*
 void TStartFrame::onManageAccounts(GtkButton*, gpointer data) { static_cast<TStartFrame*>(data)->openAccountManager(); }
 void TStartFrame::onAccountChanged(GtkComboBox* combo, gpointer data) {
     TStartFrame* frame = static_cast<TStartFrame*>(data);
-    gchar* value = gtk_combo_box_text_get_active_text(GTK_COMBO_BOX_TEXT(combo));
+    if (frame->accountSelectionInProgress) return;
+    GtkTreeIter active;
+    if (!gtk_combo_box_get_active_iter(combo, &active)) return;
+    gchar* value = nullptr;
+    gint index = -1;
+    gtk_tree_model_get(gtk_combo_box_get_model(combo), &active, AccountNameColumn, &value, AccountIndexColumn, &index, -1);
     if (value == nullptr) return;
     const std::string account = value;
     g_free(value);
-    if (account != frame->selectedAccount) frame->selectAccount(account);
+    frame->requestedAccountIndex = index;
+    frame->selectAccount(account);
+    frame->requestedAccountIndex = -1;
+    frame->updateAccountTitle(index);
 }
-void TStartFrame::onAccountEntryChanged(GtkEditable* editable, gpointer data) { static_cast<TStartFrame*>(data)->selectedAccount = gtk_entry_get_text(GTK_ENTRY(editable)); }
+void TStartFrame::onAccountEntryChanged(GtkEditable* editable, gpointer data) {
+    TStartFrame* frame = static_cast<TStartFrame*>(data);
+    if (frame->accountSelectionInProgress) return;
+    const std::string typed = gtk_entry_get_text(GTK_ENTRY(editable));
+    GtkTreeIter active;
+    if (gtk_combo_box_get_active_iter(GTK_COMBO_BOX(frame->accountCombo), &active)) {
+        gchar* rowName = nullptr;
+        gint rowIndex = -1;
+        gtk_tree_model_get(gtk_combo_box_get_model(GTK_COMBO_BOX(frame->accountCombo)), &active, AccountNameColumn, &rowName, AccountIndexColumn, &rowIndex, -1);
+        const bool modelSelection = rowName != nullptr && typed == rowName;
+        g_free(rowName);
+        if (modelSelection) { frame->selectedAccount = typed; frame->selectedAccountIndex = rowIndex; frame->updateAccountTitle(rowIndex); return; }
+    }
+    frame->selectedAccount = typed;
+    frame->selectedAccountIndex = -1;
+    frame->updateAccountTitle(-1);
+    frame->accountSelectionInProgress = true;
+    gtk_combo_box_set_active(GTK_COMBO_BOX(frame->accountCombo), -1);
+    if (typed != gtk_entry_get_text(GTK_ENTRY(frame->accountField))) gtk_entry_set_text(GTK_ENTRY(frame->accountField), typed.c_str());
+    frame->accountSelectionInProgress = false;
+}
 gboolean TStartFrame::onAccountPointerEnter(GtkWidget*, GdkEventCrossing*, gpointer data) { TStartFrame* frame = static_cast<TStartFrame*>(data); frame->accountHovered = true; gtk_widget_show(frame->accountManageButton); return false; }
 gboolean TStartFrame::onAccountPointerLeave(GtkWidget*, GdkEventCrossing* event, gpointer data) {
     TStartFrame* frame = static_cast<TStartFrame*>(data);
@@ -217,76 +311,150 @@ void TStartFrame::onDestroy(GtkWidget*, gpointer data) { static_cast<TStartFrame
 gboolean TStartFrame::onDelete(GtkWidget*, GdkEvent*, gpointer) { return false; }
 
 void TStartFrame::selectAccount(const std::string& accountName) {
+    accountSelectionInProgress = true;
     selectedAccount = accountName;
     if (selectedAccount.empty() && !accounts.entries().empty()) selectedAccount = accounts.entries().front().name;
     int active = accounts.entries().empty() ? 0 : -1;
-    for (std::size_t index = 0; index < accounts.entries().size(); ++index) if (accounts.entries()[index].name == selectedAccount) { active = static_cast<int>(index); break; }
+    if (requestedAccountIndex >= 0 && static_cast<std::size_t>(requestedAccountIndex) < accounts.entries().size()) active = requestedAccountIndex;
+    else for (std::size_t index = 0; index < accounts.entries().size(); ++index) if (accounts.entries()[index].name == selectedAccount) { active = static_cast<int>(index); break; }
+    selectedAccountIndex = active >= 0 && static_cast<std::size_t>(active) < accounts.entries().size() ? active : -1;
     gtk_combo_box_set_active(GTK_COMBO_BOX(accountCombo), active);
     gtk_entry_set_text(GTK_ENTRY(accountField), selectedAccount.c_str());
-    gtk_entry_set_text(GTK_ENTRY(passwordField), accounts.passwordFor(selectedAccount).c_str());
-    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(passwordCheck), accounts.passwordFor(selectedAccount).empty());
+    const std::string password = selectedAccountIndex >= 0 ? accounts.passwordForIndex(static_cast<std::size_t>(selectedAccountIndex)) : accounts.passwordFor(selectedAccount);
+    gtk_entry_set_text(GTK_ENTRY(passwordField), password.c_str());
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(passwordCheck), password.empty());
+    const RC::RCAccount* selected = selectedAccountIndex >= 0 ? &accounts.entries()[static_cast<std::size_t>(selectedAccountIndex)] : nullptr;
+    std::string title = "RemoteControl";
+    if (selected != nullptr && !selected->listServers.empty()) {
+        std::string label = selected->listServers.front();
+        std::size_t separator = label.find(" — ");
+        if (separator == std::string::npos) separator = label.find(" â€” ");
+        if (separator != std::string::npos) label.resize(separator);
+        if (!label.empty()) title = label + " - RemoteControl";
+    }
+    gtk_window_set_title(GTK_WINDOW(window), title.c_str());
+    const std::vector<SavedListServer> profiles = RC::loadListServerProfiles(std::filesystem::path(g_get_user_config_dir()) / "GScriptRC" / "listservers.conf", "listserver.graalonline.com", 14922);
+    if (selected != nullptr) { const std::vector<std::string> labels = RC::accountServerBadgeLabels(*selected, profiles); if (!labels.empty()) title = labels.front() + " - RemoteControl"; }
+    gtk_window_set_title(GTK_WINDOW(window), title.c_str());
+    const std::string detail = selected == nullptr ? std::string("Type an account name or choose a saved account") : RC::accountServerDetail(*selected, profiles);
+    atk_object_set_description(gtk_widget_get_accessible(accountCombo), detail.c_str());
+    accountSelectionInProgress = false;
+}
+
+void TStartFrame::updateAccountTitle(int accountIndex) {
+    std::string title = "RemoteControl";
+    if (accountIndex >= 0 && static_cast<std::size_t>(accountIndex) < accounts.entries().size()) {
+        const std::vector<SavedListServer> profiles = RC::loadListServerProfiles(std::filesystem::path(g_get_user_config_dir()) / "GScriptRC" / "listservers.conf", "listserver.graalonline.com", 14922);
+        const std::vector<std::string> labels = RC::accountServerBadgeLabels(accounts.entries()[static_cast<std::size_t>(accountIndex)], profiles);
+        if (!labels.empty() && labels.front() != "Unassigned") title = labels.front() + " - RemoteControl";
+    }
+    gtk_window_set_title(GTK_WINDOW(window), title.c_str());
 }
 
 void TStartFrame::refreshAccountMenu() {
-    gtk_combo_box_text_remove_all(GTK_COMBO_BOX_TEXT(accountCombo));
-    for (const RC::RCAccount& account : accounts.entries()) gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(accountCombo), account.name.c_str());
+    GtkListStore* model = GTK_LIST_STORE(gtk_combo_box_get_model(GTK_COMBO_BOX(accountCombo)));
+    gtk_list_store_clear(model);
+    const std::vector<SavedListServer> profiles = RC::loadListServerProfiles(std::filesystem::path(g_get_user_config_dir()) / "GScriptRC" / "listservers.conf", "listserver.graalonline.com", 14922);
+    for (const RC::RCAccount& account : accounts.entries()) {
+        GtkTreeIter row;
+        const std::string markup = RC::accountRowMarkup(account, profiles);
+        gtk_list_store_append(model, &row);
+        gtk_list_store_set(model, &row, AccountNameColumn, account.name.c_str(), AccountMarkupColumn, markup.c_str(), AccountIndexColumn, static_cast<int>(&account - accounts.entries().data()), -1);
+    }
 }
 
-bool TStartFrame::editAccount(const std::string& accountName) {
-    GtkWidget* dialog = gtk_dialog_new_with_buttons(accountName.empty() ? "Add Account" : "Edit Account", GTK_WINDOW(window), GTK_DIALOG_MODAL, "Cancel", GTK_RESPONSE_CANCEL, "Save", GTK_RESPONSE_OK, nullptr);
-    gtk_window_set_default_size(GTK_WINDOW(dialog), 430, -1);
-    GtkWidget* box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
-    gtk_container_set_border_width(GTK_CONTAINER(box), 12);
+bool TStartFrame::editAccount(const std::string& accountName, GtkWindow* parent, int accountIndex) {
+    GtkWidget* dialog = gtk_dialog_new_with_buttons(accountName.empty() ? "Add Account" : "Edit Account", parent == nullptr ? GTK_WINDOW(window) : parent, GTK_DIALOG_DESTROY_WITH_PARENT, "Close", GTK_RESPONSE_CANCEL, "Save", GTK_RESPONSE_OK, nullptr);
+    applyGtkButtonIcon(gtk_dialog_get_widget_for_response(GTK_DIALOG(dialog), GTK_RESPONSE_CANCEL), GTK_STOCK_CLOSE);
+    applyGtkButtonIcon(gtk_dialog_get_widget_for_response(GTK_DIALOG(dialog), GTK_RESPONSE_OK), GTK_STOCK_SAVE);
+    gtk_window_set_position(GTK_WINDOW(dialog), GTK_WIN_POS_CENTER_ON_PARENT);
+    gtk_window_set_default_size(GTK_WINDOW(dialog), 292, -1);
+    GtkWidget* box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
+    gtk_container_set_border_width(GTK_CONTAINER(box), 8);
     gtk_box_pack_start(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), box, true, true, 0);
     GtkWidget* name = gtk_entry_new();
     GtkWidget* password = gtk_entry_new();
-    GtkWidget* servers = gtk_entry_new();
+    GtkWidget* servers = gtk_combo_box_text_new();
+    gtk_widget_set_name(servers, "AccountServerPicker");
+    GList* serverRenderers = gtk_cell_layout_get_cells(GTK_CELL_LAYOUT(servers));
+    for (GList* item = serverRenderers; item != nullptr; item = item->next) if (GTK_IS_CELL_RENDERER_TEXT(item->data)) g_object_set(item->data, "ellipsize", PANGO_ELLIPSIZE_END, "max-width-chars", 28, nullptr);
+    g_list_free(serverRenderers);
+    GtkWidget* serverRow = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 2);
+    GtkWidget* serverSettings = gtk_button_new_from_icon_name("document-edit-symbolic", GTK_ICON_SIZE_MENU);
+    gtk_widget_set_name(serverSettings, "AccountServerSettingsButton");
+    gtk_button_set_relief(GTK_BUTTON(serverSettings), GTK_RELIEF_NONE);
+    gtk_widget_set_size_request(serverSettings, 20, 20);
+    gtk_widget_set_tooltip_text(serverSettings, "Manage saved list servers");
+    atk_object_set_name(gtk_widget_get_accessible(serverSettings), "Manage saved list servers");
     GtkWidget* forget = gtk_check_button_new_with_label("Don't save password");
     gtk_entry_set_visibility(GTK_ENTRY(password), false);
-    gtk_entry_set_placeholder_text(GTK_ENTRY(servers), "host:port, another-host:port");
     gtk_entry_set_text(GTK_ENTRY(name), accountName.c_str());
-    gtk_entry_set_text(GTK_ENTRY(password), accounts.passwordFor(accountName).c_str());
-    gtk_entry_set_text(GTK_ENTRY(servers), joinServers(accounts.listServersFor(accountName)).c_str());
-    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(forget), !accountName.empty() && accounts.passwordFor(accountName).empty());
+    int resolvedIndex = accountIndex;
+    if (resolvedIndex < 0) for (std::size_t index = 0; index < accounts.entries().size(); ++index) if (accounts.entries()[index].name == accountName) { resolvedIndex = static_cast<int>(index); break; }
+    const std::string existingPassword = resolvedIndex >= 0 ? accounts.passwordForIndex(static_cast<std::size_t>(resolvedIndex)) : accounts.passwordFor(accountName);
+    gtk_entry_set_text(GTK_ENTRY(password), existingPassword.c_str());
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(forget), !accountName.empty() && existingPassword.empty());
     GtkWidget* nameLabel = gtk_label_new("Account name"); gtk_label_set_xalign(GTK_LABEL(nameLabel), 0.0F);
     GtkWidget* passwordLabel = gtk_label_new("Password"); gtk_label_set_xalign(GTK_LABEL(passwordLabel), 0.0F);
-    GtkWidget* serverLabel = gtk_label_new("List servers"); gtk_label_set_xalign(GTK_LABEL(serverLabel), 0.0F);
+    GtkWidget* serverLabel = gtk_label_new("List server"); gtk_label_set_xalign(GTK_LABEL(serverLabel), 0.0F);
+    AccountServerPickerState picker{servers, std::filesystem::path(g_get_user_config_dir()) / "GScriptRC" / "listservers.conf"};
+    const std::vector<std::string> savedServers = resolvedIndex >= 0 ? accounts.listServersForIndex(static_cast<std::size_t>(resolvedIndex)) : accounts.listServersFor(accountName);
+    if (!savedServers.empty()) picker.selected = savedServers.front();
+    loadAccountServerPicker(&picker);
+    gtk_widget_set_tooltip_text(servers, "Choose saved list-server profiles to add or remove");
+    atk_object_set_name(gtk_widget_get_accessible(servers), "Associated list-server profiles");
+    g_signal_connect(servers, "changed", G_CALLBACK(onAccountServerPicked), &picker);
+    AccountServerSettingsState settingsState{&onListServerSettingsCallback, GTK_WINDOW(dialog), &picker};
+    g_signal_connect(serverSettings, "clicked", G_CALLBACK(onAccountServerSettings), &settingsState);
     gtk_box_pack_start(GTK_BOX(box), nameLabel, false, false, 0);
     gtk_box_pack_start(GTK_BOX(box), name, false, true, 0);
     gtk_box_pack_start(GTK_BOX(box), passwordLabel, false, false, 0);
     gtk_box_pack_start(GTK_BOX(box), password, false, true, 0);
     gtk_box_pack_start(GTK_BOX(box), forget, false, false, 0);
     gtk_box_pack_start(GTK_BOX(box), serverLabel, false, false, 0);
-    gtk_box_pack_start(GTK_BOX(box), servers, false, true, 0);
+    gtk_box_pack_start(GTK_BOX(serverRow), servers, true, true, 0);
+    gtk_box_pack_start(GTK_BOX(serverRow), serverSettings, false, false, 0);
+    gtk_box_pack_start(GTK_BOX(box), serverRow, false, true, 0);
     gtk_widget_show_all(dialog);
     const bool accepted = gtk_dialog_run(GTK_DIALOG(dialog)) == GTK_RESPONSE_OK && *gtk_entry_get_text(GTK_ENTRY(name)) != '\0';
     std::string selected;
     if (accepted) {
         selected = gtk_entry_get_text(GTK_ENTRY(name));
-        accounts.update(accountName, selected, gtk_entry_get_text(GTK_ENTRY(password)), gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(forget)), splitServers(gtk_entry_get_text(GTK_ENTRY(servers))));
+        if (resolvedIndex >= 0) accounts.updateAt(static_cast<std::size_t>(resolvedIndex), selected, gtk_entry_get_text(GTK_ENTRY(password)), gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(forget)), picker.selected.empty() ? std::vector<std::string>() : std::vector<std::string>{picker.selected});
+        else accounts.update(accountName, selected, gtk_entry_get_text(GTK_ENTRY(password)), gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(forget)), picker.selected.empty() ? std::vector<std::string>() : std::vector<std::string>{picker.selected});
     }
     gtk_widget_destroy(dialog);
-    if (accepted) { refreshAccountMenu(); selectAccount(selected); }
+    if (accepted) { refreshAccountMenu(); if (resolvedIndex >= 0) requestedAccountIndex = resolvedIndex; else for (std::size_t index = accounts.entries().size(); index > 0; --index) if (accounts.entries()[index - 1].name == selected) { requestedAccountIndex = static_cast<int>(index - 1); break; } selectAccount(selected); requestedAccountIndex = -1; }
     return accepted;
 }
 
 void TStartFrame::openAccountManager() {
-    bool reopen = true;
-    while (reopen) {
-        reopen = false;
-        GtkWidget* dialog = gtk_dialog_new_with_buttons("Accounts", GTK_WINDOW(window), GTK_DIALOG_MODAL, "Add Account", 100, "Edit", 101, "Delete", 102, "Cancel", GTK_RESPONSE_CANCEL, "Select", GTK_RESPONSE_OK, nullptr);
-        gtk_widget_set_name(dialog, "AccountsDialog");
-        gtk_window_set_default_size(GTK_WINDOW(dialog), 500, 330);
-        GtkWidget* content = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
-        GtkWidget* heading = gtk_label_new(nullptr);
-        gtk_label_set_markup(GTK_LABEL(heading), "<b>Select an account to sign in</b>");
-        gtk_label_set_xalign(GTK_LABEL(heading), 0.0F);
-        gtk_container_set_border_width(GTK_CONTAINER(heading), 10);
-        gtk_box_pack_start(GTK_BOX(content), heading, false, false, 0);
-        GtkWidget* list = gtk_list_box_new();
-        gtk_widget_set_name(list, "AccountsList");
-        gtk_list_box_set_selection_mode(GTK_LIST_BOX(list), GTK_SELECTION_SINGLE);
-        gtk_box_pack_start(GTK_BOX(content), list, true, true, 0);
+    GtkWidget* dialog = gtk_dialog_new_with_buttons("Accounts", GTK_WINDOW(window), GTK_DIALOG_DESTROY_WITH_PARENT, "Add Account", 100, "Edit", 101, "Delete", 102, "Close", GTK_RESPONSE_CLOSE, "Select", GTK_RESPONSE_OK, nullptr);
+    applyGtkButtonIcon(gtk_dialog_get_widget_for_response(GTK_DIALOG(dialog), 100), GTK_STOCK_ADD);
+    applyGtkButtonIcon(gtk_dialog_get_widget_for_response(GTK_DIALOG(dialog), 101), GTK_STOCK_EDIT);
+    applyGtkButtonIcon(gtk_dialog_get_widget_for_response(GTK_DIALOG(dialog), 102), GTK_STOCK_DELETE);
+    applyGtkButtonIcon(gtk_dialog_get_widget_for_response(GTK_DIALOG(dialog), GTK_RESPONSE_CLOSE), GTK_STOCK_CLOSE);
+    applyGtkButtonIcon(gtk_dialog_get_widget_for_response(GTK_DIALOG(dialog), GTK_RESPONSE_OK), GTK_STOCK_OK);
+    gtk_window_set_position(GTK_WINDOW(dialog), GTK_WIN_POS_CENTER_ON_PARENT);
+    gtk_widget_set_name(dialog, "AccountsDialog");
+    gtk_window_set_default_size(GTK_WINDOW(dialog), 500, 330);
+    GtkWidget* content = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
+    GtkWidget* heading = gtk_label_new(nullptr);
+    gtk_label_set_markup(GTK_LABEL(heading), "<b>Select an account to sign in</b>");
+    gtk_label_set_xalign(GTK_LABEL(heading), 0.0F);
+    gtk_container_set_border_width(GTK_CONTAINER(heading), 10);
+    gtk_box_pack_start(GTK_BOX(content), heading, false, false, 0);
+    GtkWidget* list = gtk_list_box_new();
+    gtk_widget_set_name(list, "AccountsList");
+    gtk_list_box_set_selection_mode(GTK_LIST_BOX(list), GTK_SELECTION_SINGLE);
+    gtk_list_box_set_activate_on_single_click(GTK_LIST_BOX(list), false);
+    gtk_box_pack_start(GTK_BOX(content), list, true, true, 0);
+    g_signal_connect(list, "row-activated", G_CALLBACK(+[](GtkListBox* listBox, GtkListBoxRow* row, gpointer data) { gtk_list_box_select_row(listBox, row); gtk_dialog_response(GTK_DIALOG(data), 101); }), dialog);
+    auto populate = [&](const std::string& selectedName, int selectedIndex = -1) {
+        GList* rows = gtk_container_get_children(GTK_CONTAINER(list));
+        for (GList* item = rows; item != nullptr; item = item->next) gtk_widget_destroy(GTK_WIDGET(item->data));
+        g_list_free(rows);
+        const std::vector<SavedListServer> profiles = RC::loadListServerProfiles(std::filesystem::path(g_get_user_config_dir()) / "GScriptRC" / "listservers.conf", "listserver.graalonline.com", 14922);
         for (std::size_t index = 0; index < accounts.entries().size(); ++index) {
             const RC::RCAccount& account = accounts.entries()[index];
             GtkWidget* row = gtk_list_box_row_new();
@@ -300,46 +468,69 @@ void TStartFrame::openAccountManager() {
             gtk_label_set_markup(GTK_LABEL(name), markup.c_str());
             gtk_label_set_xalign(GTK_LABEL(name), 0.0F);
             gtk_box_pack_start(GTK_BOX(accountBox), name, false, false, 0);
-            GtkWidget* badgeBox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
+            std::string associationText;
+            std::string associationDetail;
             if (account.listServers.empty()) {
-                GtkWidget* empty = gtk_label_new("No saved list server");
-                gtk_style_context_add_class(gtk_widget_get_style_context(empty), "dim-label");
-                gtk_box_pack_start(GTK_BOX(badgeBox), empty, false, false, 0);
+                associationText = "No saved list server";
+                associationDetail = associationText;
             } else {
                 const std::size_t shown = std::min<std::size_t>(account.listServers.size(), 2);
                 for (std::size_t serverIndex = 0; serverIndex < shown; ++serverIndex) {
-                    GtkWidget* badge = gtk_frame_new(nullptr);
-                    GtkWidget* label = gtk_label_new(account.listServers[serverIndex].c_str());
-                    gtk_widget_set_margin_start(label, 4);
-                    gtk_widget_set_margin_end(label, 4);
-                    gtk_widget_set_margin_top(label, 2);
-                    gtk_widget_set_margin_bottom(label, 2);
-                    gtk_container_add(GTK_CONTAINER(badge), label);
-                    gtk_box_pack_start(GTK_BOX(badgeBox), badge, false, false, 0);
+                    if (!associationText.empty()) associationText += "  •  ";
+                    associationText += RC::normalizeListServerAssociation(account.listServers[serverIndex], profiles);
                 }
-                if (account.listServers.size() > shown) gtk_box_pack_start(GTK_BOX(badgeBox), gtk_label_new(("+" + std::to_string(account.listServers.size() - shown)).c_str()), false, false, 0);
+                associationDetail = RC::accountServerDetail(account, profiles);
             }
-            gtk_box_pack_start(GTK_BOX(accountBox), badgeBox, false, false, 0);
+            associationText.clear();
+            for (const std::string& badge : RC::accountServerBadgeLabels(account, profiles)) { if (!associationText.empty()) associationText += ", "; associationText += badge; }
+            GtkWidget* association = gtk_label_new(associationText.c_str());
+            gtk_widget_set_name(association, "AccountServerAssociation");
+            gtk_label_set_xalign(GTK_LABEL(association), 0.0F);
+            gtk_label_set_ellipsize(GTK_LABEL(association), PANGO_ELLIPSIZE_END);
+            gtk_style_context_add_class(gtk_widget_get_style_context(association), "dim-label");
+            gtk_box_pack_start(GTK_BOX(accountBox), association, false, false, 0);
             gtk_box_pack_start(GTK_BOX(rowBox), accountBox, true, true, 0);
-            const std::string countText = std::to_string(account.listServers.size()) + (account.listServers.size() == 1 ? " server" : " servers");
-            GtkWidget* count = gtk_label_new(countText.c_str());
-            gtk_box_pack_end(GTK_BOX(rowBox), count, false, false, 0);
             gtk_container_add(GTK_CONTAINER(row), rowBox);
             g_object_set_data(G_OBJECT(row), "account-index", GINT_TO_POINTER(static_cast<int>(index + 1)));
             gtk_container_add(GTK_CONTAINER(list), row);
-            if (account.name == selectedAccount) gtk_list_box_select_row(GTK_LIST_BOX(list), GTK_LIST_BOX_ROW(row));
+            if ((selectedIndex >= 0 && static_cast<int>(index) == selectedIndex) || (selectedIndex < 0 && account.name == selectedName)) gtk_list_box_select_row(GTK_LIST_BOX(list), GTK_LIST_BOX_ROW(row));
         }
-        gtk_widget_show_all(dialog);
+        gtk_widget_show_all(list);
+    };
+    populate(selectedAccount);
+    gtk_widget_show_all(dialog);
+    bool running = true;
+    while (running) {
         const int response = gtk_dialog_run(GTK_DIALOG(dialog));
         GtkListBoxRow* selectedRow = gtk_list_box_get_selected_row(GTK_LIST_BOX(list));
         const int storedIndex = selectedRow == nullptr ? 0 : GPOINTER_TO_INT(g_object_get_data(G_OBJECT(selectedRow), "account-index"));
         const std::string name = storedIndex > 0 && static_cast<std::size_t>(storedIndex) <= accounts.entries().size() ? accounts.entries()[static_cast<std::size_t>(storedIndex - 1)].name : std::string();
-        gtk_widget_destroy(dialog);
-        if (response == 100) { editAccount({}); reopen = true; }
-        else if (response == 101 && !name.empty()) { editAccount(name); reopen = true; }
-        else if (response == 102 && !name.empty()) { accounts.remove(name); refreshAccountMenu(); selectAccount(accounts.accountName()); reopen = true; }
-        else if (response == GTK_RESPONSE_OK && !name.empty()) selectAccount(name);
+        if (response == 100) {
+            editAccount({}, GTK_WINDOW(dialog));
+            refreshAccountMenu();
+            populate(accounts.accountName());
+            gtk_window_present(GTK_WINDOW(dialog));
+        } else if (response == 101 && !name.empty()) {
+            editAccount(name, GTK_WINDOW(dialog), storedIndex - 1);
+            refreshAccountMenu();
+            populate(accounts.accountName(), storedIndex - 1);
+            gtk_window_present(GTK_WINDOW(dialog));
+        } else if (response == 102 && !name.empty()) {
+            accounts.removeAt(static_cast<std::size_t>(storedIndex - 1));
+            refreshAccountMenu();
+            selectAccount(accounts.accountName());
+            populate(accounts.accountName());
+            gtk_window_present(GTK_WINDOW(dialog));
+        } else if (response == GTK_RESPONSE_OK && !name.empty()) {
+            requestedAccountIndex = storedIndex - 1;
+            selectAccount(name);
+            requestedAccountIndex = -1;
+            running = false;
+        } else {
+            running = false;
+        }
     }
+    gtk_widget_destroy(dialog);
 }
 
 void TStartFrame::connect() {
@@ -349,10 +540,16 @@ void TStartFrame::connect() {
     options.dontsavepassword = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(passwordCheck));
     options.graphicalmenu = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(graphicsCheck));
     RC::saveRCOptions(options, applicationDirectory);
-    const std::string endpoint = listServerEndpointCallback ? listServerEndpointCallback() : std::string();
-    accounts.save(selectedAccount, getText(passwordField), options.dontsavepassword, endpoint);
+    std::string endpoint;
+    if (selectedAccountIndex >= 0) {
+        const std::vector<std::string> associations = accounts.listServersForIndex(static_cast<std::size_t>(selectedAccountIndex));
+        if (!associations.empty()) endpoint = associations.front();
+    }
+    if (endpoint.empty() && listServerEndpointCallback) endpoint = listServerEndpointCallback();
+    if (selectedAccountIndex >= 0) accounts.saveAt(static_cast<std::size_t>(selectedAccountIndex), getText(passwordField), options.dontsavepassword, endpoint);
+    else accounts.save(selectedAccount, getText(passwordField), options.dontsavepassword, endpoint);
     gtk_widget_hide(window);
-    onConnectCallback(selectedAccount, getText(passwordField), options.nickname);
+    onConnectCallback(selectedAccountIndex >= 0 ? accounts.idForIndex(static_cast<std::size_t>(selectedAccountIndex)) : accounts.activeId(), selectedAccount, getText(passwordField), options.nickname, endpoint);
 }
 
 std::string TStartFrame::getText(GtkWidget* widget) const { return gtk_entry_get_text(GTK_ENTRY(widget)); }

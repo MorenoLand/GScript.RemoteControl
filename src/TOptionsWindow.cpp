@@ -14,6 +14,16 @@ namespace {
         gtk_box_pack_start(box, field, false, false, 0);
         return field;
     }
+    GtkWidget* addCheckGrid(GtkGrid* grid, const char* label, bool value, int index) {
+        GtkWidget* field = gtk_check_button_new_with_label(label);
+        gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(field), value);
+        gtk_widget_set_size_request(field, 195, -1);
+        GtkWidget* text = gtk_bin_get_child(GTK_BIN(field));
+        gtk_label_set_line_wrap(GTK_LABEL(text), true);
+        gtk_label_set_max_width_chars(GTK_LABEL(text), 25);
+        gtk_grid_attach(grid, field, index % 2, index / 2, 1, 1);
+        return field;
+    }
     GtkWidget* addEntry(GtkGrid* grid, const char* label, const std::string& value, int row) {
         GtkWidget* field = gtk_entry_new();
         gtk_entry_set_text(GTK_ENTRY(field), value.c_str());
@@ -57,23 +67,29 @@ TOptionsWindow::TOptionsWindow(RC::RCOptions& nextOptions, const std::filesystem
     window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
     gtk_widget_set_name(window, "OptionsWindow");
     gtk_window_set_title(GTK_WINDOW(window), "Options");
-    gtk_window_set_default_size(GTK_WINDOW(window), 380, 400);
+    gtk_window_set_default_size(GTK_WINDOW(window), 460, 400);
+    gtk_window_set_resizable(GTK_WINDOW(window), false);
     GtkWidget* root = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
     gtk_container_add(GTK_CONTAINER(window), root);
-    GtkWidget* notebook = gtk_notebook_new();
+    notebook = gtk_notebook_new();
     gtk_container_set_border_width(GTK_CONTAINER(notebook), 5);
     GtkWidget* general = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
     gtk_container_set_border_width(GTK_CONTAINER(general), 5);
-    ignoreMass = addCheck(GTK_BOX(general), "Ignore Mass PMs", options.nomassmessages);
-    ignoreMassClient = addCheck(GTK_BOX(general), "Ignore Mass PMs if client is on", options.nomassifclienton);
-    attachAway = addCheck(GTK_BOX(general), "Go in away mode when closing playerlist", options.attachaway);
-    globalPMs = addCheck(GTK_BOX(general), "Allow Global PMs", options.globalpms);
-    buddies = addCheck(GTK_BOX(general), "Show yourself on other buddy lists", options.buddytracking);
-    separateNC = addCheck(GTK_BOX(general), "Separate NC from RC Chat", options.separatenc);
-    timestamps = addCheck(GTK_BOX(general), "Timestamp RC Messages", options.rctimestamps);
-    pmAlerts = addCheck(GTK_BOX(general), "Show new PM Alerts in RC Chat", options.newpmalerts);
-    notificationSounds = addCheck(GTK_BOX(general), "Play sounds for alerts and PMs", options.notificationsounds);
-    separateFindResults = addCheck(GTK_BOX(general), "Separate find results tabs", options.separatefindresults);
+    GtkWidget* generalChecks = gtk_grid_new();
+    gtk_grid_set_row_spacing(GTK_GRID(generalChecks), 2);
+    gtk_grid_set_column_spacing(GTK_GRID(generalChecks), 8);
+    ignoreMass = addCheckGrid(GTK_GRID(generalChecks), "Ignore Mass PMs", options.nomassmessages, 0);
+    ignoreMassClient = addCheckGrid(GTK_GRID(generalChecks), "Ignore Mass PMs if client is on", options.nomassifclienton, 1);
+    attachAway = addCheckGrid(GTK_GRID(generalChecks), "Go in away mode when closing playerlist", options.attachaway, 2);
+    afkEnabled = addCheckGrid(GTK_GRID(generalChecks), "Set nickname to Away when inactive", options.afkenabled, 10);
+    globalPMs = addCheckGrid(GTK_GRID(generalChecks), "Allow Global PMs", options.globalpms, 3);
+    buddies = addCheckGrid(GTK_GRID(generalChecks), "Show yourself on other buddy lists", options.buddytracking, 4);
+    separateNC = addCheckGrid(GTK_GRID(generalChecks), "Separate NC from RC Chat", options.separatenc, 5);
+    timestamps = addCheckGrid(GTK_GRID(generalChecks), "Timestamp RC Messages", options.rctimestamps, 6);
+    pmAlerts = addCheckGrid(GTK_GRID(generalChecks), "Show new PM Alerts in RC Chat", options.newpmalerts, 7);
+    notificationSounds = addCheckGrid(GTK_GRID(generalChecks), "Play sounds for alerts and PMs", options.notificationsounds, 8);
+    separateFindResults = addCheckGrid(GTK_GRID(generalChecks), "Separate find results tabs", options.separatefindresults, 9);
+    gtk_box_pack_start(GTK_BOX(general), generalChecks, false, false, 0);
     GtkWidget* generalGrid = gtk_grid_new();
     gtk_grid_set_row_spacing(GTK_GRID(generalGrid), 5);
     gtk_grid_set_column_spacing(GTK_GRID(generalGrid), 5);
@@ -90,17 +106,32 @@ TOptionsWindow::TOptionsWindow(RC::RCOptions& nextOptions, const std::filesystem
     GtkWidget* logBrowse = gtk_button_new_with_label("Browse");
     gtk_grid_attach(GTK_GRID(generalGrid), logBrowse, 2, 2, 1, 1);
     chatFontSize = addEntry(GTK_GRID(generalGrid), "Chat font size:", std::to_string(options.chatfontsize), 3);
+    afkTimeout = gtk_combo_box_text_new();
+    gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(afkTimeout), "5", "5 minutes");
+    gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(afkTimeout), "15", "15 minutes");
+    gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(afkTimeout), "30", "30 minutes");
+    gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(afkTimeout), "60", "1 hour");
+    gtk_combo_box_set_active_id(GTK_COMBO_BOX(afkTimeout), std::to_string(options.afktimeout).c_str());
+    gtk_grid_attach(GTK_GRID(generalGrid), gtk_label_new("Away timeout:"), 0, 4, 1, 1);
+    gtk_grid_attach(GTK_GRID(generalGrid), afkTimeout, 1, 4, 1, 1);
+    optionAnimations = gtk_check_button_new_with_label("Animate options resizing");
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(optionAnimations), options.optionsanimations);
+    gtk_grid_attach(GTK_GRID(generalGrid), optionAnimations, 0, 5, 2, 1);
     gtk_box_pack_start(GTK_BOX(general), generalGrid, false, false, 4);
     GtkWidget* script = gtk_box_new(GTK_ORIENTATION_VERTICAL, 5);
     gtk_container_set_border_width(GTK_CONTAINER(script), 5);
-    syntax = addCheck(GTK_BOX(script), "Syntax highlighting", options.syntaxhighlighting);
-    autoIndent = addCheck(GTK_BOX(script), "Auto indenting", options.autoindenting);
-    smartHomeEnd = addCheck(GTK_BOX(script), "Smart Home/End", options.smarthomeend);
-    brackets = addCheck(GTK_BOX(script), "Show brackets", options.showbrackets);
-    lineNumbers = addCheck(GTK_BOX(script), "Show line numbers", options.showlinenumbers);
-    minimap = addCheck(GTK_BOX(script), "Show minimap", options.minimap);
-    lsp = addCheck(GTK_BOX(script), "LSP / autocomplete", options.lsp);
-    scriptDiagnostics = addCheck(GTK_BOX(script), "Script analysis", options.scriptdiagnostics);
+    GtkWidget* scriptChecks = gtk_grid_new();
+    gtk_grid_set_row_spacing(GTK_GRID(scriptChecks), 2);
+    gtk_grid_set_column_spacing(GTK_GRID(scriptChecks), 8);
+    syntax = addCheckGrid(GTK_GRID(scriptChecks), "Syntax highlighting", options.syntaxhighlighting, 0);
+    autoIndent = addCheckGrid(GTK_GRID(scriptChecks), "Auto indenting", options.autoindenting, 1);
+    smartHomeEnd = addCheckGrid(GTK_GRID(scriptChecks), "Smart Home/End", options.smarthomeend, 2);
+    brackets = addCheckGrid(GTK_GRID(scriptChecks), "Show brackets", options.showbrackets, 3);
+    lineNumbers = addCheckGrid(GTK_GRID(scriptChecks), "Show line numbers", options.showlinenumbers, 4);
+    minimap = addCheckGrid(GTK_GRID(scriptChecks), "Show minimap", options.minimap, 5);
+    lsp = addCheckGrid(GTK_GRID(scriptChecks), "LSP / autocomplete", options.lsp, 6);
+    scriptDiagnostics = addCheckGrid(GTK_GRID(scriptChecks), "Script analysis", options.scriptdiagnostics, 7);
+    gtk_box_pack_start(GTK_BOX(script), scriptChecks, false, false, 0);
     GtkWidget* scriptGrid = gtk_grid_new();
     gtk_grid_set_row_spacing(GTK_GRID(scriptGrid), 5);
     gtk_grid_set_column_spacing(GTK_GRID(scriptGrid), 5);
@@ -138,11 +169,15 @@ TOptionsWindow::TOptionsWindow(RC::RCOptions& nextOptions, const std::filesystem
     gtk_grid_set_column_spacing(GTK_GRID(formatterGrid), 5);
     formatIndentWidth = addEntry(GTK_GRID(formatterGrid), "Indent width:", std::to_string(options.formatindentwidth), 0);
     gtk_box_pack_start(GTK_BOX(formatter), formatterGrid, false, false, 4);
-    formatUseTabs = addCheck(GTK_BOX(formatter), "Use tabs when formatting", options.formatusetabs);
-    formatTrimTrailing = addCheck(GTK_BOX(formatter), "Trim trailing whitespace when formatting", options.formattrimtrailing);
-    removeLineComments = addCheck(GTK_BOX(formatter), "Remove line comments", options.removelinecomments);
-    removeBlockComments = addCheck(GTK_BOX(formatter), "Remove block comments", options.removeblockcomments);
-    preserveClientside = addCheck(GTK_BOX(formatter), "Preserve standalone //#CLIENTSIDE", options.preserveclientside);
+    GtkWidget* formatterChecks = gtk_grid_new();
+    gtk_grid_set_row_spacing(GTK_GRID(formatterChecks), 2);
+    gtk_grid_set_column_spacing(GTK_GRID(formatterChecks), 8);
+    formatUseTabs = addCheckGrid(GTK_GRID(formatterChecks), "Use tabs when formatting", options.formatusetabs, 0);
+    formatTrimTrailing = addCheckGrid(GTK_GRID(formatterChecks), "Trim trailing whitespace when formatting", options.formattrimtrailing, 1);
+    removeLineComments = addCheckGrid(GTK_GRID(formatterChecks), "Remove line comments", options.removelinecomments, 2);
+    removeBlockComments = addCheckGrid(GTK_GRID(formatterChecks), "Remove block comments", options.removeblockcomments, 3);
+    preserveClientside = addCheckGrid(GTK_GRID(formatterChecks), "Preserve standalone //#CLIENTSIDE", options.preserveclientside, 4);
+    gtk_box_pack_start(GTK_BOX(formatter), formatterChecks, false, false, 0);
     GtkWidget* customization = gtk_box_new(GTK_ORIENTATION_VERTICAL, 5);
     gtk_container_set_border_width(GTK_CONTAINER(customization), 5);
     GtkWidget* customizationGrid = gtk_grid_new();
@@ -162,6 +197,7 @@ TOptionsWindow::TOptionsWindow(RC::RCOptions& nextOptions, const std::filesystem
     GtkWidget* backgroundBrowse = gtk_button_new_with_label("Browse");
     gtk_grid_attach(GTK_GRID(customizationGrid), backgroundBrowse, 2, 10, 1, 1);
     theme = gtk_combo_box_text_new();
+    gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(theme), "system", "System (OS theme)");
     gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(theme), "dark", "Dark");
     gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(theme), "dracula", "Dracula");
     gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(theme), "material", "Material");
@@ -181,22 +217,30 @@ TOptionsWindow::TOptionsWindow(RC::RCOptions& nextOptions, const std::filesystem
     syncColors = addCheck(GTK_BOX(customization), "Sync colors with theme", options.synccolors);
     GtkWidget* mcp = gtk_box_new(GTK_ORIENTATION_VERTICAL, 5);
     gtk_container_set_border_width(GTK_CONTAINER(mcp), 5);
-    mcpEnabled = addCheck(GTK_BOX(mcp), "Enable local MCP integration", options.mcpenabled);
-    mcpRead = addCheck(GTK_BOX(mcp), "Allow read-only tools", options.mcpread);
-    mcpWrite = addCheck(GTK_BOX(mcp), "Allow file and script writes", options.mcpwrite);
-    mcpServer = addCheck(GTK_BOX(mcp), "Allow server and game mutations", options.mcpserver);
-    mcpLogin = addCheck(GTK_BOX(mcp), "Allow login and connection control", options.mcplogin);
-    mcpWindows = addCheck(GTK_BOX(mcp), "Allow window and UI control", options.mcpwindows);
-    mcpAdmin = addCheck(GTK_BOX(mcp), "Allow administrative actions", options.mcpadmin);
-    mcpFullControl = addCheck(GTK_BOX(mcp), "Full native RC control", options.mcpfullcontrol);
-    mcpApprove = addCheck(GTK_BOX(mcp), "Require approval for mutations", options.mcpapprove);
-    mcpAudit = addCheck(GTK_BOX(mcp), "Write MCP audit log", options.mcpaudit);
+    GtkWidget* mcpChecks = gtk_grid_new();
+    gtk_grid_set_row_spacing(GTK_GRID(mcpChecks), 2);
+    gtk_grid_set_column_spacing(GTK_GRID(mcpChecks), 8);
+    mcpEnabled = addCheckGrid(GTK_GRID(mcpChecks), "Enable local MCP integration", options.mcpenabled, 0);
+    mcpRead = addCheckGrid(GTK_GRID(mcpChecks), "Allow read-only tools", options.mcpread, 1);
+    mcpWrite = addCheckGrid(GTK_GRID(mcpChecks), "Allow file and script writes", options.mcpwrite, 2);
+    mcpServer = addCheckGrid(GTK_GRID(mcpChecks), "Allow server and game mutations", options.mcpserver, 3);
+    mcpLogin = addCheckGrid(GTK_GRID(mcpChecks), "Allow login and connection control", options.mcplogin, 4);
+    mcpWindows = addCheckGrid(GTK_GRID(mcpChecks), "Allow window and UI control", options.mcpwindows, 5);
+    mcpAdmin = addCheckGrid(GTK_GRID(mcpChecks), "Allow administrative actions", options.mcpadmin, 6);
+    mcpFullControl = addCheckGrid(GTK_GRID(mcpChecks), "Full native RC control", options.mcpfullcontrol, 7);
+    mcpApprove = addCheckGrid(GTK_GRID(mcpChecks), "Require approval for mutations", options.mcpapprove, 8);
+    mcpAudit = addCheckGrid(GTK_GRID(mcpChecks), "Write MCP audit log", options.mcpaudit, 9);
+    gtk_box_pack_start(GTK_BOX(mcp), mcpChecks, false, false, 0);
     GtkWidget* approvalFrame = gtk_frame_new("Saved script approvals");
     GtkWidget* approvalBox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 3);
     gtk_container_set_border_width(GTK_CONTAINER(approvalBox), 5);
-    mcpApproveWeapon = addCheck(GTK_BOX(approvalBox), "Allow Weapon script edits and saves without prompting", options.mcpapproveweapon);
-    mcpApproveClass = addCheck(GTK_BOX(approvalBox), "Allow Class script edits and saves without prompting", options.mcpapproveclass);
-    mcpApproveNpc = addCheck(GTK_BOX(approvalBox), "Allow NPC script edits and saves without prompting", options.mcpapprovenpc);
+    GtkWidget* approvalChecks = gtk_grid_new();
+    gtk_grid_set_row_spacing(GTK_GRID(approvalChecks), 2);
+    gtk_grid_set_column_spacing(GTK_GRID(approvalChecks), 8);
+    mcpApproveWeapon = addCheckGrid(GTK_GRID(approvalChecks), "Allow Weapon script edits and saves without prompting", options.mcpapproveweapon, 0);
+    mcpApproveClass = addCheckGrid(GTK_GRID(approvalChecks), "Allow Class script edits and saves without prompting", options.mcpapproveclass, 1);
+    mcpApproveNpc = addCheckGrid(GTK_GRID(approvalChecks), "Allow NPC script edits and saves without prompting", options.mcpapprovenpc, 2);
+    gtk_box_pack_start(GTK_BOX(approvalBox), approvalChecks, false, false, 0);
     GtkWidget* resetMcpApprovals = gtk_button_new_with_label("Reset saved script approvals");
     gtk_box_pack_start(GTK_BOX(approvalBox), resetMcpApprovals, false, false, 2);
     gtk_container_add(GTK_CONTAINER(approvalFrame), approvalBox);
@@ -225,6 +269,7 @@ TOptionsWindow::TOptionsWindow(RC::RCOptions& nextOptions, const std::filesystem
     gtk_notebook_append_page(GTK_NOTEBOOK(notebook), formatter, gtk_label_new("Formatter "));
     gtk_notebook_append_page(GTK_NOTEBOOK(notebook), customization, gtk_label_new("Customization "));
     gtk_notebook_append_page(GTK_NOTEBOOK(notebook), mcp, gtk_label_new("MCP"));
+    g_signal_connect(notebook, "switch-page", G_CALLBACK(onPageChanged), this);
     gtk_box_pack_start(GTK_BOX(root), notebook, true, true, 0);
     GtkCssProvider* tabs = gtk_css_provider_new();
     gtk_css_provider_load_from_data(tabs, "#OptionsWindow notebook > header { border-bottom: 1px solid #777777; } #OptionsWindow notebook > header > tabs > tab { border: 1px solid #777777; border-bottom: 0; border-radius: 4px 4px 0 0; margin-right: 3px; padding: 4px 8px; } #OptionsWindow notebook > header > tabs > tab:checked { border-color: #aaaaaa; margin-bottom: -1px; } #OptionsWindow notebook > stack { border: 1px solid #777777; border-top: 0; }", -1, nullptr);
@@ -233,6 +278,8 @@ TOptionsWindow::TOptionsWindow(RC::RCOptions& nextOptions, const std::filesystem
     GtkWidget* buttons = gtk_button_box_new(GTK_ORIENTATION_HORIZONTAL);
     gtk_button_box_set_layout(GTK_BUTTON_BOX(buttons), GTK_BUTTONBOX_END);
     GtkWidget* close = gtk_button_new_with_label("Close");
+    gtk_button_set_image(GTK_BUTTON(close), gtk_image_new_from_icon_name("window-close-symbolic", GTK_ICON_SIZE_BUTTON));
+    gtk_button_set_always_show_image(GTK_BUTTON(close), true);
     gtk_container_add(GTK_CONTAINER(buttons), close);
     gtk_box_pack_start(GTK_BOX(root), buttons, false, false, 5);
     g_signal_connect(close, "clicked", G_CALLBACK(onClose), this);
@@ -250,6 +297,7 @@ TOptionsWindow::TOptionsWindow(RC::RCOptions& nextOptions, const std::filesystem
     g_signal_connect(viewMcpAudit, "clicked", G_CALLBACK(+[](GtkButton*, gpointer data) {
         TOptionsWindow* optionsWindow = static_cast<TOptionsWindow*>(data);
         GtkWidget* dialog = gtk_dialog_new_with_buttons("MCP Audit Log", GTK_WINDOW(optionsWindow->window), GTK_DIALOG_MODAL, "Close", GTK_RESPONSE_CLOSE, nullptr);
+        gtk_window_set_position(GTK_WINDOW(dialog), GTK_WIN_POS_CENTER_ON_PARENT);
         gtk_window_set_default_size(GTK_WINDOW(dialog), 700, 420);
         GtkWidget* scrolled = gtk_scrolled_window_new(nullptr, nullptr);
         GtkWidget* view = gtk_text_view_new();
@@ -278,7 +326,7 @@ TOptionsWindow::TOptionsWindow(RC::RCOptions& nextOptions, const std::filesystem
     }), this);
     g_signal_connect(window, "delete-event", G_CALLBACK(onDelete), this);
 }
-TOptionsWindow::~TOptionsWindow() { if (window != nullptr) gtk_widget_destroy(window); }
+TOptionsWindow::~TOptionsWindow() { if (animationSource != 0) g_source_remove(animationSource); if (window != nullptr) gtk_widget_destroy(window); }
 void TOptionsWindow::open() {
     RC::RCOptions persisted = options;
     RC::loadRCOptions(persisted, applicationDirectory);
@@ -287,9 +335,11 @@ void TOptionsWindow::open() {
     gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(mcpApproveClass), options.mcpapproveclass);
     gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(mcpApproveNpc), options.mcpapprovenpc);
     gtk_widget_show_all(window);
+    resizeToPage(gtk_notebook_get_nth_page(GTK_NOTEBOOK(notebook), gtk_notebook_get_current_page(GTK_NOTEBOOK(notebook))));
     gtk_window_present(GTK_WINDOW(window));
 }
 void TOptionsWindow::onClose(GtkButton*, gpointer data) { TOptionsWindow* window = static_cast<TOptionsWindow*>(data); window->save(); gtk_widget_hide(window->window); }
+void TOptionsWindow::onPageChanged(GtkNotebook*, GtkWidget* page, guint, gpointer data) { static_cast<TOptionsWindow*>(data)->resizeToPage(page); }
 void TOptionsWindow::onThemeChanged(GtkComboBox*, gpointer data) { static_cast<TOptionsWindow*>(data)->applyThemeSelection(); }
 void TOptionsWindow::onSyntaxThemeChanged(GtkComboBox*, gpointer data) { static_cast<TOptionsWindow*>(data)->applySyntaxThemeSelection(); }
 void TOptionsWindow::onSyncSyntaxThemeChanged(GtkToggleButton*, gpointer data) { static_cast<TOptionsWindow*>(data)->applySyntaxThemeSync(); }
@@ -346,11 +396,13 @@ void TOptionsWindow::save() {
     options.nickname = gtk_entry_get_text(GTK_ENTRY(nickname)); options.downloadfolder = gtk_entry_get_text(GTK_ENTRY(downloadFolder)); options.chatlogfile = gtk_entry_get_text(GTK_ENTRY(logFile)); options.chatfontsize = std::clamp(std::atoi(gtk_entry_get_text(GTK_ENTRY(chatFontSize))), 1, 1000);
     if (const char* selectedTheme = gtk_combo_box_get_active_id(GTK_COMBO_BOX(theme))) options.theme = selectedTheme;
     if (const char* selectedSyntaxTheme = gtk_combo_box_get_active_id(GTK_COMBO_BOX(syntaxTheme))) options.syntaxtheme = selectedSyntaxTheme;
-    options.darkmode = options.theme != "light"; options.syncsyntaxtheme = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(syncSyntaxTheme)); options.synccolors = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(syncColors));
+    options.darkmode = options.theme == "system" ? options.darkmode : options.theme != "light"; options.syncsyntaxtheme = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(syncSyntaxTheme)); options.synccolors = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(syncColors));
     if (options.syncsyntaxtheme) {
-        options.syntaxtheme = options.theme == "dark" ? "language-spec" : options.theme;
+        options.syntaxtheme = options.theme == "dark" || options.theme == "system" ? "language-spec" : options.theme;
         gtk_combo_box_set_active_id(GTK_COMBO_BOX(syntaxTheme), options.syntaxtheme.c_str());
     }
+    options.afkenabled = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(afkEnabled)); const char* afkId = gtk_combo_box_get_active_id(GTK_COMBO_BOX(afkTimeout)); options.afktimeout = afkId == nullptr ? 15 : std::clamp(std::atoi(afkId), 1, 1440);
+    options.optionsanimations = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(optionAnimations));
     options.nomassmessages = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(ignoreMass)); options.nomassifclienton = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(ignoreMassClient)); options.attachaway = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(attachAway)); options.globalpms = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(globalPMs)); options.buddytracking = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(buddies)); options.separatenc = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(separateNC)); options.rctimestamps = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(timestamps)); options.newpmalerts = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(pmAlerts)); options.notificationsounds = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(notificationSounds)); options.logrcchat = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(logChat)); options.separatefindresults = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(separateFindResults)); options.syntaxhighlighting = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(syntax)); options.autoindenting = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(autoIndent)); options.smarthomeend = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(smartHomeEnd)); options.showbrackets = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(brackets)); options.showlinenumbers = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(lineNumbers)); options.minimap = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(minimap)); options.lsp = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(lsp)); options.scriptdiagnostics = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(scriptDiagnostics)); options.scripttabwidth = std::clamp(std::atoi(gtk_entry_get_text(GTK_ENTRY(scriptTabWidth))), 1, 1000); options.scriptusetabs = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(scriptUseTabs)); options.scriptfontsize = std::clamp(std::atoi(gtk_entry_get_text(GTK_ENTRY(scriptFontSize))), 1, 1000); options.autocompletesource = gtk_entry_get_text(GTK_ENTRY(autocompleteSource));
     options.formatindentwidth = std::clamp(std::atoi(gtk_entry_get_text(GTK_ENTRY(formatIndentWidth))), 1, 16); options.formatusetabs = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(formatUseTabs)); options.formattrimtrailing = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(formatTrimTrailing)); options.removelinecomments = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(removeLineComments)); options.removeblockcomments = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(removeBlockComments)); options.preserveclientside = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(preserveClientside));
     options.coloredit = colorValue(chatbarTextColor); options.coloreditback = colorValue(chatbarBackgroundColor); options.colorchat = colorValue(chatTextColor); options.colorchatbold = colorValue(chatBoldColor); options.colorchatback = colorValue(chatBackgroundColor); options.colorlabel = colorValue(labelColor); options.colorlabelback = colorValue(labelBackgroundColor); options.labelservers = gtk_entry_get_text(GTK_ENTRY(serverLabel)); options.labelplayers = gtk_entry_get_text(GTK_ENTRY(playersLabel)); options.labelnpcserver = gtk_entry_get_text(GTK_ENTRY(npcServerLabel)); options.background = gtk_entry_get_text(GTK_ENTRY(backgroundImage));
@@ -362,6 +414,28 @@ void TOptionsWindow::save() {
     RC::saveRCOptions(options, applicationDirectory);
     onSaved(previous);
     saving = false;
+}
+
+void TOptionsWindow::resizeToPage(GtkWidget* page) {
+    if (page == nullptr || window == nullptr) return;
+    GtkRequisition minimum{};
+    GtkRequisition natural{};
+    gtk_widget_get_preferred_size(page, &minimum, &natural);
+    animationTargetHeight = std::clamp(natural.height + 115, 260, 760);
+    if (animationSource != 0) { g_source_remove(animationSource); animationSource = 0; }
+    if (!options.optionsanimations) { gtk_window_resize(GTK_WINDOW(window), 460, animationTargetHeight); return; }
+    animationSource = g_timeout_add(15, animateResize, this);
+}
+
+gboolean TOptionsWindow::animateResize(gpointer data) {
+    TOptionsWindow* optionsWindow = static_cast<TOptionsWindow*>(data);
+    int width = 460;
+    int height = 400;
+    gtk_window_get_size(GTK_WINDOW(optionsWindow->window), &width, &height);
+    const int difference = optionsWindow->animationTargetHeight - height;
+    if (std::abs(difference) <= 2) { gtk_window_resize(GTK_WINDOW(optionsWindow->window), width, optionsWindow->animationTargetHeight); optionsWindow->animationSource = 0; return G_SOURCE_REMOVE; }
+    gtk_window_resize(GTK_WINDOW(optionsWindow->window), width, height + (difference > 0 ? std::max(2, difference / 4) : std::min(-2, difference / 4)));
+    return G_SOURCE_CONTINUE;
 }
 void TOptionsWindow::applySyntaxThemeSelection() {
     const char* selected = gtk_combo_box_get_active_id(GTK_COMBO_BOX(syntaxTheme));
@@ -375,7 +449,7 @@ void TOptionsWindow::applySyntaxThemeSync() {
     options.syncsyntaxtheme = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(syncSyntaxTheme));
     gtk_widget_set_sensitive(syntaxTheme, !options.syncsyntaxtheme);
     if (options.syncsyntaxtheme) {
-        options.syntaxtheme = options.theme == "dark" ? "language-spec" : options.theme;
+        options.syntaxtheme = options.theme == "dark" || options.theme == "system" ? "language-spec" : options.theme;
         gtk_combo_box_set_active_id(GTK_COMBO_BOX(syntaxTheme), options.syntaxtheme.c_str());
         setRemoteControlSyntaxTheme(options.syntaxtheme);
         refreshGScriptEditorTheme();
@@ -387,9 +461,9 @@ void TOptionsWindow::applyThemeSelection() {
     if (selectedTheme == nullptr || options.theme == selectedTheme) return;
     const RC::RCOptions previous = options;
     options.theme = selectedTheme;
-    options.darkmode = options.theme != "light";
+    options.darkmode = options.theme == "system" ? options.darkmode : options.theme != "light";
     if (gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(syncSyntaxTheme))) {
-        options.syntaxtheme = options.theme == "dark" ? "language-spec" : options.theme;
+        options.syntaxtheme = options.theme == "dark" || options.theme == "system" ? "language-spec" : options.theme;
         gtk_combo_box_set_active_id(GTK_COMBO_BOX(syntaxTheme), options.syntaxtheme.c_str());
         setRemoteControlSyntaxTheme(options.syntaxtheme);
     }

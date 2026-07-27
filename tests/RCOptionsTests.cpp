@@ -24,11 +24,14 @@ int main() {
     assert(options.labelplayers == "Players:");
     const std::filesystem::path saved = std::filesystem::current_path() / "mcp-options-test";
     options.mcpapproveweapon = true; options.mcpapproveclass = true; options.mcpapprovenpc = true; options.mcpserver = true; options.mcplogin = true; options.mcpwindows = true; options.mcpfullcontrol = true;
+    options.afkenabled = true; options.afktimeout = 30; options.optionsanimations = false;
     RC::saveRCOptions(options, saved);
     RC::RCOptions restored;
     RC::loadRCOptions(restored, saved);
     assert(restored.mcpapproveweapon && restored.mcpapproveclass && restored.mcpapprovenpc);
     assert(restored.mcpserver && restored.mcplogin && restored.mcpwindows && restored.mcpfullcontrol);
+    assert(restored.afkenabled && restored.afktimeout == 30);
+    assert(!restored.optionsanimations);
     std::filesystem::remove_all(saved);
     return 0;
 }

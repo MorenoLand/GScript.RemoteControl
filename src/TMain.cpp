@@ -276,6 +276,12 @@ namespace {
         }
         g_object_set_data(G_OBJECT(gtk_settings_get_default()), "remote-control-dark-mode", GINT_TO_POINTER(enabled));
         g_object_set_data_full(G_OBJECT(gtk_settings_get_default()), "remote-control-theme", g_strdup(theme.c_str()), g_free);
+        if (theme == "system") {
+            gboolean preferDark = false;
+            g_object_get(gtk_settings_get_default(), "gtk-application-prefer-dark-theme", &preferDark, nullptr);
+            g_object_set_data(G_OBJECT(gtk_settings_get_default()), "remote-control-dark-mode", GINT_TO_POINTER(preferDark != FALSE));
+            return;
+        }
         if (!enabled) return;
         GtkCssProvider* provider = gtk_css_provider_new();
         const bool dracula = theme == "dracula";
@@ -411,7 +417,8 @@ int main(int argc, char** argv) {
     switchServer = [&] {
         serverList.reopen();
     };
-    TStartFrame frame(options, applicationDirectory, [&](const std::string& account, const std::string& password, const std::string& nickname) { serverList.open(account, password, nickname); }, [&] { serverList.openListServerSettings(); }, [&] { return serverList.currentListServer(); });
+    TStartFrame frame(options, applicationDirectory, [&](std::uint64_t accountId, const std::string& account, const std::string& password, const std::string& nickname, const std::string& listServer) { serverList.open(accountId, account, password, nickname, listServer); }, [&] { serverList.openListServerSettings(); }, [&] { return serverList.currentListServer(); });
+    serverList.setLoginParent(frame.windowHandle());
     startFrame = &frame;
     trayStartFrame = startFrame;
     trayServerListOpen = switchServer;

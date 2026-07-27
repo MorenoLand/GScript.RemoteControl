@@ -1,4 +1,5 @@
 #include "TAccountsWindow.h"
+#include "TButtonIcons.h"
 #include "TTreeSearch.h"
 
 #include <grclib.h>
@@ -60,6 +61,8 @@ TAccountsWindow::TAccountsWindow() {
     gtk_button_box_set_layout(GTK_BUTTON_BOX(queryButtons), GTK_BUTTONBOX_END);
     GtkWidget* getList = gtk_button_new_with_label("Get List");
     GtkWidget* queryClose = gtk_button_new_with_label("Close");
+    applyGtkButtonIcon(getList, GTK_STOCK_REFRESH);
+    applyGtkButtonIcon(queryClose, GTK_STOCK_CLOSE);
     gtk_container_add(GTK_CONTAINER(queryButtons), getList);
     gtk_container_add(GTK_CONTAINER(queryButtons), queryClose);
     gtk_box_pack_start(GTK_BOX(queryRoot), queryButtons, false, false, 0);
@@ -97,6 +100,9 @@ TAccountsWindow::TAccountsWindow() {
     GtkWidget* getAccounts = gtk_button_new_with_label("Get Accounts");
     GtkWidget* add = gtk_button_new_with_label("Add");
     GtkWidget* listClose = gtk_button_new_with_label("Close");
+    applyGtkButtonIcon(getAccounts, GTK_STOCK_REFRESH);
+    applyGtkButtonIcon(add, GTK_STOCK_ADD);
+    applyGtkButtonIcon(listClose, GTK_STOCK_CLOSE);
     gtk_widget_set_size_request(getAccounts, 80, 24);
     gtk_widget_set_size_request(add, 80, 24);
     gtk_widget_set_size_request(listClose, 80, 24);
@@ -161,7 +167,9 @@ TAccountsWindow::TAccountsWindow() {
     gtk_container_set_border_width(GTK_CONTAINER(editorButtons), 5);
     gtk_button_box_set_layout(GTK_BUTTON_BOX(editorButtons), GTK_BUTTONBOX_END);
     GtkWidget* apply = gtk_button_new_with_label("Apply");
-    GtkWidget* editorCancel = gtk_button_new_with_label("Cancel");
+    GtkWidget* editorCancel = gtk_button_new_with_label("Close");
+    applyGtkButtonIcon(apply, GTK_STOCK_APPLY);
+    applyGtkButtonIcon(editorCancel, GTK_STOCK_CLOSE);
     gtk_container_add(GTK_CONTAINER(editorButtons), apply);
     gtk_container_add(GTK_CONTAINER(editorButtons), editorCancel);
     gtk_box_pack_start(GTK_BOX(editorRoot), editorButtons, false, false, 0);
@@ -252,6 +260,7 @@ void TAccountsWindow::onReset(GtkMenuItem*, gpointer data) {
     const std::string account = window->selectedAccount();
     if (account.empty()) return;
     GtkWidget* dialog = gtk_message_dialog_new(GTK_WINDOW(window->listWindow), GTK_DIALOG_MODAL, GTK_MESSAGE_QUESTION, GTK_BUTTONS_OK_CANCEL, "Do you really want to reset the attributes of %s?", account.c_str());
+    gtk_window_set_position(GTK_WINDOW(dialog), GTK_WIN_POS_CENTER_ON_PARENT);
     if (gtk_dialog_run(GTK_DIALOG(dialog)) == GTK_RESPONSE_OK) rc_reset_player(window->connection, account.c_str());
     gtk_widget_destroy(dialog);
 }
@@ -260,6 +269,7 @@ void TAccountsWindow::onDeleteAccount(GtkMenuItem*, gpointer data) {
     const std::string account = window->selectedAccount();
     if (account.empty()) return;
     GtkWidget* dialog = gtk_message_dialog_new(GTK_WINDOW(window->listWindow), GTK_DIALOG_MODAL, GTK_MESSAGE_QUESTION, GTK_BUTTONS_OK_CANCEL, "Do you really want to delete the account %s?", account.c_str());
+    gtk_window_set_position(GTK_WINDOW(dialog), GTK_WIN_POS_CENTER_ON_PARENT);
     if (gtk_dialog_run(GTK_DIALOG(dialog)) == GTK_RESPONSE_OK) rc_send_raw_packet(window->connection, PLI_RC_ACCOUNTDEL, account.c_str(), static_cast<int>(account.size()));
     gtk_widget_destroy(dialog);
 }

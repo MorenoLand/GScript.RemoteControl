@@ -7,10 +7,11 @@
 #include <functional>
 #include <gtk/gtk.h>
 #include <string>
+#include <cstdint>
 
 class TStartFrame {
 public:
-    using ConnectCallback = std::function<void(const std::string&, const std::string&, const std::string&)>;
+    using ConnectCallback = std::function<void(std::uint64_t, const std::string&, const std::string&, const std::string&, const std::string&)>;
     using ListServerSettingsCallback = std::function<void()>;
     using ListServerEndpointCallback = std::function<std::string()>;
 
@@ -20,11 +21,13 @@ public:
     void show();
     void toggleVisibility();
     GdkWindow* nativeWindow() const { return window != nullptr ? gtk_widget_get_window(window) : nullptr; }
+    GtkWindow* windowHandle() const { return GTK_WINDOW(window); }
     bool mcpVisible() const;
     std::string mcpAccount() const;
     std::string mcpNickname() const;
     bool mcpHasPassword() const;
     bool mcpSubmit(const std::string& account, const std::string& nickname, std::string& error);
+    bool editAccount(const std::string& accountName, GtkWindow* parent = nullptr, int accountIndex = -1);
 
 private:
     static void onConnect(GtkButton*, gpointer data);
@@ -44,9 +47,9 @@ private:
 
     void connect();
     void selectAccount(const std::string& accountName);
+    void updateAccountTitle(int accountIndex);
     void refreshAccountMenu();
     void openAccountManager();
-    bool editAccount(const std::string& accountName);
     std::string getText(GtkWidget* widget) const;
 
     RC::RCOptions& options;
@@ -63,6 +66,9 @@ private:
     GtkWidget* accountManageButton = nullptr;
     bool accountHovered = false;
     bool accountManageHovered = false;
+    bool accountSelectionInProgress = false;
+    int selectedAccountIndex = -1;
+    int requestedAccountIndex = -1;
     GtkWidget* passwordField = nullptr;
     GtkWidget* passwordCheck = nullptr;
     GtkWidget* graphicsCheck = nullptr;
