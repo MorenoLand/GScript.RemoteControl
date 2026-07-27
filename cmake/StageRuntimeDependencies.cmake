@@ -1,21 +1,11 @@
-file(GLOB openSslRuntimeFiles "${REMOTE_CONTROL_MINGW_RUNTIME_DIRECTORY}/libcrypto*.dll" "${REMOTE_CONTROL_MINGW_RUNTIME_DIRECTORY}/libssl*.dll")
-foreach(openSslRuntimeFile IN LISTS openSslRuntimeFiles)
-    get_filename_component(openSslRuntimeName "${openSslRuntimeFile}" NAME)
-    file(REMOVE "${REMOTE_CONTROL_OUTPUT_DIRECTORY}/${openSslRuntimeName}")
-endforeach()
-
-file(GLOB webpRuntimeFiles "${REMOTE_CONTROL_OUTPUT_DIRECTORY}/libwebp*.dll" "${REMOTE_CONTROL_OUTPUT_DIRECTORY}/libsharpyuv*.dll")
-foreach(webpRuntimeFile IN LISTS webpRuntimeFiles)
-    file(REMOVE "${webpRuntimeFile}")
-endforeach()
-
 file(GET_RUNTIME_DEPENDENCIES
     EXECUTABLES "${REMOTE_CONTROL_EXECUTABLE}"
     DIRECTORIES "${REMOTE_CONTROL_MINGW_RUNTIME_DIRECTORY}"
     PRE_EXCLUDE_REGEXES "api-ms-.*" "ext-ms-.*" "Azure.*" "HvsiFileTrust.*" "PdmUtilities.*" "wpaxholder.*" "WTDSENSOR\\.dll" "wtdccm\\.dll"
     POST_EXCLUDE_REGEXES ".*[Ww]indows[/\\]System32[/\\].*"
     RESOLVED_DEPENDENCIES_VAR runtimeDependencies
-    UNRESOLVED_DEPENDENCIES_VAR unresolvedDependencies)
+    UNRESOLVED_DEPENDENCIES_VAR unresolvedDependencies
+    CONFLICTING_DEPENDENCIES_PREFIX runtimeConflicts)
 
 foreach(unresolvedDependency IN LISTS unresolvedDependencies)
     if(NOT unresolvedDependency MATCHES "^(AzureAttestManager|AzureAttestNormal|HvsiFileTrust|PdmUtilities|wpaxholder|[Ww][Tt][Dd][Ss][Ee][Nn][Ss][Oo][Rr]|[Ww][Tt][Dd][Cc][Cc][Mm])\\.dll$")
@@ -28,10 +18,16 @@ if(requiredUnresolvedDependencies)
 endif()
 
 foreach(runtimeDependency IN LISTS runtimeDependencies)
-    file(TO_CMAKE_PATH "${REMOTE_CONTROL_MINGW_RUNTIME_DIRECTORY}" normalizedRuntimeDirectory)
-    file(TO_CMAKE_PATH "${runtimeDependency}" normalizedRuntimeDependency)
-    string(FIND "${normalizedRuntimeDependency}" "${normalizedRuntimeDirectory}/" runtimeDependencyPrefix)
-    if(runtimeDependencyPrefix EQUAL 0)
-        file(COPY "${runtimeDependency}" DESTINATION "${REMOTE_CONTROL_OUTPUT_DIRECTORY}")
+    get_filename_component(runtimeDependencyName "${runtimeDependency}" NAME)
+    set(runtimeDependencySource "${REMOTE_CONTROL_MINGW_RUNTIME_DIRECTORY}/${runtimeDependencyName}")
+    if(EXISTS "${runtimeDependencySource}")
+        file(COPY_FILE "${runtimeDependencySource}" "${REMOTE_CONTROL_OUTPUT_DIRECTORY}/${runtimeDependencyName}" ONLY_IF_DIFFERENT)
+    endif()
+endforeach()
+
+foreach(runtimeConflict IN LISTS runtimeConflicts_FILENAMES)
+    set(runtimeConflictSource "${REMOTE_CONTROL_MINGW_RUNTIME_DIRECTORY}/${runtimeConflict}")
+    if(EXISTS "${runtimeConflictSource}")
+        file(COPY_FILE "${runtimeConflictSource}" "${REMOTE_CONTROL_OUTPUT_DIRECTORY}/${runtimeConflict}" ONLY_IF_DIFFERENT)
     endif()
 endforeach()
