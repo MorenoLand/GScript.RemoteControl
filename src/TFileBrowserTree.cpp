@@ -1928,7 +1928,7 @@ void TFileBrowserTree::showTextEditor(const char* path, const void* content, int
     setGScriptEditorConnection(editor, connection);
     addEditorFindButton(dialog, editor);
     gtk_text_view_set_monospace(GTK_TEXT_VIEW(editor), true);
-    gtk_text_buffer_set_text(GTK_TEXT_BUFFER(sourceBuffer), static_cast<const char*>(content), length);
+    setGScriptEditorContent(GTK_TEXT_BUFFER(sourceBuffer), static_cast<const char*>(content), length);
     g_object_unref(sourceBuffer);
     GtkWidget* scrolled = gtk_scrolled_window_new(nullptr, nullptr);
     gtk_container_add(GTK_CONTAINER(scrolled), editor);

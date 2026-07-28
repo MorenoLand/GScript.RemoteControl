@@ -254,7 +254,7 @@ void TNPCList::showScriptEditor(const char* name, int id, const char* script) {
     setGScriptEditorConnection(editor, connection);
     addEditorFindButton(dialog, editor);
     gtk_text_view_set_monospace(GTK_TEXT_VIEW(editor), true);
-    gtk_text_buffer_set_text(GTK_TEXT_BUFFER(sourceBuffer), script, -1);
+    setGScriptEditorContent(GTK_TEXT_BUFFER(sourceBuffer), script);
     trackScriptEditor(dialog, GTK_TEXT_BUFFER(sourceBuffer), "NPC: " + std::string(name), script);
     const std::string backupName = name != nullptr && *name != '\0' ? "npc" + std::string(name) : std::to_string(id);
     backupEditorText("npcscript", backupName, script, false);

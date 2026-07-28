@@ -1418,6 +1418,16 @@ void configureGScriptEditor(GtkWidget* editor, bool script) {
     }), nullptr);
 }
 
+void setGScriptEditorContent(GtkTextBuffer* buffer, const char* content, gint length) {
+    if (buffer == nullptr) return;
+    gboolean undoEnabled = TRUE;
+    g_object_get(G_OBJECT(buffer), "enable-undo", &undoEnabled, nullptr);
+    g_object_set(G_OBJECT(buffer), "enable-undo", FALSE, nullptr);
+    gtk_text_buffer_set_text(buffer, content == nullptr ? "" : content, length);
+    gtk_text_buffer_set_modified(buffer, FALSE);
+    g_object_set(G_OBJECT(buffer), "enable-undo", undoEnabled, nullptr);
+}
+
 bool consumeEditorCtrlS(GtkWidget* editor, GdkEventKey* event) {
     if ((event->state & GDK_CONTROL_MASK) == 0 || (event->keyval != GDK_KEY_s && event->keyval != GDK_KEY_S)) return false;
     if (GPOINTER_TO_INT(g_object_get_data(G_OBJECT(editor), "remote-control-ctrl-s-down")) != 0) return false;

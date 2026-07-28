@@ -191,7 +191,7 @@ void TScriptList::showEditor(const char* name, const char* script) {
     setGScriptEditorConnection(editor, connection);
     addEditorFindButton(dialog, editor);
     gtk_text_view_set_monospace(GTK_TEXT_VIEW(editor), true);
-    gtk_text_buffer_set_text(GTK_TEXT_BUFFER(sourceBuffer), script, -1);
+    setGScriptEditorContent(GTK_TEXT_BUFFER(sourceBuffer), script);
     trackScriptEditor(dialog, GTK_TEXT_BUFFER(sourceBuffer), (type == "weapons" ? "Weapon/GUI Script: " : "Class: ") + std::string(name), script);
     backupEditorText(type == "weapons" ? "weapon" : "class", name, script, false);
     g_object_unref(sourceBuffer);
