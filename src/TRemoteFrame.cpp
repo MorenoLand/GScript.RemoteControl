@@ -285,7 +285,14 @@ TRemoteFrame::TRemoteFrame(const RC::RCOptions& nextOptions, const std::filesyst
         gtk_widget_set_size_request(npcServerLabel, 500, -1);
         gtk_label_set_xalign(GTK_LABEL(npcServerLabel), 0.5f);
         gtk_fixed_move(GTK_FIXED(fixed), npcServerLabel, 0, 130);
-        for (GtkWidget* shadow : npcServerLabelShadows) if (shadow != nullptr) { gtk_widget_set_size_request(shadow, 500, -1); gtk_label_set_xalign(GTK_LABEL(shadow), 0.5f); gtk_fixed_move(GTK_FIXED(fixed), shadow, 0, 130); }
+        const int npcShadowOffsets[][2] = {{-1, -1}, {0, -1}, {1, -1}, {-1, 0}, {1, 0}, {-1, 1}, {0, 1}, {1, 1}};
+        for (int index = 0; index < static_cast<int>(npcServerLabelShadows.size()); ++index) {
+            GtkWidget* shadow = npcServerLabelShadows[index];
+            if (shadow == nullptr) continue;
+            gtk_widget_set_size_request(shadow, 500, -1);
+            gtk_label_set_xalign(GTK_LABEL(shadow), 0.5f);
+            gtk_fixed_move(GTK_FIXED(fixed), shadow, npcShadowOffsets[index][0], 130 + npcShadowOffsets[index][1]);
+        }
         pango_font_description_free(labelFont);
         gtk_box_pack_start(GTK_BOX(graphicalBase), header, false, false, 0);
         GtkWidget* filler = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
@@ -334,6 +341,16 @@ TRemoteFrame::TRemoteFrame(const RC::RCOptions& nextOptions, const std::filesyst
     }
     gtk_box_pack_start(GTK_BOX(root), editField, false, false, 0);
 
+    mentionStore = gtk_list_store_new(3, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING);
+    mentionCompletion = gtk_entry_completion_new();
+    gtk_entry_completion_set_model(mentionCompletion, GTK_TREE_MODEL(mentionStore));
+    gtk_entry_completion_set_text_column(mentionCompletion, 0);
+    gtk_entry_completion_set_minimum_key_length(mentionCompletion, 1);
+    gtk_entry_completion_set_popup_single_match(mentionCompletion, true);
+    gtk_entry_completion_set_match_func(mentionCompletion, onMentionMatch, this, nullptr);
+    gtk_entry_set_completion(GTK_ENTRY(editField), mentionCompletion);
+    g_signal_connect(mentionCompletion, "match-selected", G_CALLBACK(onMentionSelected), this);
+    g_signal_connect(editField, "changed", G_CALLBACK(onMentionChanged), this);
     g_signal_connect(editField, "key-press-event", G_CALLBACK(onEditKey), this);
     gtk_widget_add_events(window, GDK_BUTTON_PRESS_MASK | GDK_POINTER_MOTION_MASK);
     gtk_widget_add_events(chatField, GDK_POINTER_MOTION_MASK);
@@ -787,6 +804,55 @@ gboolean TRemoteFrame::onEditKey(GtkWidget*, GdkEventKey* event, gpointer data) 
     return true;
 }
 
+void TRemoteFrame::onMentionChanged(GtkEditable*, gpointer data) {
+    static_cast<TRemoteFrame*>(data)->refreshMentionCompletion();
+}
+
+gboolean TRemoteFrame::onMentionMatch(GtkEntryCompletion*, const gchar*, GtkTreeIter* row, gpointer data) {
+    TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
+    const gchar* text = gtk_entry_get_text(GTK_ENTRY(frame->editField));
+    const gint cursor = gtk_editable_get_position(GTK_EDITABLE(frame->editField));
+    if (text == nullptr || cursor <= 0) return false;
+    gint at = cursor - 1;
+    while (at >= 0 && !g_ascii_isspace(text[at])) --at;
+    ++at;
+    if (at >= cursor || text[at] != '@') return false;
+    gchar* foldedQueryText = g_utf8_casefold(std::string(text + at + 1, text + cursor).c_str(), -1);
+    gchar* account = nullptr;
+    gchar* nick = nullptr;
+    gtk_tree_model_get(GTK_TREE_MODEL(frame->mentionStore), row, 1, &account, 2, &nick, -1);
+    gchar* foldedAccount = g_utf8_casefold(account == nullptr ? "" : account, -1);
+    gchar* foldedNick = g_utf8_casefold(nick == nullptr ? "" : nick, -1);
+    const std::string query = foldedQueryText == nullptr ? "" : foldedQueryText;
+    const bool matches = std::string(foldedAccount == nullptr ? "" : foldedAccount).rfind(query, 0) == 0 || std::string(foldedNick == nullptr ? "" : foldedNick).rfind(query, 0) == 0;
+    g_free(foldedQueryText);
+    g_free(account);
+    g_free(nick);
+    g_free(foldedAccount);
+    g_free(foldedNick);
+    return matches;
+}
+
+gboolean TRemoteFrame::onMentionSelected(GtkEntryCompletion*, GtkTreeModel* model, GtkTreeIter* row, gpointer data) {
+    TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
+    gchar* account = nullptr;
+    gtk_tree_model_get(model, row, 1, &account, -1);
+    const std::string accountText = account == nullptr ? "" : account;
+    g_free(account);
+    if (accountText.empty()) return true;
+    const std::string text = gtk_entry_get_text(GTK_ENTRY(frame->editField));
+    const gint cursor = gtk_editable_get_position(GTK_EDITABLE(frame->editField));
+    gint at = cursor - 1;
+    while (at >= 0 && !g_ascii_isspace(text[at])) --at;
+    ++at;
+    if (at < cursor && text[at] == '@') {
+        const std::string replacement = text.substr(0, at) + "@" + accountText + " " + text.substr(cursor);
+        gtk_entry_set_text(GTK_ENTRY(frame->editField), replacement.c_str());
+        gtk_editable_set_position(GTK_EDITABLE(frame->editField), at + static_cast<gint>(accountText.size()) + 2);
+    }
+    return true;
+}
+
 gboolean TRemoteFrame::onWindowKey(GtkWidget*, GdkEventKey* event, gpointer data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
     if (event->keyval == GDK_KEY_F8) {
@@ -826,9 +892,12 @@ void TRemoteFrame::repositionGraphicalButtons(int requestedWidth) {
     if (npcServerLabel != nullptr) {
         gtk_widget_set_size_request(npcServerLabel, labelWidth, -1);
         gtk_fixed_move(GTK_FIXED(graphicalFixed), npcServerLabel, labelX, 130);
-        for (GtkWidget* shadow : npcServerLabelShadows) if (shadow != nullptr) {
+        const int offsets[][2] = {{-1, -1}, {0, -1}, {1, -1}, {-1, 0}, {1, 0}, {-1, 1}, {0, 1}, {1, 1}};
+        for (int index = 0; index < static_cast<int>(npcServerLabelShadows.size()); ++index) {
+            GtkWidget* shadow = npcServerLabelShadows[index];
+            if (shadow == nullptr) continue;
             gtk_widget_set_size_request(shadow, labelWidth, -1);
-            gtk_fixed_move(GTK_FIXED(graphicalFixed), shadow, labelX, 130);
+            gtk_fixed_move(GTK_FIXED(graphicalFixed), shadow, labelX + offsets[index][0], 130 + offsets[index][1]);
         }
     }
     const int positions[15][2] = {{5, 15}, {5, 48}, {38, 15}, {71, 15}, {394, 15}, {427, 15}, {460, 15}, {460, 48}, {460, 81}, {427, 114}, {394, 114}, {360, 114}, {104, 15}, {460, 114}, {361, 15}};
@@ -1066,7 +1135,7 @@ void TRemoteFrame::appendChat(const std::string& message, bool suppressUrgency, 
     gtk_text_buffer_get_end_iter(buffer, &end);
     const std::string timestamp = chatTimestamp(options);
     if (!timestamp.empty()) {
-        gtk_text_buffer_insert(buffer, &end, (timestamp + " ").c_str(), -1);
+        gtk_text_buffer_insert_with_tags(buffer, &end, (timestamp + " ").c_str(), -1, tags.timestamp, nullptr);
         gtk_text_buffer_get_end_iter(buffer, &end);
     }
     const gint startOffset = gtk_text_iter_get_offset(&end);
@@ -1298,6 +1367,29 @@ void TRemoteFrame::configureChatField(GtkWidget* field) {
     }
 }
 
+void TRemoteFrame::refreshMentionCompletion() {
+    if (mentionStore == nullptr) return;
+    gtk_list_store_clear(mentionStore);
+    if (connection == nullptr) return;
+    RCPlayer* players = nullptr;
+    const int count = rc_get_players(connection, &players);
+    std::vector<std::string> accounts;
+    for (int index = 0; index < count; ++index) {
+        const RCPlayer& player = players[index];
+        if (player.level != nullptr && *player.level != '\0') continue;
+        const std::string account = player.account == nullptr ? "" : player.account;
+        if (account.empty() || g_ascii_strcasecmp(account.c_str(), accountName.c_str()) == 0) continue;
+        if (std::any_of(accounts.begin(), accounts.end(), [&](const std::string& existing) { return g_ascii_strcasecmp(existing.c_str(), account.c_str()) == 0; })) continue;
+        accounts.push_back(account);
+        const std::string nick = player.nick == nullptr || *player.nick == '\0' ? account : player.nick;
+        const std::string display = "@" + account + (g_ascii_strcasecmp(account.c_str(), nick.c_str()) == 0 ? "" : " — " + nick);
+        GtkTreeIter row;
+        gtk_list_store_append(mentionStore, &row);
+        gtk_list_store_set(mentionStore, &row, 0, display.c_str(), 1, account.c_str(), 2, nick.c_str(), -1);
+    }
+    gtk_entry_completion_complete(mentionCompletion);
+}
+
 void TRemoteFrame::updateNCUi(bool connected) {
     for (int index = 8; index < 15; ++index) {
         if (graphicalButtons[index] == nullptr) continue;
@@ -1418,7 +1510,7 @@ void TRemoteFrame::appendChannelMessage(const std::string& channel, const std::s
     gtk_text_buffer_get_end_iter(buffer, &end);
     const std::string timestamp = chatTimestamp(options);
     if (!timestamp.empty()) {
-        gtk_text_buffer_insert(buffer, &end, (timestamp + " ").c_str(), -1);
+        gtk_text_buffer_insert_with_tags(buffer, &end, (timestamp + " ").c_str(), -1, tags.timestamp, nullptr);
         gtk_text_buffer_get_end_iter(buffer, &end);
     }
     const gint startOffset = gtk_text_iter_get_offset(&end);
@@ -1557,6 +1649,7 @@ TRemoteFrame::ChatTags& TRemoteFrame::chatTagsFor(GtkTextBuffer* buffer) {
     if (inserted) {
         entry->second.alert = gtk_text_buffer_create_tag(buffer, nullptr, "foreground", options.coloralert.c_str(), "weight", PANGO_WEIGHT_BOLD, nullptr);
         entry->second.bold = gtk_text_buffer_create_tag(buffer, nullptr, "foreground", options.colorchatbold.c_str(), "weight", PANGO_WEIGHT_BOLD, nullptr);
+        entry->second.timestamp = gtk_text_buffer_create_tag(buffer, nullptr, "foreground", options.colorchatbold.c_str(), nullptr);
         entry->second.invisible = gtk_text_buffer_create_tag(buffer, nullptr, "invisible", true, nullptr);
     }
     return entry->second;

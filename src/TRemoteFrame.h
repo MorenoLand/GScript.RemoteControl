@@ -71,6 +71,9 @@ private:
     static void onLocalNPCSubmit(GtkDialog*, gint response, gpointer data);
     static void onLocalNPCData(const char* level, const char* content, void* data);
     static gboolean onEditKey(GtkWidget*, GdkEventKey*, gpointer data);
+    static void onMentionChanged(GtkEditable*, gpointer data);
+    static gboolean onMentionMatch(GtkEntryCompletion*, const gchar*, GtkTreeIter*, gpointer data);
+    static gboolean onMentionSelected(GtkEntryCompletion*, GtkTreeModel*, GtkTreeIter*, gpointer data);
     static gboolean onActivityEvent(GtkWidget*, GdkEvent*, gpointer data);
     static gboolean onWindowKey(GtkWidget*, GdkEventKey*, gpointer data);
     static gboolean onFindResultClick(GtkWidget*, GdkEventButton*, gpointer data);
@@ -103,7 +106,8 @@ private:
     bool appendFindResult(const std::string& message);
     void removeChannel(const std::string& channel);
     void configureChatField(GtkWidget* field);
-    struct ChatTags { GtkTextTag* alert = nullptr; GtkTextTag* bold = nullptr; GtkTextTag* invisible = nullptr; };
+    void refreshMentionCompletion();
+    struct ChatTags { GtkTextTag* alert = nullptr; GtkTextTag* bold = nullptr; GtkTextTag* timestamp = nullptr; GtkTextTag* invisible = nullptr; };
     ChatTags& chatTagsFor(GtkTextBuffer* buffer);
     void applyChatUrls(GtkTextBuffer* buffer, gint startOffset, gint endOffset);
     static gboolean onChatLinkClick(GtkWidget* widget, GdkEventButton* event, gpointer data);
@@ -129,6 +133,8 @@ private:
     GtkWidget* graphicalContainer = nullptr;
     GtkWidget* backgroundImage = nullptr;
     GtkWidget* editField = nullptr;
+    GtkListStore* mentionStore = nullptr;
+    GtkEntryCompletion* mentionCompletion = nullptr;
     GtkWidget* serverLabel = nullptr;
     GtkWidget* playersLabel = nullptr;
     GtkWidget* npcServerLabel = nullptr;

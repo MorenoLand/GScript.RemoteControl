@@ -256,16 +256,19 @@ namespace {
         ContentProvider contentProvider;
     };
 
-    void nativeFileDrag(const std::vector<std::wstring>& names, NativeFileDataObject::ContentProvider contentProvider, const std::shared_ptr<bool>& dropAccepted, HWND previewWindow) {
-        if (names.empty()) return;
-        if (FAILED(OleInitialize(nullptr))) return;
+    HRESULT nativeFileDrag(const std::vector<std::wstring>& names, NativeFileDataObject::ContentProvider contentProvider, const std::shared_ptr<bool>& dropAccepted, HWND previewWindow) {
+        if (names.empty()) return E_INVALIDARG;
+        const HRESULT initialized = OleInitialize(nullptr);
+        if (FAILED(initialized)) return initialized;
         IDataObject* data = new NativeFileDataObject(names, std::move(contentProvider));
         IDropSource* source = new NativeDropSource(dropAccepted, previewWindow);
         DWORD effect = DROPEFFECT_NONE;
-        DoDragDrop(data, source, DROPEFFECT_COPY, &effect);
+        ReleaseCapture();
+        const HRESULT result = DoDragDrop(data, source, DROPEFFECT_COPY, &effect);
         data->Release();
         source->Release();
         OleUninitialize();
+        return result;
     }
 #endif
 
@@ -745,6 +748,7 @@ gboolean TFileBrowserTree::onModernButtonPress(GtkWidget* widget, GdkEventButton
         gboolean folder = false;
         if (gtk_tree_model_get_iter(GTK_TREE_MODEL(browser->modernItems), &row, path)) gtk_tree_model_get(GTK_TREE_MODEL(browser->modernItems), &row, ModernFolderColumn, &folder, -1);
         browser->pendingDragSelectionPaths.clear();
+        const bool manualDragPress = !folder && (event->state & (GDK_CONTROL_MASK | GDK_SHIFT_MASK)) == 0;
         if (!folder) {
             GList* selected = gtk_icon_view_get_selected_items(GTK_ICON_VIEW(widget));
             if (gtk_icon_view_path_is_selected(GTK_ICON_VIEW(widget), path)) {
@@ -757,20 +761,27 @@ gboolean TFileBrowserTree::onModernButtonPress(GtkWidget* widget, GdkEventButton
             for (GList* node = selected; node != nullptr; node = node->next) gtk_tree_path_free(static_cast<GtkTreePath*>(node->data));
             g_list_free(selected);
             if (browser->pendingDragSelectionPaths.empty()) {
+                if (manualDragPress) {
+                    gtk_icon_view_unselect_all(GTK_ICON_VIEW(widget));
+                    gtk_icon_view_select_path(GTK_ICON_VIEW(widget), path);
+                }
                 gchar* selectedPath = gtk_tree_path_to_string(path);
                 if (selectedPath != nullptr) browser->pendingDragSelectionPaths.emplace_back(selectedPath);
                 g_free(selectedPath);
             }
         }
 #ifdef _WIN32
-        if (!folder) {
+        if (manualDragPress) {
             browser->nativeDragButton = event->button;
             browser->nativeDragX = static_cast<gint>(event->x);
             browser->nativeDragY = static_cast<gint>(event->y);
+            GdkWindow* surface = gtk_widget_get_window(widget);
+            if (surface != nullptr) SetCapture(reinterpret_cast<HWND>(GDK_WINDOW_HWND(surface)));
         }
 #endif
         gtk_tree_path_free(path);
-        return false;
+        if (manualDragPress) gtk_widget_grab_focus(widget);
+        return manualDragPress;
     }
     if (event->type != GDK_2BUTTON_PRESS || event->button != GDK_BUTTON_PRIMARY) { gtk_tree_path_free(path); return false; }
     GtkTreeIter row;
@@ -798,6 +809,16 @@ gboolean TFileBrowserTree::onModernMotion(GtkWidget* widget, GdkEventMotion* eve
     if (browser->nativeDragButton != 0 && gtk_drag_check_threshold(widget, browser->nativeDragX, browser->nativeDragY, static_cast<gint>(event->x), static_cast<gint>(event->y))) {
         browser->hidePreview();
         browser->showDragPreview(static_cast<int>(event->x_root), static_cast<int>(event->y_root));
+        GdkWindow* browserWindow = gtk_widget_get_window(browser->window);
+        gint browserX = 0;
+        gint browserY = 0;
+        if (browserWindow != nullptr) gdk_window_get_origin(browserWindow, &browserX, &browserY);
+        const bool insideBrowser = browserWindow != nullptr && event->x_root >= browserX && event->x_root < browserX + gtk_widget_get_allocated_width(browser->window) && event->y_root >= browserY && event->y_root < browserY + gtk_widget_get_allocated_height(browser->window);
+        if (!insideBrowser) {
+            browser->startNativeDrag(browser->modernView);
+            browser->nativeDragButton = 0;
+            return true;
+        }
         GdkWindow* folderWindow = gtk_widget_get_window(browser->folderView);
         gint folderX = 0;
         gint folderY = 0;
@@ -839,6 +860,7 @@ gboolean TFileBrowserTree::onModernMotion(GtkWidget* widget, GdkEventMotion* eve
 gboolean TFileBrowserTree::onFileButtonRelease(GtkWidget* widget, GdkEventButton* event, gpointer data) {
     TFileBrowserTree* browser = static_cast<TFileBrowserTree*>(data);
     if (browser->nativeDragButton != event->button) return false;
+    ReleaseCapture();
     browser->nativeDragButton = 0;
     browser->hideDragPreview();
     GtkTreeModel* model = GTK_TREE_MODEL(browser->modernItems);
@@ -911,7 +933,7 @@ gboolean TFileBrowserTree::onFileButtonRelease(GtkWidget* widget, GdkEventButton
 gboolean TFileBrowserTree::onFileLeave(GtkWidget* widget, GdkEventCrossing* event, gpointer data) {
     TFileBrowserTree* browser = static_cast<TFileBrowserTree*>(data);
 #ifdef _WIN32
-    if ((widget == browser->modernView || widget == browser->folderView) && browser->nativeDragButton != 0 && (event->state & GDK_BUTTON1_MASK) != 0) {
+    if ((widget == browser->modernView || widget == browser->folderView) && browser->nativeDragButton != 0) {
         GdkWindow* browserWindow = gtk_widget_get_window(browser->window);
         gint browserX = 0;
         gint browserY = 0;
@@ -1005,9 +1027,12 @@ void TFileBrowserTree::showDragPreview(int rootX, int rootY) {
         dragPreviewWindow = gtk_window_new(GTK_WINDOW_POPUP);
         gtk_window_set_transient_for(GTK_WINDOW(dragPreviewWindow), GTK_WINDOW(window));
         gtk_window_set_type_hint(GTK_WINDOW(dragPreviewWindow), GDK_WINDOW_TYPE_HINT_TOOLTIP);
+        GtkWidget* frame = gtk_frame_new(nullptr);
+        gtk_frame_set_shadow_type(GTK_FRAME(frame), GTK_SHADOW_OUT);
+        gtk_container_add(GTK_CONTAINER(dragPreviewWindow), frame);
         GtkWidget* box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
         gtk_container_set_border_width(GTK_CONTAINER(box), 6);
-        gtk_container_add(GTK_CONTAINER(dragPreviewWindow), box);
+        gtk_container_add(GTK_CONTAINER(frame), box);
         dragPreviewImage = gtk_image_new();
         dragPreviewLabel = gtk_label_new("");
         gtk_box_pack_start(GTK_BOX(box), dragPreviewImage, false, false, 0);
@@ -1114,8 +1139,7 @@ void TFileBrowserTree::startNativeDrag(GtkWidget* widget) {
     const auto dropAccepted = std::make_shared<bool>(false);
     GdkWindow* previewSurface = dragPreviewWindow == nullptr ? nullptr : gtk_widget_get_window(dragPreviewWindow);
     HWND previewHandle = previewSurface == nullptr ? nullptr : reinterpret_cast<HWND>(GDK_WINDOW_HWND(previewSurface));
-    nativeFileDrag(names, [this, remotePaths, dropAccepted](size_t index, std::vector<guint8>& content) {
-        if (!*dropAccepted) return false;
+    const HRESULT dragResult = nativeFileDrag(names, [this, remotePaths](size_t index, std::vector<guint8>& content) {
         if (index >= remotePaths.size() || index >= pendingDragLocalPaths.size()) return false;
         const std::string& remotePath = remotePaths[index];
         const std::string& localPath = pendingDragLocalPaths[index];
@@ -1138,6 +1162,11 @@ void TFileBrowserTree::startNativeDrag(GtkWidget* widget) {
         g_free(bytes);
         return true;
     }, dropAccepted, previewHandle);
+    if (FAILED(dragResult)) {
+        std::ostringstream error;
+        error << "Could not start Windows file drag (0x" << std::hex << std::uppercase << static_cast<unsigned long>(dragResult) << ").";
+        appendLog(error.str().c_str());
+    }
     hideDragPreview();
     for (const std::string& path : pendingDragLocalPaths) g_remove(path.c_str());
     if (!dragStagingFolder.empty()) g_rmdir(dragStagingFolder.c_str());
