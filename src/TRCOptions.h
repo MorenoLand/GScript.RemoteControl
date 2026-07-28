@@ -24,7 +24,7 @@ namespace RC {
         std::string downloadfolder = ".\\Downloads\\";
         bool modernfilebrowser = false;
         bool filebrowserhoverpreview = true;
-        bool filebrowserthumbnails = true;
+        bool filebrowserthumbnails = false;
         bool dontsavepassword = false;
         bool graphicalmenu = true;
         bool darkmode = true;

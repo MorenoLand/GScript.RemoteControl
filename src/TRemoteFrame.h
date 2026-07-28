@@ -94,6 +94,7 @@ private:
     static void onPrivateMessage(int playerId, const char* account, const char* nick, const char* message, const char* type, void* data);
     static void onPlayerPropChanged(int playerId, const char* property, const char* value, void* data);
     static void onPlayerPropertiesChanged(int playerId, const char* properties, void* data);
+    static void onRawPacket(int packetId, const char* data, int length, void* dataPtr);
     static void onServerData(const char* type, const char* content, void* data);
     static gboolean scrollChatToBottom(gpointer data);
 
@@ -201,6 +202,7 @@ private:
     RC::RCOptions options;
     std::filesystem::path applicationDirectory;
     std::unordered_map<std::string, GtkWidget*> channelFields;
+    std::unordered_map<int, std::string> playerCommunityNames;
     std::string findResultBase;
     GtkWidget* findResultsField = nullptr;
     std::unordered_map<GtkTextBuffer*, ChatTags> chatTags;

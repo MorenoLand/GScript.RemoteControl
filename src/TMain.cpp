@@ -75,6 +75,7 @@ std::function<void(TRemoteFrame*)> trayFrameSignOut;
 std::map<unsigned int, std::wstring> trayMenuDynamicText;
 std::map<unsigned int, TRemoteFrame*> trayMenuDynamicTargets;
 bool remoteControlDebug = false;
+bool remoteControlPacketLog = false;
 
 namespace {
 
@@ -487,9 +488,11 @@ int main(int argc, char** argv) {
     }
 #ifdef _WIN32
     bool debugMode = false;
+    bool packetLog = false;
     int argumentCount = 1;
     for (int index = 1; index < argc; ++index) {
         if (std::string(argv[index]) == "--debug") debugMode = true;
+        else if (std::string(argv[index]) == "--packetlog") { packetLog = true; debugMode = true; }
         else argv[argumentCount++] = argv[index];
     }
     argc = argumentCount;
@@ -504,6 +507,7 @@ int main(int argc, char** argv) {
 #endif
     }
     remoteControlDebug = debugMode;
+    remoteControlPacketLog = packetLog;
     remoteControlDebugLog("debug logging enabled");
 #endif
     const std::filesystem::path applicationDirectory = getApplicationDirectory();

@@ -79,4 +79,4 @@ colorlink=#4ec9b0
 coloralert=#f48771
 labelservers=Server:
 labelplayers=Players:
-labelnpcserver=
+labelnpcserver=Connected to NPC-Server

@@ -341,7 +341,7 @@ TRemoteFrame::TRemoteFrame(const RC::RCOptions& nextOptions, const std::filesyst
     }
     gtk_box_pack_start(GTK_BOX(root), editField, false, false, 0);
 
-    mentionStore = gtk_list_store_new(3, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING);
+    mentionStore = gtk_list_store_new(5, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING);
     mentionCompletion = gtk_entry_completion_new();
     gtk_entry_completion_set_model(mentionCompletion, GTK_TREE_MODEL(mentionStore));
     gtk_entry_completion_set_text_column(mentionCompletion, 0);
@@ -491,6 +491,7 @@ void TRemoteFrame::open(void* nextConnection, int serverIndex, const std::string
     awayNicknameApplied = false;
     awayStatusApplied = false;
     this->accountName = accountName;
+    playerCommunityNames.clear();
     ncConnectionAttempted = false;
     ncManuallyDisconnected = false;
     rc_on_connected(connection, onConnected, this);
@@ -500,6 +501,7 @@ void TRemoteFrame::open(void* nextConnection, int serverIndex, const std::string
     rc_on_private_message_ex(connection, onPrivateMessage, this);
     rc_on_player_properties_changed(connection, onPlayerPropertiesChanged, this);
     rc_on_player_prop_changed(connection, onPlayerPropChanged, this);
+    rc_on_raw_packet(connection, onRawPacket, this);
     rc_on_server_data(connection, onServerData, this);
     rc_on_account_list(connection, onAccountList, this);
     rc_on_player_text_data(connection, onPlayerText, this);
@@ -512,6 +514,7 @@ void TRemoteFrame::open(void* nextConnection, int serverIndex, const std::string
     if (serverLabel != nullptr) gtk_label_set_text(GTK_LABEL(serverLabel), serverText.c_str());
     for (GtkWidget* shadow : serverLabelShadows) if (shadow != nullptr) gtk_label_set_text(GTK_LABEL(shadow), serverText.c_str());
     if (eventSource == 0) eventSource = g_timeout_add(50, processEvents, this);
+    refreshMentionCompletion();
     gtk_widget_show_all(window);
     gtk_window_present(GTK_WINDOW(window));
     gtk_widget_grab_focus(editField);
@@ -834,30 +837,54 @@ gboolean TRemoteFrame::onMentionMatch(GtkEntryCompletion*, const gchar*, GtkTree
     gint at = cursor - 1;
     while (at >= 0 && !g_ascii_isspace(text[at])) --at;
     ++at;
-    if (at >= cursor || text[at] != '@') return false;
-    gchar* foldedQueryText = g_utf8_casefold(std::string(text + at + 1, text + cursor).c_str(), -1);
+    if (at >= cursor) return false;
+    const std::string token(text + at, text + cursor);
+    const bool mention = token[0] == '@';
+    const bool directCommand = token[0] == '/';
+    gint commandEnd = at - 1;
+    while (commandEnd >= 0 && g_ascii_isspace(text[commandEnd])) --commandEnd;
+    gint commandStart = commandEnd;
+    while (commandStart >= 0 && !g_ascii_isspace(text[commandStart])) --commandStart;
+    ++commandStart;
+    const bool commandArgument = !mention && !directCommand && commandStart <= commandEnd && text[commandStart] == '/';
+    const bool command = directCommand || commandArgument;
+    if (!mention && !command) return false;
+    const std::size_t argumentStart = directCommand ? token.find_last_of(" \t") : std::string::npos;
+    const std::string queryText = commandArgument ? token : (argumentStart == std::string::npos ? token.substr(mention ? 1 : 0) : token.substr(argumentStart + 1));
+    gchar* foldedQueryText = g_utf8_casefold(queryText.c_str(), -1);
     gchar* account = nullptr;
     gchar* nick = nullptr;
-    gtk_tree_model_get(GTK_TREE_MODEL(frame->mentionStore), row, 1, &account, 2, &nick, -1);
+    gchar* insertion = nullptr;
+    gchar* community = nullptr;
+    gtk_tree_model_get(GTK_TREE_MODEL(frame->mentionStore), row, 1, &account, 2, &nick, 3, &insertion, 4, &community, -1);
+    const bool commandRow = insertion != nullptr && insertion[0] == '/';
+    if ((mention && commandRow) || (command && !commandArgument && argumentStart == std::string::npos && !commandRow)) { g_free(account); g_free(nick); g_free(insertion); g_free(community); g_free(foldedQueryText); return false; }
     gchar* foldedAccount = g_utf8_casefold(account == nullptr ? "" : account, -1);
     gchar* foldedNick = g_utf8_casefold(nick == nullptr ? "" : nick, -1);
+    gchar* foldedCommunity = g_utf8_casefold(community == nullptr ? "" : community, -1);
     const std::string query = foldedQueryText == nullptr ? "" : foldedQueryText;
-    const bool matches = std::string(foldedAccount == nullptr ? "" : foldedAccount).rfind(query, 0) == 0 || std::string(foldedNick == nullptr ? "" : foldedNick).rfind(query, 0) == 0;
+    const bool matches = commandRow ? std::string(insertion).rfind(query, 0) == 0 : std::string(foldedAccount == nullptr ? "" : foldedAccount).rfind(query, 0) == 0 || std::string(foldedNick == nullptr ? "" : foldedNick).rfind(query, 0) == 0 || std::string(foldedCommunity == nullptr ? "" : foldedCommunity).rfind(query, 0) == 0;
     g_free(foldedQueryText);
     g_free(account);
     g_free(nick);
+    g_free(insertion);
+    g_free(community);
     g_free(foldedAccount);
     g_free(foldedNick);
+    g_free(foldedCommunity);
     return matches;
 }
 
 gboolean TRemoteFrame::onMentionSelected(GtkEntryCompletion*, GtkTreeModel* model, GtkTreeIter* row, gpointer data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
     gchar* account = nullptr;
-    gtk_tree_model_get(model, row, 1, &account, -1);
+    gchar* insertion = nullptr;
+    gtk_tree_model_get(model, row, 1, &account, 3, &insertion, -1);
     const std::string accountText = account == nullptr ? "" : account;
+    const std::string insertionText = insertion == nullptr ? "" : insertion;
     g_free(account);
-    if (accountText.empty()) return true;
+    g_free(insertion);
+    if (accountText.empty() && insertionText.empty()) return true;
     const std::string text = gtk_entry_get_text(GTK_ENTRY(frame->editField));
     const gint cursor = gtk_editable_get_position(GTK_EDITABLE(frame->editField));
     gint at = cursor - 1;
@@ -867,6 +894,13 @@ gboolean TRemoteFrame::onMentionSelected(GtkEntryCompletion*, GtkTreeModel* mode
         const std::string replacement = text.substr(0, at) + "@" + accountText + " " + text.substr(cursor);
         gtk_entry_set_text(GTK_ENTRY(frame->editField), replacement.c_str());
         gtk_editable_set_position(GTK_EDITABLE(frame->editField), at + static_cast<gint>(accountText.size()) + 2);
+    } else if (at < cursor && (text[at] == '/' || [&text, at]() { gint commandEnd = at - 1; while (commandEnd >= 0 && g_ascii_isspace(text[commandEnd])) --commandEnd; gint commandStart = commandEnd; while (commandStart >= 0 && !g_ascii_isspace(text[commandStart])) --commandStart; ++commandStart; return commandStart <= commandEnd && text[commandStart] == '/'; }())) {
+        const std::size_t argument = text.find_last_of(" \t", cursor - 1);
+        const std::size_t start = argument == std::string::npos ? static_cast<std::size_t>(at) : argument + 1;
+        const std::string value = insertionText.rfind("/", 0) == 0 ? insertionText + " " : accountText;
+        const std::string replacement = text.substr(0, start) + value + text.substr(cursor);
+        gtk_entry_set_text(GTK_ENTRY(frame->editField), replacement.c_str());
+        gtk_editable_set_position(GTK_EDITABLE(frame->editField), static_cast<gint>(start + value.size()));
     }
     return true;
 }
@@ -1089,11 +1123,20 @@ void TRemoteFrame::onPlayerPropertiesChanged(int playerId, const char* propertie
     frame->playerList->setServerName(frame->serverName);
     frame->playerList->setPlayerProperties(playerId, properties);
     frame->updateMassPMAcceptance();
+    frame->refreshMentionCompletion();
 }
 
 void TRemoteFrame::onPlayerPropChanged(int playerId, const char* property, const char* value, void* data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
     updateGScriptEditorPlayerProperty(frame->connection, playerId, property, value);
+    if (property != nullptr && g_ascii_strcasecmp(property, "community") == 0) {
+        frame->playerCommunityNames[playerId] = value == nullptr ? "" : value;
+        frame->refreshMentionCompletion();
+    }
+}
+
+void TRemoteFrame::onRawPacket(int packetId, const char* data, int length, void*) {
+    remoteControlPacketLogMessage(packetId, data, length);
 }
 
 void TRemoteFrame::onServerData(const char* type, const char* content, void* data) {
@@ -1393,22 +1436,28 @@ void TRemoteFrame::configureChatField(GtkWidget* field) {
 void TRemoteFrame::refreshMentionCompletion() {
     if (mentionStore == nullptr) return;
     gtk_list_store_clear(mentionStore);
-    if (connection == nullptr) return;
+    static const char* commands[] = {"/open", "/openacc", "/opencomments", "/openrights", "/openaccess", "/openprofile", "/openban", "/reset", "/rchelp", "/nc", "/reconnect", "/rc", "/find", "/finddef", "/clear"};
+    for (const char* command : commands) {
+        GtkTreeIter row;
+        gtk_list_store_append(mentionStore, &row);
+        gtk_list_store_set(mentionStore, &row, 0, command, 1, "", 2, "", 3, command, 4, "", -1);
+    }
+    if (connection == nullptr) { gtk_entry_completion_complete(mentionCompletion); return; }
     RCPlayer* players = nullptr;
     const int count = rc_get_players(connection, &players);
     std::vector<std::string> accounts;
     for (int index = 0; index < count; ++index) {
         const RCPlayer& player = players[index];
-        if (player.level != nullptr && *player.level != '\0') continue;
         const std::string account = player.account == nullptr ? "" : player.account;
         if (account.empty() || g_ascii_strcasecmp(account.c_str(), accountName.c_str()) == 0) continue;
         if (std::any_of(accounts.begin(), accounts.end(), [&](const std::string& existing) { return g_ascii_strcasecmp(existing.c_str(), account.c_str()) == 0; })) continue;
         accounts.push_back(account);
         const std::string nick = player.nick == nullptr || *player.nick == '\0' ? account : player.nick;
-        const std::string display = "@" + account + (g_ascii_strcasecmp(account.c_str(), nick.c_str()) == 0 ? "" : " — " + nick);
+        const std::string community = playerCommunityNames.count(player.id) == 0 ? "" : playerCommunityNames[player.id];
+        const std::string display = account + (g_ascii_strcasecmp(account.c_str(), nick.c_str()) == 0 ? "" : " - " + nick);
         GtkTreeIter row;
         gtk_list_store_append(mentionStore, &row);
-        gtk_list_store_set(mentionStore, &row, 0, display.c_str(), 1, account.c_str(), 2, nick.c_str(), -1);
+        gtk_list_store_set(mentionStore, &row, 0, display.c_str(), 1, account.c_str(), 2, nick.c_str(), 3, account.c_str(), 4, community.c_str(), -1);
     }
     gtk_entry_completion_complete(mentionCompletion);
 }
@@ -1756,7 +1805,10 @@ void TRemoteFrame::send() {
         gtk_entry_set_text(GTK_ENTRY(editField), "");
         return;
     }
-    if (!rc_execute(connection, message.c_str())) appendChat(rc_last_error(connection));
+    std::string serverCommand = message;
+    static const char* accountCommands[] = {"/open", "/openacc", "/opencomments", "/openrights", "/openaccess", "/openprofile", "/openban", "/reset"};
+    for (const char* command : accountCommands) if (serverCommand == command && !accountName.empty()) { serverCommand += " "; serverCommand += accountName; break; }
+    if (!rc_execute(connection, serverCommand.c_str())) appendChat(rc_last_error(connection));
     gtk_entry_set_text(GTK_ENTRY(editField), "");
 }
 

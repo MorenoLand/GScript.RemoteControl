@@ -192,7 +192,7 @@ std::vector<GS2Diagnostic> analyzeGS2(const std::string& source, const std::vect
             add(diagnostics, GS2DiagnosticSeverity::Info, call.start, call.start + call.name.size(), "join() imports members from class" + className + "; availability depends on the connected server");
         }
         const auto signature = signatures.find(name);
-        if (!call.constructor && reportUnknownFunctions && signature != signatures.end() && signature->second.minimum >= 0 && (call.arguments < signature->second.minimum || (signature->second.maximum >= 0 && call.arguments > signature->second.maximum))) {
+        if (!call.constructor && reportUnknownFunctions && knownEvents.count(name) == 0 && signature != signatures.end() && signature->second.minimum >= 0 && (call.arguments < signature->second.minimum || (signature->second.maximum >= 0 && call.arguments > signature->second.maximum))) {
             const std::string expected = signature->second.maximum < 0 ? std::to_string(signature->second.minimum) + "+" : signature->second.minimum == signature->second.maximum ? std::to_string(signature->second.minimum) : std::to_string(signature->second.minimum) + "-" + std::to_string(signature->second.maximum);
             add(diagnostics, GS2DiagnosticSeverity::Warning, call.start, call.start + call.name.size(), call.name + "() expects " + expected + " argument(s), got " + std::to_string(call.arguments));
         }

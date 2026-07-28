@@ -67,5 +67,7 @@ function oncreated() {
     assert(!has(mixedCase, GS2DiagnosticSeverity::Warning, "Event casing"));
     assert(!has(mixedCase, GS2DiagnosticSeverity::Warning, "ABS"));
     assert(!has(mixedCase, GS2DiagnosticSeverity::Warning, "LocalHelper"));
+    const auto eventParameters = analyzeGS2("function onActionServerSide() { switch (params[0]) {} }", {gs2ApiFunction("onActionServerSide", {"action"})});
+    assert(!has(eventParameters, GS2DiagnosticSeverity::Warning, "onActionServerSide() expects"));
     return 0;
 }

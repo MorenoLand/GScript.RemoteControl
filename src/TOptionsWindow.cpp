@@ -136,7 +136,7 @@ TOptionsWindow::TOptionsWindow(RC::RCOptions& nextOptions, const std::filesystem
     separateFindResults = addCheckGrid(GTK_GRID(generalChecks), "Separate find results tabs", options.separatefindresults, 9);
     modernFileBrowser = addCheckGrid(GTK_GRID(generalChecks), "Modern File Browser", options.modernfilebrowser, 11);
     fileBrowserHoverPreview = addCheckGrid(GTK_GRID(generalChecks), "File Browser hover previews", options.filebrowserhoverpreview, 12);
-    fileBrowserThumbnails = addCheckGrid(GTK_GRID(generalChecks), "Modern File Browser thumbnails", options.filebrowserthumbnails, 13);
+    fileBrowserThumbnails = addCheckGrid(GTK_GRID(generalChecks), "Modern File Browser thumbnails (Experimental)", options.filebrowserthumbnails, 13);
     gtk_box_pack_start(GTK_BOX(general), generalChecks, false, false, 0);
     GtkWidget* generalGrid = gtk_grid_new();
     gtk_grid_set_row_spacing(GTK_GRID(generalGrid), 5);
