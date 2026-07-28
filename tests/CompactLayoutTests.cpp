@@ -115,9 +115,15 @@ int main(int argc, char** argv) {
     for (GList* item = gtk_window_list_toplevels(); item != nullptr; item = item->next) { GtkWidget* candidate = GTK_WIDGET(item->data); const char* title = gtk_window_get_title(GTK_WINDOW(candidate)); if (title != nullptr && (std::string(title).rfind("RemoteControl", 0) == 0 || std::string(title).find(" - RemoteControl") != std::string::npos)) { login = candidate; break; } }
     require(login != nullptr, "Login window not found");
     require(std::string(gtk_window_get_title(GTK_WINDOW(login))) == "Retail - RemoteControl", "Login title does not identify the selected list server");
-    GtkWidget* placementError = createErrorWindow("Placement test", "test", GTK_WINDOW(login));
+    GtkWidget* placementError = createErrorWindow("Placement test", "first, second", GTK_WINDOW(login));
     settleGtk();
     require(gtk_window_get_transient_for(GTK_WINDOW(placementError)) == GTK_WINDOW(login), "Error dialog is not transient to its login parent");
+    GtkWidget* placementLabel = widgetByName(placementError, "ErrorMsgLabel");
+    require(placementLabel != nullptr && std::string(gtk_label_get_text(GTK_LABEL(placementLabel))) == "first,\nsecond", "Error dialog does not break after commas");
+    gint errorWidth = 0;
+    gint errorHeight = 0;
+    gtk_window_get_size(GTK_WINDOW(placementError), &errorWidth, &errorHeight);
+    require(errorWidth <= 500, "Error dialog exceeds compact width");
     gtk_widget_destroy(placementError);
     gint loginMinimum = 0;
     gint loginNatural = 0;

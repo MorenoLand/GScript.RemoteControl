@@ -39,10 +39,22 @@ void registerBundledFonts(const std::filesystem::path& applicationDirectory) {
 #ifdef _WIN32
     AddFontResourceExW(font.c_str(), FR_PRIVATE, nullptr);
     SendMessageW(HWND_BROADCAST, WM_FONTCHANGE, 0, 0);
-#endif
+    FcConfig* config = FcConfigCreate();
+    wchar_t windowsPath[MAX_PATH] = {};
+    if (config != nullptr && GetWindowsDirectoryW(windowsPath, MAX_PATH) != 0) {
+        const auto systemFonts = (std::filesystem::path(windowsPath) / "Fonts").u8string();
+        FcConfigAppFontAddDir(config, reinterpret_cast<const FcChar8*>(systemFonts.c_str()));
+    }
+    const auto fontPath = font.u8string();
+    if (config != nullptr && FcConfigAppFontAddFile(config, reinterpret_cast<const FcChar8*>(fontPath.c_str()))) {
+        FcConfigBuildFonts(config);
+        FcConfigSetCurrent(config);
+    } else if (config != nullptr) FcConfigDestroy(config);
+#else
     const auto fontPath = font.u8string();
     FcConfig* config = FcConfigGetCurrent();
     if (config != nullptr && FcConfigAppFontAddFile(config, reinterpret_cast<const FcChar8*>(fontPath.c_str()))) FcConfigBuildFonts(config);
+#endif
 }
 
 GtkStatusIcon* pmTrayIcon = nullptr;
@@ -83,7 +95,6 @@ namespace {
     }
 
 #ifdef _WIN32
-    constexpr int ServerListHotkeyId = 0x5243;
     constexpr int VisibilityHotkeyId = 0x5244;
     constexpr UINT TrayMenuOpenId = 1;
     constexpr UINT TrayMenuServerListId = 2;
@@ -154,10 +165,6 @@ namespace {
     }
     GdkFilterReturn onWindowsMessage(GdkXEvent* event, GdkEvent*, gpointer) {
         MSG* message = static_cast<MSG*>(event);
-        if (message->message == WM_HOTKEY && message->wParam == ServerListHotkeyId) {
-            if (trayServerListOpen) trayServerListOpen();
-            return GDK_FILTER_REMOVE;
-        }
         if (message->message == WM_HOTKEY && message->wParam == VisibilityHotkeyId) {
             onTrayOpen(nullptr, nullptr);
             return GDK_FILTER_REMOVE;
@@ -408,7 +415,7 @@ namespace {
         const char* text = dracula ? "#f8f8f2" : material ? "#eeffff" : ayuMirage ? "#cccac2" : nord ? "#eceff4" : monokai ? "#f8f8f2" : oneDark ? "#abb2bf" : tokyoNight ? "#c0caf5" : gruvbox ? "#ebdbb2" : solarized ? "#839496" : catppuccin ? "#cdd6f4" : "#dddddd";
         const char* accent = dracula ? "#bd93f9" : material ? "#80cbc4" : ayuMirage ? "#ffcc66" : nord ? "#88c0d0" : monokai ? "#a6e22e" : oneDark ? "#61afef" : tokyoNight ? "#7aa2f7" : gruvbox ? "#fabd2f" : solarized ? "#b58900" : catppuccin ? "#cba6f7" : "#00ff00";
         const char* border = dracula ? "#6272a4" : material ? "#546e7a" : ayuMirage ? "#4b5263" : nord ? "#4c566a" : monokai ? "#75715e" : oneDark ? "#3e4451" : tokyoNight ? "#3b4261" : gruvbox ? "#665c54" : solarized ? "#586e75" : catppuccin ? "#585b70" : "#555555";
-        const std::string css = std::string("window, dialog, .background { background-color: ") + background + "; color: " + text + "; } label, checkbutton label, button label { color: " + std::string(text) + "; } entry { background-image: none; background-color: " + editor + "; color: " + text + "; caret-color: " + accent + "; border: 1px solid " + border + "; } entry:disabled { background-color: " + surface + "; color: #c1c1c1; } textview, textview text { background-color: " + editor + "; color: " + text + "; caret-color: " + accent + "; } combobox button, button { background-image: none; background-color: " + surface + "; color: " + text + "; border: 1px solid " + border + "; } button:hover, combobox button:hover { background-image: none; background-color: " + surface + "; } button:active, combobox button:active { background-image: none; background-color: " + editor + "; } button:disabled { background-image: none; background-color: " + surface + "; color: #828282; } checkbutton { color: " + text + "; } frame, expander { background-color: transparent; } separator, paned separator { background-color: " + border + "; min-height: 1px; min-width: 1px; } treeview.view, treeview.view header button, iconview.view, #remote-file-icon-view, list, list row { background-color: " + editor + "; color: " + text + "; border-color: " + border + "; } treeview.view:selected, iconview.view:selected, #remote-file-icon-view:selected, list row:selected { background-color: " + surface + "; color: #ffffff; } #remote-control-minimap, #remote-control-minimap.view { min-width: 120px; max-width: 120px; background-color: " + editor + "; color: " + text + "; border-left: 1px solid " + border + "; } #remote-control-minimap-marker { background-color: alpha(" + accent + ", 0.24); border: 1px solid alpha(" + accent + ", 0.72); } #remote-control-minimap .scrubber, #remote-control-minimap.scrubber { background-color: alpha(" + accent + ", 0.24); border: 1px solid alpha(" + accent + ", 0.72); } filechooser box, filechooser .path-bar, filechooser .path-bar button, filechooser .pathbar, filechooser .pathbar button { background-image: none; background-color: " + background + "; color: " + text + "; } filechooser placessidebar, filechooser placessidebar viewport, filechooser placessidebar list, filechooser placessidebar row, filechooser .sidebar, filechooser .sidebar viewport, filechooser .sidebar list, filechooser .sidebar row { background-color: " + editor + "; color: " + text + "; } filechooser placessidebar row:selected, filechooser .sidebar row:selected { background-color: " + surface + "; color: #ffffff; } menubar, menu { background-color: " + surface + "; color: " + text + "; } menuitem { color: " + text + "; } notebook, notebook > header, notebook > header > tabs, notebook > stack { background-color: transparent; border: none; box-shadow: none; outline: none; padding: 0; } scrolledwindow, viewport { background-color: transparent; border: none; box-shadow: none; outline: none; padding: 0; } notebook > header, notebook > header > tabs { min-height: 0; } notebook > header > tabs > tab { background-image: none; background-color: " + surface + "; border: 1px solid " + border + "; border-bottom: none; border-radius: 4px 4px 0 0; margin-right: 2px; padding: 2px 5px; } notebook > header > tabs > tab:checked { background-color: " + background + "; border-color: " + accent + "; } .gtk-source-completion, .gtk-source-completion-content, .gtk-source-completion-list { background-color: " + editor + "; color: " + text + "; border: 1px solid " + border + "; border-radius: 6px; } .gtk-source-completion-list { padding: 3px; } .gtk-source-completion-row { color: " + text + "; border-radius: 4px; padding: 4px 8px; } .gtk-source-completion-row:hover { background-color: " + surface + "; } .gtk-source-completion-row:selected { background-color: " + accent + "; color: " + editor + "; } .gtk-source-completion-info, .remote-completion-info { background-color: " + surface + "; color: " + text + "; border: 1px solid " + border + "; border-radius: 7px; padding: 8px 10px; } .remote-completion-signature { color: " + accent + "; font-weight: bold; } .remote-completion-details { color: " + text + "; margin-top: 4px; }";
+        const std::string css = std::string("window, dialog, .background { background-color: ") + background + "; color: " + text + "; } label, checkbutton label, button label { color: " + std::string(text) + "; } entry { background-image: none; background-color: " + editor + "; color: " + text + "; caret-color: " + accent + "; border: 1px solid " + border + "; } entry:disabled { background-color: " + surface + "; color: #c1c1c1; } textview, textview text { background-color: " + editor + "; color: " + text + "; caret-color: " + accent + "; } combobox button, button { background-image: none; background-color: " + surface + "; color: " + text + "; border: 1px solid " + border + "; } button:hover, combobox button:hover { background-image: none; background-color: " + surface + "; } button:active, combobox button:active { background-image: none; background-color: " + editor + "; } button:disabled { background-image: none; background-color: " + surface + "; color: #828282; } checkbutton { color: " + text + "; } frame, expander { background-color: transparent; } separator, paned separator { background-color: " + border + "; min-height: 1px; min-width: 1px; } treeview.view, treeview.view header button, iconview.view, #remote-file-icon-view, list, list row { background-color: " + editor + "; color: " + text + "; border-color: " + border + "; } treeview.view:selected, iconview.view:selected, #remote-file-icon-view:selected, list row:selected { background-color: " + surface + "; color: #ffffff; } #remote-control-minimap, #remote-control-minimap.view { min-width: 120px; background-color: " + editor + "; color: " + text + "; border-left: 1px solid " + border + "; } #remote-control-minimap-marker { background-color: alpha(" + accent + ", 0.24); border: 1px solid alpha(" + accent + ", 0.72); } #remote-control-minimap .scrubber, #remote-control-minimap.scrubber { background-color: alpha(" + accent + ", 0.24); border: 1px solid alpha(" + accent + ", 0.72); } filechooser box, filechooser .path-bar, filechooser .path-bar button, filechooser .pathbar, filechooser .pathbar button { background-image: none; background-color: " + background + "; color: " + text + "; } filechooser placessidebar, filechooser placessidebar viewport, filechooser placessidebar list, filechooser placessidebar row, filechooser .sidebar, filechooser .sidebar viewport, filechooser .sidebar list, filechooser .sidebar row { background-color: " + editor + "; color: " + text + "; } filechooser placessidebar row:selected, filechooser .sidebar row:selected { background-color: " + surface + "; color: #ffffff; } menubar, menu { background-color: " + surface + "; color: " + text + "; } menuitem { color: " + text + "; } notebook, notebook > header, notebook > header > tabs, notebook > stack { background-color: transparent; border: none; box-shadow: none; outline: none; padding: 0; } scrolledwindow, viewport { background-color: transparent; border: none; box-shadow: none; outline: none; padding: 0; } notebook > header, notebook > header > tabs { min-height: 0; } notebook > header > tabs > tab { background-image: none; background-color: " + surface + "; border: 1px solid " + border + "; border-bottom: none; border-radius: 4px 4px 0 0; margin-right: 2px; padding: 2px 5px; } notebook > header > tabs > tab:checked { background-color: " + background + "; border-color: " + accent + "; } .gtk-source-completion, .gtk-source-completion-content, .gtk-source-completion-list { background-color: " + editor + "; color: " + text + "; border: 1px solid " + border + "; border-radius: 6px; } .gtk-source-completion-list { padding: 3px; } .gtk-source-completion-row { color: " + text + "; border-radius: 4px; padding: 4px 8px; } .gtk-source-completion-row:hover { background-color: " + surface + "; } .gtk-source-completion-row:selected { background-color: " + accent + "; color: " + editor + "; } .gtk-source-completion-info, .remote-completion-info { background-color: " + surface + "; color: " + text + "; border: 1px solid " + border + "; border-radius: 7px; padding: 8px 10px; } .remote-completion-signature { color: " + accent + "; font-weight: bold; } .remote-completion-details { color: " + text + "; margin-top: 4px; }";
         gtk_css_provider_load_from_data(provider, css.c_str(), -1, nullptr);
         gtk_style_context_add_provider_for_screen(gdk_screen_get_default(), GTK_STYLE_PROVIDER(provider), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
         darkThemeProvider = provider;
@@ -629,7 +636,6 @@ int main(int argc, char** argv) {
     if (GdkWindow* startWindow = frame.nativeWindow()) {
         gdk_window_add_filter(startWindow, onWindowsMessage, nullptr);
         serverListHotkeyWindow = reinterpret_cast<HWND>(GDK_WINDOW_HWND(startWindow));
-        RegisterHotKey(serverListHotkeyWindow, ServerListHotkeyId, MOD_NOREPEAT, VK_F8);
         refreshGlobalVisibilityHotkey(options.globalhotkey);
     }
 #else
@@ -639,7 +645,6 @@ int main(int argc, char** argv) {
     stopMcpGuiBridge();
 #ifdef _WIN32
     if (serverListHotkeyWindow != nullptr) {
-        UnregisterHotKey(serverListHotkeyWindow, ServerListHotkeyId);
         UnregisterHotKey(serverListHotkeyWindow, VisibilityHotkeyId);
         if (GdkWindow* startWindow = frame.nativeWindow()) gdk_window_remove_filter(startWindow, onWindowsMessage, nullptr);
     }

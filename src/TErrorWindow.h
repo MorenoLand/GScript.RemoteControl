@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <string>
 #include <gtk/gtk.h>
 
 inline GtkWidget* createErrorWindow(const char* title, const char* message, GtkWindow* parent = nullptr) {
@@ -10,13 +11,26 @@ inline GtkWidget* createErrorWindow(const char* title, const char* message, GtkW
     gtk_window_set_title(GTK_WINDOW(window), title == nullptr ? "Question" : title);
     if (parent != nullptr) { gtk_window_set_transient_for(GTK_WINDOW(window), parent); gtk_window_set_modal(GTK_WINDOW(window), true); gtk_window_set_position(GTK_WINDOW(window), GTK_WIN_POS_CENTER_ON_PARENT); }
     else gtk_window_set_position(GTK_WINDOW(window), GTK_WIN_POS_CENTER);
-    gtk_window_set_default_size(GTK_WINDOW(window), 400, 120);
+    gtk_window_set_default_size(GTK_WINDOW(window), 500, 120);
     gtk_window_set_resizable(GTK_WINDOW(window), false);
     GtkWidget* box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
     gtk_container_add(GTK_CONTAINER(window), box);
-    GtkWidget* label = gtk_label_new(message == nullptr || *message == '\0' ? "Question?" : message);
+    std::string text = message == nullptr || *message == '\0' ? "Question?" : message;
+    for (std::size_t comma = text.find(','); comma != std::string::npos; comma = text.find(',', comma + 2)) {
+        std::size_t next = comma + 1;
+        while (next < text.size() && text[next] == ' ') ++next;
+        text.replace(comma + 1, next - comma - 1, "\n");
+    }
+    GtkWidget* label = gtk_label_new(text.c_str());
     gtk_widget_set_name(label, "ErrorMsgLabel");
     gtk_label_set_line_wrap(GTK_LABEL(label), true);
+    gtk_label_set_line_wrap_mode(GTK_LABEL(label), PANGO_WRAP_WORD_CHAR);
+    gtk_label_set_max_width_chars(GTK_LABEL(label), 64);
+    gtk_label_set_xalign(GTK_LABEL(label), 0.0f);
+    gtk_widget_set_margin_start(label, 8);
+    gtk_widget_set_margin_end(label, 8);
+    gtk_widget_set_margin_top(label, 8);
+    gtk_widget_set_margin_bottom(label, 8);
     gtk_box_pack_start(GTK_BOX(box), label, true, true, 0);
     GtkWidget* buttons = gtk_button_box_new(GTK_ORIENTATION_HORIZONTAL);
     gtk_box_pack_start(GTK_BOX(box), buttons, false, true, 0);
