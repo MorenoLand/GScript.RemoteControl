@@ -22,6 +22,7 @@ public:
 private:
     static void onRefresh(GtkButton*, gpointer data);
     static void onFolderSelected(GtkTreeSelection*, gpointer data);
+    static void onFolderStateChanged(GtkTreeView*, GtkTreeIter*, GtkTreePath*, gpointer data);
     static gboolean onFolderButtonPress(GtkWidget*, GdkEventButton*, gpointer data);
     static gboolean onFileButtonPress(GtkWidget*, GdkEventButton*, gpointer data);
 #ifdef _WIN32
@@ -48,6 +49,7 @@ private:
     static void onMove(GtkMenuItem*, gpointer data);
     static void onUpload(GtkMenuItem*, gpointer data);
     static gboolean onDelete(GtkWidget*, GdkEvent*, gpointer data);
+    static gboolean onMutationRefresh(gpointer data);
     static void onFolders(int count, void* data);
     static void onFiles(const char* folder, int count, void* data);
     static void onMessage(const char* message, void* data);
@@ -63,6 +65,8 @@ private:
     void showTextEditor(const char* path, const void* content, int length);
     void showItemMenu(GtkWidget* view, GdkEventButton* event, bool folder);
     void navigateTo(const std::string& folder);
+    void updateFolderIcons();
+    void queueMutationRefresh();
     void rebuildModernItems();
     void queueVisibleThumbnails();
     void startNextPreviewDownload();
@@ -89,6 +93,8 @@ private:
     GtkWidget* log = nullptr;
     GdkPixbuf* closedFolderIcon = nullptr;
     GdkPixbuf* openFolderIcon = nullptr;
+    GdkPixbuf* closedFolderLargeIcon = nullptr;
+    GdkPixbuf* openFolderLargeIcon = nullptr;
     GdkPixbuf* textFileIcon = nullptr;
     GdkPixbuf* nwFileIcon = nullptr;
     GdkPixbuf* scriptFileIcon = nullptr;
@@ -110,6 +116,7 @@ private:
     guint externalWatchId = 0;
     std::string pendingInlineRenamePath;
     guint inlineRenameId = 0;
+    guint mutationRefreshId = 0;
     std::string downloadFolder;
     std::string downloadServer;
     std::vector<std::string> pendingDragSelectionPaths;

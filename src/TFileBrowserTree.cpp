@@ -70,6 +70,13 @@ namespace {
     constexpr int ModernRightsColumn = 4;
     struct FileMenuItem { TFileBrowserTree* browser; std::vector<std::string> paths; };
     void destroyFileMenuItem(gpointer data, GClosure*) { delete static_cast<FileMenuItem*>(data); }
+    GList* selectedRows(GtkWidget* widget, GtkTreeModel** model) {
+        if (GTK_IS_ICON_VIEW(widget)) {
+            if (model != nullptr) *model = gtk_icon_view_get_model(GTK_ICON_VIEW(widget));
+            return gtk_icon_view_get_selected_items(GTK_ICON_VIEW(widget));
+        }
+        return gtk_tree_selection_get_selected_rows(gtk_tree_view_get_selection(GTK_TREE_VIEW(widget)), model);
+    }
 
     std::string formatModified(int timestamp) {
         if (timestamp <= 0) return "";
@@ -93,6 +100,17 @@ namespace {
     }
 
     GdkPixbuf* loadImage(const char* name) { return gdk_pixbuf_new_from_file((std::string("images/") + name).c_str(), nullptr); }
+    GdkPixbuf* loadThemeIcon(const char* name, int size, const char* fallback) {
+        GError* error = nullptr;
+        GdkPixbuf* icon = gtk_icon_theme_load_icon(gtk_icon_theme_get_default(), name, size, GTK_ICON_LOOKUP_FORCE_SIZE, &error);
+        if (error != nullptr) g_error_free(error);
+        if (icon != nullptr) return icon;
+        GdkPixbuf* source = loadImage(fallback);
+        if (source == nullptr) return nullptr;
+        GdkPixbuf* scaled = gdk_pixbuf_scale_simple(source, size, size, GDK_INTERP_BILINEAR);
+        g_object_unref(source);
+        return scaled;
+    }
     GdkPixbuf* scaledIcon(GdkPixbuf* pixbuf, int maximumWidth, int maximumHeight) {
         if (pixbuf == nullptr) return nullptr;
         const int width = gdk_pixbuf_get_width(pixbuf);
@@ -391,10 +409,14 @@ TFileBrowserTree::TFileBrowserTree() {
     gtk_button_box_set_layout(GTK_BUTTON_BOX(buttons), GTK_BUTTONBOX_END);
     gtk_container_set_border_width(GTK_CONTAINER(buttons), 5);
     GtkWidget* closeButton = gtk_button_new_with_label("Close");
+    gtk_button_set_image(GTK_BUTTON(closeButton), gtk_image_new_from_icon_name("window-close-symbolic", GTK_ICON_SIZE_BUTTON));
+    gtk_button_set_always_show_image(GTK_BUTTON(closeButton), true);
     gtk_container_add(GTK_CONTAINER(buttons), closeButton);
     gtk_box_pack_start(GTK_BOX(root), buttons, false, true, 0);
-    closedFolderIcon = loadImage("rcfiles_folderclosed.png");
-    openFolderIcon = loadImage("rcfiles_folderopen.png");
+    closedFolderIcon = loadThemeIcon("folder", 16, "rcfiles_folderclosed.png");
+    openFolderIcon = loadThemeIcon("folder-open", 16, "rcfiles_folderopen.png");
+    closedFolderLargeIcon = loadThemeIcon("folder", 48, "rcfiles_folderclosed.png");
+    openFolderLargeIcon = loadThemeIcon("folder-open", 48, "rcfiles_folderopen.png");
     textFileIcon = loadImage("rcfiles_text2.png");
     nwFileIcon = loadImage("rcfiles_nw.png");
     scriptFileIcon = loadImage("rcfiles_graal.png");
@@ -405,6 +427,8 @@ TFileBrowserTree::TFileBrowserTree() {
     configFileIcon = loadImage("rcfiles_conf.png");
     unknownFileIcon = loadImage("rcfiles_unknown.png");
     g_signal_connect(gtk_tree_view_get_selection(GTK_TREE_VIEW(folderView)), "changed", G_CALLBACK(onFolderSelected), this);
+    g_signal_connect(folderView, "row-expanded", G_CALLBACK(onFolderStateChanged), this);
+    g_signal_connect(folderView, "row-collapsed", G_CALLBACK(onFolderStateChanged), this);
     g_signal_connect(folderView, "button-press-event", G_CALLBACK(onFolderButtonPress), this);
     g_signal_connect(fileView, "button-press-event", G_CALLBACK(onFileButtonPress), this);
     g_signal_connect(modernView, "button-press-event", G_CALLBACK(onModernButtonPress), this);
@@ -415,9 +439,14 @@ TFileBrowserTree::TFileBrowserTree() {
 #ifndef _WIN32
     GtkTargetEntry fileTarget[] = {{const_cast<gchar*>("application/x-remote-control-file-path"), GTK_TARGET_SAME_APP, 1}, {const_cast<gchar*>("text/uri-list"), 0, 2}};
     gtk_drag_source_set(fileView, GDK_BUTTON1_MASK, fileTarget, G_N_ELEMENTS(fileTarget), static_cast<GdkDragAction>(GDK_ACTION_COPY | GDK_ACTION_MOVE));
+    gtk_drag_source_set(modernView, GDK_BUTTON1_MASK, fileTarget, G_N_ELEMENTS(fileTarget), static_cast<GdkDragAction>(GDK_ACTION_COPY | GDK_ACTION_MOVE));
 #else
     gtk_widget_add_events(fileView, GDK_BUTTON_RELEASE_MASK);
     g_signal_connect(fileView, "button-release-event", G_CALLBACK(onFileButtonRelease), this);
+    gtk_widget_add_events(modernView, GDK_BUTTON_RELEASE_MASK);
+    g_signal_connect(modernView, "button-release-event", G_CALLBACK(onFileButtonRelease), this);
+    gtk_widget_add_events(folderView, GDK_BUTTON_RELEASE_MASK);
+    g_signal_connect(folderView, "button-release-event", G_CALLBACK(onFileButtonRelease), this);
 #endif
     gtk_widget_add_events(fileView, static_cast<GdkEventMask>(GDK_POINTER_MOTION_MASK | GDK_LEAVE_NOTIFY_MASK));
     g_signal_connect(fileView, "motion-notify-event", G_CALLBACK(onFileMotion), this);
@@ -425,6 +454,8 @@ TFileBrowserTree::TFileBrowserTree() {
     gtk_widget_add_events(modernView, static_cast<GdkEventMask>(GDK_POINTER_MOTION_MASK | GDK_LEAVE_NOTIFY_MASK));
     g_signal_connect(modernView, "motion-notify-event", G_CALLBACK(onModernMotion), this);
     g_signal_connect(modernView, "leave-notify-event", G_CALLBACK(onFileLeave), this);
+    gtk_widget_add_events(folderView, GDK_LEAVE_NOTIFY_MASK);
+    g_signal_connect(folderView, "leave-notify-event", G_CALLBACK(onFileLeave), this);
     g_signal_connect(gtk_scrolled_window_get_vadjustment(GTK_SCROLLED_WINDOW(modernScrolled)), "value-changed", G_CALLBACK(+[](GtkAdjustment*, gpointer data) { static_cast<TFileBrowserTree*>(data)->queueVisibleThumbnails(); }), this);
     g_signal_connect(modernView, "size-allocate", G_CALLBACK(+[](GtkWidget* widget, GtkAllocation* allocation, gpointer data) {
         gtk_icon_view_set_columns(GTK_ICON_VIEW(widget), std::max(1, allocation->width / 108));
@@ -436,6 +467,9 @@ TFileBrowserTree::TFileBrowserTree() {
     g_signal_connect(fileView, "drag-begin", G_CALLBACK(onFileDragBegin), this);
     g_signal_connect(fileView, "drag-end", G_CALLBACK(onFileDragEnd), this);
     g_signal_connect(fileView, "drag-data-get", G_CALLBACK(onFileDragDataGet), this);
+    g_signal_connect(modernView, "drag-begin", G_CALLBACK(onFileDragBegin), this);
+    g_signal_connect(modernView, "drag-end", G_CALLBACK(onFileDragEnd), this);
+    g_signal_connect(modernView, "drag-data-get", G_CALLBACK(onFileDragDataGet), this);
     g_signal_connect(folderView, "drag-data-received", G_CALLBACK(onDropDataReceived), this);
     g_signal_connect(fileView, "drag-data-received", G_CALLBACK(onDropDataReceived), this);
     g_signal_connect(modernView, "drag-data-received", G_CALLBACK(onDropDataReceived), this);
@@ -463,6 +497,7 @@ TFileBrowserTree::TFileBrowserTree() {
 TFileBrowserTree::~TFileBrowserTree() {
     if (externalWatchId != 0) g_source_remove(externalWatchId);
     if (inlineRenameId != 0) g_source_remove(inlineRenameId);
+    if (mutationRefreshId != 0) g_source_remove(mutationRefreshId);
     if (thumbnailLoadId != 0) g_source_remove(thumbnailLoadId);
     clearPreviewCache();
     for (const std::string& path : pendingDragLocalPaths) g_remove(path.c_str());
@@ -470,6 +505,8 @@ TFileBrowserTree::~TFileBrowserTree() {
     if (!dragStagingFolder.empty()) g_rmdir(dragStagingFolder.c_str());
     if (closedFolderIcon != nullptr) g_object_unref(closedFolderIcon);
     if (openFolderIcon != nullptr) g_object_unref(openFolderIcon);
+    if (closedFolderLargeIcon != nullptr) g_object_unref(closedFolderLargeIcon);
+    if (openFolderLargeIcon != nullptr) g_object_unref(openFolderLargeIcon);
     if (textFileIcon != nullptr) g_object_unref(textFileIcon);
     if (nwFileIcon != nullptr) g_object_unref(nwFileIcon);
     if (scriptFileIcon != nullptr) g_object_unref(scriptFileIcon);
@@ -553,6 +590,8 @@ void TFileBrowserTree::onFolderSelected(GtkTreeSelection* selection, gpointer da
     }
 }
 
+void TFileBrowserTree::onFolderStateChanged(GtkTreeView*, GtkTreeIter*, GtkTreePath*, gpointer data) { static_cast<TFileBrowserTree*>(data)->updateFolderIcons(); }
+
 void TFileBrowserTree::navigateTo(const std::string& folder) {
     std::string normalized = folder;
     std::replace(normalized.begin(), normalized.end(), '\\', '/');
@@ -567,7 +606,26 @@ void TFileBrowserTree::navigateTo(const std::string& folder) {
     hidePreview();
     gtk_label_set_text(GTK_LABEL(folderPath), (std::string("Current Folder: ") + normalized).c_str());
     gtk_entry_set_text(GTK_ENTRY(addressEntry), normalized.c_str());
+    updateFolderIcons();
     if (!rc_filebrowser_cd(connection, normalized.c_str())) appendLog(rc_last_error(connection));
+}
+
+void TFileBrowserTree::updateFolderIcons() {
+    if (folders == nullptr || folderView == nullptr) return;
+    std::string active = currentFolder;
+    while (!active.empty() && active.back() == '/') active.pop_back();
+    struct State { TFileBrowserTree* browser; const std::string* active; } state{this, &active};
+    gtk_tree_model_foreach(GTK_TREE_MODEL(folders), +[](GtkTreeModel* model, GtkTreePath* treePath, GtkTreeIter* row, gpointer data) {
+        State* state = static_cast<State*>(data);
+        gchar* value = nullptr;
+        gtk_tree_model_get(model, row, FolderPathColumn, &value, -1);
+        const std::string folder = value == nullptr ? "" : value;
+        g_free(value);
+        const bool active = !folder.empty() && (*state->active == folder || state->active->starts_with(folder + "/"));
+        const bool expanded = gtk_tree_view_row_expanded(GTK_TREE_VIEW(state->browser->folderView), treePath);
+        gtk_tree_store_set(state->browser->folders, row, FolderIconColumn, active || expanded ? state->browser->openFolderIcon : state->browser->closedFolderIcon, -1);
+        return FALSE;
+    }, &state);
 }
 
 void TFileBrowserTree::onAddressActivate(GtkEntry* entry, gpointer data) { static_cast<TFileBrowserTree*>(data)->navigateTo(gtk_entry_get_text(entry)); }
@@ -581,6 +639,18 @@ void TFileBrowserTree::onAddressUp(GtkButton*, gpointer data) {
 void TFileBrowserTree::onAddressRefresh(GtkButton*, gpointer data) {
     TFileBrowserTree* browser = static_cast<TFileBrowserTree*>(data);
     if (!rc_filebrowser_cd(browser->connection, browser->currentFolder.c_str())) browser->appendLog(rc_last_error(browser->connection));
+}
+
+gboolean TFileBrowserTree::onMutationRefresh(gpointer data) {
+    TFileBrowserTree* browser = static_cast<TFileBrowserTree*>(data);
+    browser->mutationRefreshId = 0;
+    if (browser->connection != nullptr && !rc_filebrowser_cd(browser->connection, browser->currentFolder.c_str())) browser->appendLog(rc_last_error(browser->connection));
+    return G_SOURCE_REMOVE;
+}
+
+void TFileBrowserTree::queueMutationRefresh() {
+    if (mutationRefreshId != 0) g_source_remove(mutationRefreshId);
+    mutationRefreshId = g_timeout_add(500, onMutationRefresh, this);
 }
 
 gboolean TFileBrowserTree::onFolderButtonPress(GtkWidget* widget, GdkEventButton* event, gpointer data) {
@@ -660,6 +730,20 @@ gboolean TFileBrowserTree::onModernButtonPress(GtkWidget* widget, GdkEventButton
         browser->showItemMenu(widget, event, folder);
         return true;
     }
+    if (event->type == GDK_BUTTON_PRESS && event->button == GDK_BUTTON_PRIMARY) {
+        GtkTreeIter row;
+        gboolean folder = false;
+        if (gtk_tree_model_get_iter(GTK_TREE_MODEL(browser->modernItems), &row, path)) gtk_tree_model_get(GTK_TREE_MODEL(browser->modernItems), &row, ModernFolderColumn, &folder, -1);
+#ifdef _WIN32
+        if (!folder) {
+            browser->nativeDragButton = event->button;
+            browser->nativeDragX = static_cast<gint>(event->x);
+            browser->nativeDragY = static_cast<gint>(event->y);
+        }
+#endif
+        gtk_tree_path_free(path);
+        return false;
+    }
     if (event->type != GDK_2BUTTON_PRESS || event->button != GDK_BUTTON_PRIMARY) { gtk_tree_path_free(path); return false; }
     GtkTreeIter row;
     gchar* itemPath = nullptr;
@@ -682,6 +766,29 @@ gboolean TFileBrowserTree::onModernButtonPress(GtkWidget* widget, GdkEventButton
 
 gboolean TFileBrowserTree::onModernMotion(GtkWidget* widget, GdkEventMotion* event, gpointer data) {
     TFileBrowserTree* browser = static_cast<TFileBrowserTree*>(data);
+#ifdef _WIN32
+    if (browser->nativeDragButton != 0 && gtk_drag_check_threshold(widget, browser->nativeDragX, browser->nativeDragY, static_cast<gint>(event->x), static_cast<gint>(event->y))) {
+        browser->hidePreview();
+        GdkWindow* folderWindow = gtk_widget_get_window(browser->folderView);
+        gint folderX = 0;
+        gint folderY = 0;
+        if (folderWindow != nullptr) gdk_window_get_origin(folderWindow, &folderX, &folderY);
+        const bool overFolderTree = folderWindow != nullptr && event->x_root >= folderX && event->x_root < folderX + gtk_widget_get_allocated_width(browser->folderView) && event->y_root >= folderY && event->y_root < folderY + gtk_widget_get_allocated_height(browser->folderView);
+        GtkTreePath* folderPath = nullptr;
+        if (overFolderTree) gtk_tree_view_get_path_at_pos(GTK_TREE_VIEW(browser->folderView), static_cast<gint>(event->x_root) - folderX, static_cast<gint>(event->y_root) - folderY, &folderPath, nullptr, nullptr, nullptr);
+        gtk_tree_view_set_drag_dest_row(GTK_TREE_VIEW(browser->folderView), folderPath, GTK_TREE_VIEW_DROP_INTO_OR_BEFORE);
+        if (folderPath != nullptr) gtk_tree_path_free(folderPath);
+        GtkTreePath* modernPath = overFolderTree ? nullptr : gtk_icon_view_get_path_at_pos(GTK_ICON_VIEW(widget), static_cast<gint>(event->x), static_cast<gint>(event->y));
+        gboolean modernFolder = false;
+        if (modernPath != nullptr) {
+            GtkTreeIter row;
+            if (gtk_tree_model_get_iter(GTK_TREE_MODEL(browser->modernItems), &row, modernPath)) gtk_tree_model_get(GTK_TREE_MODEL(browser->modernItems), &row, ModernFolderColumn, &modernFolder, -1);
+        }
+        gtk_icon_view_set_drag_dest_item(GTK_ICON_VIEW(widget), modernFolder ? modernPath : nullptr, GTK_ICON_VIEW_DROP_INTO);
+        if (modernPath != nullptr) gtk_tree_path_free(modernPath);
+        return true;
+    }
+#endif
     if (!browser->hoverPreviews) { browser->hidePreview(); return false; }
     GtkTreePath* path = gtk_icon_view_get_path_at_pos(GTK_ICON_VIEW(widget), static_cast<gint>(event->x), static_cast<gint>(event->y));
     if (path == nullptr) { browser->hidePreview(); return false; }
@@ -700,16 +807,83 @@ gboolean TFileBrowserTree::onModernMotion(GtkWidget* widget, GdkEventMotion* eve
 }
 
 #ifdef _WIN32
-gboolean TFileBrowserTree::onFileButtonRelease(GtkWidget*, GdkEventButton* event, gpointer data) {
+gboolean TFileBrowserTree::onFileButtonRelease(GtkWidget* widget, GdkEventButton* event, gpointer data) {
     TFileBrowserTree* browser = static_cast<TFileBrowserTree*>(data);
-    if (browser->nativeDragButton == event->button) browser->nativeDragButton = 0;
-    return false;
+    if (browser->nativeDragButton != event->button) return false;
+    browser->nativeDragButton = 0;
+    GtkTreePath* targetPath = nullptr;
+    bool targetFolderTree = widget == browser->folderView;
+    if (widget == browser->modernView) {
+        GdkWindow* folderWindow = gtk_widget_get_window(browser->folderView);
+        gint folderX = 0;
+        gint folderY = 0;
+        if (folderWindow != nullptr) gdk_window_get_origin(folderWindow, &folderX, &folderY);
+        targetFolderTree = folderWindow != nullptr && event->x_root >= folderX && event->x_root < folderX + gtk_widget_get_allocated_width(browser->folderView) && event->y_root >= folderY && event->y_root < folderY + gtk_widget_get_allocated_height(browser->folderView);
+        if (targetFolderTree) gtk_tree_view_get_path_at_pos(GTK_TREE_VIEW(browser->folderView), static_cast<gint>(event->x_root) - folderX, static_cast<gint>(event->y_root) - folderY, &targetPath, nullptr, nullptr, nullptr);
+        else targetPath = gtk_icon_view_get_path_at_pos(GTK_ICON_VIEW(widget), static_cast<gint>(event->x), static_cast<gint>(event->y));
+    }
+    else if (widget == browser->folderView) gtk_tree_view_get_path_at_pos(GTK_TREE_VIEW(widget), static_cast<gint>(event->x), static_cast<gint>(event->y), &targetPath, nullptr, nullptr, nullptr);
+    else return false;
+    gtk_tree_view_set_drag_dest_row(GTK_TREE_VIEW(browser->folderView), nullptr, GTK_TREE_VIEW_DROP_BEFORE);
+    gtk_icon_view_set_drag_dest_item(GTK_ICON_VIEW(browser->modernView), nullptr, GTK_ICON_VIEW_DROP_INTO);
+    if (targetPath == nullptr) return false;
+    GtkTreeIter target;
+    gboolean folder = false;
+    gchar* destination = nullptr;
+    if (!targetFolderTree) {
+        if (gtk_tree_model_get_iter(GTK_TREE_MODEL(browser->modernItems), &target, targetPath)) gtk_tree_model_get(GTK_TREE_MODEL(browser->modernItems), &target, ModernPathColumn, &destination, ModernFolderColumn, &folder, -1);
+    } else if (gtk_tree_model_get_iter(GTK_TREE_MODEL(browser->folders), &target, targetPath)) {
+        gtk_tree_model_get(GTK_TREE_MODEL(browser->folders), &target, FolderPathColumn, &destination, -1);
+        folder = destination != nullptr;
+    }
+    gtk_tree_path_free(targetPath);
+    if (!folder || destination == nullptr) { g_free(destination); return false; }
+    GtkTreeModel* model = nullptr;
+    GList* rows = selectedRows(browser->modernView, &model);
+    bool moved = false;
+    for (GList* node = rows; node != nullptr; node = node->next) {
+        GtkTreeIter row;
+        gchar* source = nullptr;
+        gboolean sourceFolder = false;
+        if (gtk_tree_model_get_iter(model, &row, static_cast<GtkTreePath*>(node->data))) gtk_tree_model_get(model, &row, ModernPathColumn, &source, ModernFolderColumn, &sourceFolder, -1);
+        if (!sourceFolder && source != nullptr && *source != '\0') {
+            if (rc_filebrowser_move(browser->connection, destination, source)) moved = true;
+            else browser->appendLog(rc_last_error(browser->connection));
+        }
+        g_free(source);
+        gtk_tree_path_free(static_cast<GtkTreePath*>(node->data));
+    }
+    g_list_free(rows);
+    g_free(destination);
+    if (moved) browser->queueMutationRefresh();
+    return moved;
 }
 #endif
 
+gboolean TFileBrowserTree::onFileLeave(GtkWidget* widget, GdkEventCrossing* event, gpointer data) {
+    TFileBrowserTree* browser = static_cast<TFileBrowserTree*>(data);
+#ifdef _WIN32
+    if ((widget == browser->modernView || widget == browser->folderView) && browser->nativeDragButton != 0 && (event->state & GDK_BUTTON1_MASK) != 0) {
+        GdkWindow* browserWindow = gtk_widget_get_window(browser->window);
+        gint browserX = 0;
+        gint browserY = 0;
+        if (browserWindow != nullptr) gdk_window_get_origin(browserWindow, &browserX, &browserY);
+        const bool insideBrowser = browserWindow != nullptr && event->x_root >= browserX && event->x_root < browserX + gtk_widget_get_allocated_width(browser->window) && event->y_root >= browserY && event->y_root < browserY + gtk_widget_get_allocated_height(browser->window);
+        if (insideBrowser) return false;
+        gtk_tree_view_set_drag_dest_row(GTK_TREE_VIEW(browser->folderView), nullptr, GTK_TREE_VIEW_DROP_BEFORE);
+        gtk_icon_view_set_drag_dest_item(GTK_ICON_VIEW(browser->modernView), nullptr, GTK_ICON_VIEW_DROP_INTO);
+        browser->hidePreview();
+        browser->startNativeDrag(browser->modernView);
+        browser->nativeDragButton = 0;
+        return true;
+    }
+#endif
+    browser->hidePreview();
+    return false;
+}
+
 gboolean TFileBrowserTree::onFileMotion(GtkWidget* widget, GdkEventMotion* event, gpointer data) {
     TFileBrowserTree* browser = static_cast<TFileBrowserTree*>(data);
-    if (!browser->hoverPreviews) { browser->hidePreview(); return false; }
 #ifdef _WIN32
     if (browser->nativeDragButton != 0) {
         if (!gtk_drag_check_threshold(widget, browser->nativeDragX, browser->nativeDragY, static_cast<gint>(event->x), static_cast<gint>(event->y))) return true;
@@ -720,6 +894,7 @@ gboolean TFileBrowserTree::onFileMotion(GtkWidget* widget, GdkEventMotion* event
         return true;
     }
 #endif
+    if (!browser->hoverPreviews) { browser->hidePreview(); return false; }
     GtkTreePath* path = nullptr;
     if (!gtk_tree_view_get_path_at_pos(GTK_TREE_VIEW(widget), static_cast<gint>(event->x), static_cast<gint>(event->y), &path, nullptr, nullptr, nullptr)) { browser->hidePreview(); return false; }
     GtkTreeIter row;
@@ -731,11 +906,6 @@ gboolean TFileBrowserTree::onFileMotion(GtkWidget* widget, GdkEventMotion* event
     browser->previewRootX = static_cast<int>(event->x_root);
     browser->previewRootY = static_cast<int>(event->y_root);
     browser->showPreview(browser->hoveredPreviewPath, browser->previewRootX, browser->previewRootY);
-    return false;
-}
-
-gboolean TFileBrowserTree::onFileLeave(GtkWidget*, GdkEventCrossing*, gpointer data) {
-    static_cast<TFileBrowserTree*>(data)->hidePreview();
     return false;
 }
 
@@ -803,14 +973,14 @@ void TFileBrowserTree::startNativeDrag(GtkWidget* widget) {
     completedDragDownloads.clear();
     pendingDragLocalPaths.clear();
     pendingExternalPath.clear();
-    GtkTreeModel* model = gtk_tree_view_get_model(GTK_TREE_VIEW(widget));
+    GtkTreeModel* model = GTK_IS_ICON_VIEW(widget) ? gtk_icon_view_get_model(GTK_ICON_VIEW(widget)) : gtk_tree_view_get_model(GTK_TREE_VIEW(widget));
     GList* rows = nullptr;
     for (const std::string& pathText : pendingDragSelectionPaths) {
         GtkTreePath* path = gtk_tree_path_new_from_string(pathText.c_str());
         if (path != nullptr) rows = g_list_append(rows, path);
     }
     pendingDragSelectionPaths.clear();
-    if (rows == nullptr) rows = gtk_tree_selection_get_selected_rows(gtk_tree_view_get_selection(GTK_TREE_VIEW(widget)), nullptr);
+    if (rows == nullptr) rows = selectedRows(widget, nullptr);
     if (rows == nullptr) return;
     gchar* temp = g_get_tmp_dir() == nullptr ? nullptr : g_build_filename(g_get_tmp_dir(), "RemoteControl-filebrowser-drag", nullptr);
     dragStagingFolder = temp == nullptr ? "" : temp;
@@ -822,8 +992,10 @@ void TFileBrowserTree::startNativeDrag(GtkWidget* widget) {
         GtkTreeIter row;
         gchar* remotePath = nullptr;
         if (!gtk_tree_model_get_iter(model, &row, static_cast<GtkTreePath*>(node->data))) continue;
-        gtk_tree_model_get(model, &row, FilePathColumn, &remotePath, -1);
-        if (remotePath == nullptr || *remotePath == '\0' || dragStagingFolder.empty()) { g_free(remotePath); continue; }
+        gboolean folder = false;
+        if (GTK_IS_ICON_VIEW(widget)) gtk_tree_model_get(model, &row, ModernPathColumn, &remotePath, ModernFolderColumn, &folder, -1);
+        else gtk_tree_model_get(model, &row, FilePathColumn, &remotePath, -1);
+        if (folder || remotePath == nullptr || *remotePath == '\0' || dragStagingFolder.empty()) { g_free(remotePath); continue; }
         gchar* basename = g_path_get_basename(remotePath);
         const std::string fileName = basename == nullptr ? "download" : basename;
         std::string localPath = dragStagingFolder + G_DIR_SEPARATOR_S + fileName;
@@ -851,6 +1023,7 @@ void TFileBrowserTree::startNativeDrag(GtkWidget* widget) {
                 while (gtk_events_pending()) gtk_main_iteration();
                 g_usleep(10000);
             }
+            if (g_file_test(localPath.c_str(), G_FILE_TEST_EXISTS)) appendLog((std::string("Downloaded file ") + remotePath).c_str());
         }
         if (!g_file_test(localPath.c_str(), G_FILE_TEST_EXISTS)) return false;
         gchar* bytes = nullptr;
@@ -874,7 +1047,7 @@ void TFileBrowserTree::startNativeDrag(GtkWidget* widget) {
 
 void TFileBrowserTree::onFileDragBegin(GtkWidget* widget, GdkDragContext* context, gpointer data) {
     TFileBrowserTree* browser = static_cast<TFileBrowserTree*>(data);
-    if (!browser->pendingDragSelectionPaths.empty()) {
+    if (!browser->pendingDragSelectionPaths.empty() && GTK_IS_TREE_VIEW(widget)) {
         GtkTreeSelection* selection = gtk_tree_view_get_selection(GTK_TREE_VIEW(widget));
         gtk_tree_selection_unselect_all(selection);
         for (const std::string& pathText : browser->pendingDragSelectionPaths) {
@@ -890,9 +1063,8 @@ void TFileBrowserTree::onFileDragBegin(GtkWidget* widget, GdkDragContext* contex
     browser->completedDragDownloads.clear();
     browser->pendingDragLocalPaths.clear();
     browser->pendingExternalPath.clear();
-    GtkTreeSelection* selected = gtk_tree_view_get_selection(GTK_TREE_VIEW(widget));
     GtkTreeModel* model = nullptr;
-    GList* rows = gtk_tree_selection_get_selected_rows(selected, &model);
+    GList* rows = selectedRows(widget, &model);
     if (rows == nullptr) return;
     gchar* staging = g_canonicalize_filename("cache/filebrowser-drag", nullptr);
     browser->dragStagingFolder = staging == nullptr ? "" : staging;
@@ -902,8 +1074,10 @@ void TFileBrowserTree::onFileDragBegin(GtkWidget* widget, GdkDragContext* contex
         GtkTreeIter selectedRow;
         gchar* remotePath = nullptr;
         if (!gtk_tree_model_get_iter(model, &selectedRow, static_cast<GtkTreePath*>(node->data))) continue;
-        gtk_tree_model_get(model, &selectedRow, FilePathColumn, &remotePath, -1);
-        if (remotePath == nullptr || *remotePath == '\0' || browser->dragStagingFolder.empty()) { g_free(remotePath); continue; }
+        gboolean folder = false;
+        if (GTK_IS_ICON_VIEW(widget)) gtk_tree_model_get(model, &selectedRow, ModernPathColumn, &remotePath, ModernFolderColumn, &folder, -1);
+        else gtk_tree_model_get(model, &selectedRow, FilePathColumn, &remotePath, -1);
+        if (folder || remotePath == nullptr || *remotePath == '\0' || browser->dragStagingFolder.empty()) { g_free(remotePath); continue; }
         gchar* basename = g_path_get_basename(remotePath);
         const std::string fileName = basename == nullptr ? "download" : basename;
         std::string localPath = browser->dragStagingFolder + G_DIR_SEPARATOR_S + fileName;
@@ -920,7 +1094,7 @@ void TFileBrowserTree::onFileDragBegin(GtkWidget* widget, GdkDragContext* contex
     if (gtk_tree_model_get_iter(model, &row, path)) {
         GdkPixbuf* icon = nullptr;
         gchar* name = nullptr;
-        gtk_tree_model_get(model, &row, FileIconColumn, &icon, FilePathColumn, &name, -1);
+        gtk_tree_model_get(model, &row, GTK_IS_ICON_VIEW(widget) ? ModernIconColumn : FileIconColumn, &icon, GTK_IS_ICON_VIEW(widget) ? ModernPathColumn : FilePathColumn, &name, -1);
         GtkWidget* preview = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 5);
         gtk_widget_set_margin_start(preview, 6);
         gtk_widget_set_margin_end(preview, 6);
@@ -970,14 +1144,18 @@ void TFileBrowserTree::onFileDragDataGet(GtkWidget* widget, GdkDragContext*, Gtk
         }
         return;
     }
-    GtkTreeSelection* selected = gtk_tree_view_get_selection(GTK_TREE_VIEW(widget));
     GtkTreeModel* model = nullptr;
-    GList* rows = gtk_tree_selection_get_selected_rows(selected, &model);
+    GList* rows = selectedRows(widget, &model);
     std::string paths;
     for (GList* node = rows; node != nullptr; node = node->next) {
         GtkTreeIter row;
         gchar* path = nullptr;
-        if (gtk_tree_model_get_iter(model, &row, static_cast<GtkTreePath*>(node->data))) gtk_tree_model_get(model, &row, FilePathColumn, &path, -1);
+        gboolean folder = false;
+        if (gtk_tree_model_get_iter(model, &row, static_cast<GtkTreePath*>(node->data))) {
+            if (GTK_IS_ICON_VIEW(widget)) gtk_tree_model_get(model, &row, ModernPathColumn, &path, ModernFolderColumn, &folder, -1);
+            else gtk_tree_model_get(model, &row, FilePathColumn, &path, -1);
+        }
+        if (folder) { g_free(path); path = nullptr; }
         if (path != nullptr && *path != '\0') { if (!paths.empty()) paths += '\n'; paths += path; }
         g_free(path);
         gtk_tree_path_free(static_cast<GtkTreePath*>(node->data));
@@ -1051,6 +1229,7 @@ void TFileBrowserTree::onDropDataReceived(GtkWidget* widget, GdkDragContext* con
         }
     }
     if (!success) browser->appendLog(rc_last_error(browser->connection));
+    else browser->queueMutationRefresh();
     gtk_drag_finish(context, success, false, time);
 }
 
@@ -1145,10 +1324,12 @@ void TFileBrowserTree::onEditAsText(GtkMenuItem*, gpointer data) {
 
 void TFileBrowserTree::onDeleteItem(GtkMenuItem*, gpointer data) {
     FileMenuItem* item = static_cast<FileMenuItem*>(data);
+    bool changed = false;
     for (const std::string& path : item->paths) {
-        if (!rc_filebrowser_delete(item->browser->connection, path.c_str())) item->browser->appendLog(rc_last_error(item->browser->connection));
+        if (rc_filebrowser_delete(item->browser->connection, path.c_str())) changed = true;
+        else item->browser->appendLog(rc_last_error(item->browser->connection));
     }
-    if (!item->browser->currentFolder.empty() && !rc_filebrowser_cd(item->browser->connection, item->browser->currentFolder.c_str())) item->browser->appendLog(rc_last_error(item->browser->connection));
+    if (changed) item->browser->queueMutationRefresh();
 }
 
 void TFileBrowserTree::onRename(GtkMenuItem*, gpointer data) {
@@ -1164,8 +1345,10 @@ void TFileBrowserTree::onRename(GtkMenuItem*, gpointer data) {
         gtk_widget_show_all(dialog);
         if (gtk_dialog_run(GTK_DIALOG(dialog)) == GTK_RESPONSE_ACCEPT) {
             const char* value = gtk_entry_get_text(GTK_ENTRY(entry));
-            if (value != nullptr && *value != '\0' && !rc_filebrowser_rename(item->browser->connection, item->paths.front().c_str(), value)) item->browser->appendLog(rc_last_error(item->browser->connection));
-            else if (!item->browser->currentFolder.empty() && !rc_filebrowser_cd(item->browser->connection, item->browser->currentFolder.c_str())) item->browser->appendLog(rc_last_error(item->browser->connection));
+            if (value != nullptr && *value != '\0') {
+                if (rc_filebrowser_rename(item->browser->connection, item->paths.front().c_str(), value)) item->browser->queueMutationRefresh();
+                else item->browser->appendLog(rc_last_error(item->browser->connection));
+            }
         }
         gtk_widget_destroy(dialog);
         return;
@@ -1201,7 +1384,7 @@ void TFileBrowserTree::onFileNameEdited(GtkCellRendererText*, gchar* path, gchar
     gtk_tree_path_free(treePath);
     if (oldPath == nullptr || *oldPath == '\0' || std::string(oldPath) == value) { g_free(oldPath); return; }
     if (!rc_filebrowser_rename(browser->connection, oldPath, value)) browser->appendLog(rc_last_error(browser->connection));
-    else if (!browser->currentFolder.empty() && !rc_filebrowser_cd(browser->connection, browser->currentFolder.c_str())) browser->appendLog(rc_last_error(browser->connection));
+    else browser->queueMutationRefresh();
     g_free(oldPath);
 }
 
@@ -1212,7 +1395,14 @@ void TFileBrowserTree::onMove(GtkMenuItem*, gpointer data) {
     gtk_entry_set_text(GTK_ENTRY(entry), item->browser->currentFolder.c_str());
     gtk_box_pack_start(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), entry, false, false, 8);
     gtk_widget_show_all(dialog);
-    if (gtk_dialog_run(GTK_DIALOG(dialog)) == GTK_RESPONSE_ACCEPT) for (const std::string& path : item->paths) if (!rc_filebrowser_move(item->browser->connection, gtk_entry_get_text(GTK_ENTRY(entry)), path.c_str())) item->browser->appendLog(rc_last_error(item->browser->connection));
+    if (gtk_dialog_run(GTK_DIALOG(dialog)) == GTK_RESPONSE_ACCEPT) {
+        bool changed = false;
+        for (const std::string& path : item->paths) {
+            if (rc_filebrowser_move(item->browser->connection, gtk_entry_get_text(GTK_ENTRY(entry)), path.c_str())) changed = true;
+            else item->browser->appendLog(rc_last_error(item->browser->connection));
+        }
+        if (changed) item->browser->queueMutationRefresh();
+    }
     gtk_widget_destroy(dialog);
 }
 
@@ -1222,6 +1412,7 @@ void TFileBrowserTree::onUpload(GtkMenuItem*, gpointer data) {
     gtk_file_chooser_set_select_multiple(GTK_FILE_CHOOSER(dialog), true);
     if (gtk_dialog_run(GTK_DIALOG(dialog)) == GTK_RESPONSE_ACCEPT) {
         GSList* filenames = gtk_file_chooser_get_filenames(GTK_FILE_CHOOSER(dialog));
+        bool changed = false;
         for (GSList* node = filenames; node != nullptr; node = node->next) {
             gchar* contents = nullptr;
             gsize length = 0;
@@ -1235,13 +1426,15 @@ void TFileBrowserTree::onUpload(GtkMenuItem*, gpointer data) {
                 std::string remotePath = browser->currentFolder;
                 if (!remotePath.empty() && remotePath.back() != '/') remotePath += '/';
                 remotePath += basename;
-                if (!rc_upload_file(browser->connection, remotePath.c_str(), contents, static_cast<int>(length))) browser->appendLog(rc_last_error(browser->connection));
+                if (rc_upload_file(browser->connection, remotePath.c_str(), contents, static_cast<int>(length))) changed = true;
+                else browser->appendLog(rc_last_error(browser->connection));
                 g_free(basename);
                 g_free(contents);
             }
             g_free(node->data);
         }
         g_slist_free(filenames);
+        if (changed) browser->queueMutationRefresh();
     }
     gtk_widget_destroy(dialog);
 }
@@ -1448,7 +1641,7 @@ void TFileBrowserTree::rebuildModernItems() {
         GtkTreeIter item;
         gtk_list_store_append(modernItems, &item);
         const std::string remotePath = path + "/";
-        GdkPixbuf* icon = scaledIcon(closedFolderIcon, 44, 44);
+        GdkPixbuf* icon = scaledIcon(closedFolderLargeIcon, 48, 48);
         gtk_list_store_set(modernItems, &item, ModernIconColumn, icon, ModernNameColumn, remainder.c_str(), ModernPathColumn, remotePath.c_str(), ModernFolderColumn, TRUE, ModernRightsColumn, "", -1);
         if (icon != nullptr) g_object_unref(icon);
     }
@@ -1561,6 +1754,7 @@ void TFileBrowserTree::refreshFolders() {
     }
     gtk_tree_sortable_set_sort_column_id(GTK_TREE_SORTABLE(folders), FolderDisplayColumn, GTK_SORT_ASCENDING);
     rc_free_filebrowser_folders(entries, count);
+    updateFolderIcons();
     if (modernFileBrowser) rebuildModernItems();
 }
 
@@ -1577,6 +1771,7 @@ void TFileBrowserTree::refreshFiles(const char* folder, int count) {
     previewFolder = responseFolder;
     gtk_label_set_text(GTK_LABEL(folderPath), (std::string("Current Folder: ") + responseFolder).c_str());
     gtk_entry_set_text(GTK_ENTRY(addressEntry), responseFolder.c_str());
+    updateFolderIcons();
     for (int index = 0; index < entryCount; ++index) {
         GtkTreeIter row;
         gtk_list_store_append(files, &row);
@@ -1628,7 +1823,7 @@ void TFileBrowserTree::addFolder(const char* pattern, const char* rights) {
         if (!found) {
             gtk_tree_store_append(folders, &row, parentPointer);
             const std::string label = parts[index] + "/";
-            gtk_tree_store_set(folders, &row, FolderIconColumn, index + 1 == parts.size() ? closedFolderIcon : openFolderIcon, FolderPathColumn, fullPath.c_str(), FolderRightsColumn, index + 1 == parts.size() && rights != nullptr ? rights : "", FolderDisplayColumn, label.c_str(), -1);
+            gtk_tree_store_set(folders, &row, FolderIconColumn, closedFolderIcon, FolderPathColumn, fullPath.c_str(), FolderRightsColumn, index + 1 == parts.size() && rights != nullptr ? rights : "", FolderDisplayColumn, label.c_str(), -1);
         }
         parent = row;
         parentPointer = &parent;
