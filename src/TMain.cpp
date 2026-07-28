@@ -478,21 +478,30 @@ int main(int argc, char** argv) {
     std::vector<std::unique_ptr<TRemoteFrame>> remoteFrames;
     std::function<void()> switchServer;
     std::function<void()> openAnotherServerList;
-    TServerList serverList([&] { if (remoteFrames.empty()) startFrame->show(); }, [&](TServerList* sourceList, void* connection, int serverIndex, const std::string& serverName, const std::string& nickname, const std::string& accountName) {
+    TRemoteFrame* pendingServerSwitch = nullptr;
+    TServerList* pendingServerSwitchSource = nullptr;
+    TServerList serverList([&] { if (remoteFrames.empty()) startFrame->show(); }, [&](TServerList* sourceList, void* connection, int serverIndex, const std::string& serverName, const std::string& nickname, const std::string& accountName, bool additional) {
         RC::loadRCOptions(options, applicationDirectory);
         applyRemoteControlTheme(options.theme, options.darkmode);
-        remoteFrames.push_back(std::make_unique<TRemoteFrame>(options, applicationDirectory, [sourceList] { sourceList->reopen(); }, [sourceList] { sourceList->reopen(); }, [sourceList] { sourceList->openListServerSettings(); }));
+        if (pendingServerSwitch != nullptr && pendingServerSwitchSource == sourceList && !additional) {
+            TRemoteFrame* frame = pendingServerSwitch;
+            pendingServerSwitch = nullptr;
+            pendingServerSwitchSource = nullptr;
+            frame->disconnect();
+            frame->open(connection, serverIndex, serverName, nickname, accountName);
+            trayRemoteFrame = frame;
+            return;
+        }
+        pendingServerSwitch = nullptr;
+        pendingServerSwitchSource = nullptr;
+        auto frameSlot = std::make_shared<TRemoteFrame*>(nullptr);
+        remoteFrames.push_back(std::make_unique<TRemoteFrame>(options, applicationDirectory, [sourceList] { sourceList->reopen(); }, [sourceList, frameSlot, &pendingServerSwitch, &pendingServerSwitchSource] { pendingServerSwitch = *frameSlot; pendingServerSwitchSource = sourceList; sourceList->reopen(); }, [sourceList] { sourceList->openListServerSettings(); }));
         TRemoteFrame* frame = remoteFrames.back().get();
+        *frameSlot = frame;
         trayRemoteFrames.push_back(frame);
         trayRemoteFrame = frame;
         frame->open(connection, serverIndex, serverName, nickname, accountName);
-    }, [&] {
-        if (remoteFrames.empty()) return;
-        trayRemoteFrame = nullptr;
-        for (auto& frame : remoteFrames) frame->disconnect();
-        remoteFrames.clear();
-        trayRemoteFrames.clear();
-    }, options.darkmode, options.theme, [&](bool darkMode, const std::string& theme) {
+    }, [] {}, options.darkmode, options.theme, [&](bool darkMode, const std::string& theme) {
         options.darkmode = darkMode;
         options.theme = theme;
         RC::saveRCOptions(options, applicationDirectory);
@@ -524,6 +533,7 @@ int main(int argc, char** argv) {
     };
     trayFrameSignOut = [&](TRemoteFrame* closing) {
         if (closing == nullptr) return;
+        if (pendingServerSwitch == closing) { pendingServerSwitch = nullptr; pendingServerSwitchSource = nullptr; }
         trayPrimaryFrames.erase(closing);
         closing->signOut();
         trayRemoteFrames.erase(std::remove(trayRemoteFrames.begin(), trayRemoteFrames.end(), closing), trayRemoteFrames.end());

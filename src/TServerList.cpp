@@ -64,7 +64,7 @@ namespace {
 
 }
 
-TServerList::TServerList(std::function<void()> onClose, std::function<void(TServerList*, void*, int, const std::string&, const std::string&, const std::string&)> onConnected, std::function<void()> onServerSelected, bool nextDarkMode, const std::string& nextTheme, std::function<void(bool, const std::string&)> onThemeChanged, std::function<std::vector<RC::RCAccount>()> accountChoices, std::function<std::vector<RC::RCAccount>(const std::string&)> accountChoicesForListServer, std::function<void()> onOpenAnother) : onCloseCallback(std::move(onClose)), onConnectedCallback(std::move(onConnected)), onServerSelectedCallback(std::move(onServerSelected)), onThemeChangedCallback(std::move(onThemeChanged)), accountChoicesCallback(std::move(accountChoices)), accountChoicesForListServerCallback(std::move(accountChoicesForListServer)), onOpenAnotherCallback(std::move(onOpenAnother)), darkMode(nextDarkMode), theme(nextTheme) {
+TServerList::TServerList(std::function<void()> onClose, std::function<void(TServerList*, void*, int, const std::string&, const std::string&, const std::string&, bool)> onConnected, std::function<void()> onServerSelected, bool nextDarkMode, const std::string& nextTheme, std::function<void(bool, const std::string&)> onThemeChanged, std::function<std::vector<RC::RCAccount>()> accountChoices, std::function<std::vector<RC::RCAccount>(const std::string&)> accountChoicesForListServer, std::function<void()> onOpenAnother) : onCloseCallback(std::move(onClose)), onConnectedCallback(std::move(onConnected)), onServerSelectedCallback(std::move(onServerSelected)), onThemeChangedCallback(std::move(onThemeChanged)), accountChoicesCallback(std::move(accountChoices)), accountChoicesForListServerCallback(std::move(accountChoicesForListServer)), onOpenAnotherCallback(std::move(onOpenAnother)), darkMode(nextDarkMode), theme(nextTheme) {
     listserverHost = defaultListserverHost;
     listserverEndpoints = RC::loadListServerProfiles(listserverSettingsPath(), defaultListserverHost, listserverPort);
     listserverName = listserverEndpoints.front().name;
@@ -622,10 +622,9 @@ gboolean TServerList::onTreeButtonPress(GtkWidget* widget, GdkEventButton* event
         GtkWidget* accounts = gtk_menu_item_new_with_label("Connect using account");
         GtkWidget* accountMenu = gtk_menu_new();
         gtk_menu_item_set_submenu(GTK_MENU_ITEM(accounts), accountMenu);
-        std::map<std::string, int> nameCounts;
-        for (const RC::RCAccount& account : choices) ++nameCounts[account.name];
         for (const RC::RCAccount& account : choices) {
-            const std::string label = nameCounts[account.name] > 1 ? account.name + " (#" + std::to_string(account.id) + ")" : account.name;
+            const std::string profile = account.listServers.empty() ? list->listserverName : account.listServers.front();
+            const std::string label = profile.empty() ? account.name : account.name + " [" + profile + "]";
             GtkWidget* item = gtk_menu_item_new_with_label(label.c_str());
             g_object_set_data_full(G_OBJECT(item), "rc-account-choice", new RC::RCAccount(account), [](gpointer value) { delete static_cast<RC::RCAccount*>(value); });
             g_signal_connect(item, "activate", G_CALLBACK(+[](GtkMenuItem* item, gpointer value) { const auto* account = static_cast<const RC::RCAccount*>(g_object_get_data(G_OBJECT(item), "rc-account-choice")); if (account != nullptr) static_cast<TServerList*>(value)->connectWithAccount(*account); }), list);
@@ -726,8 +725,9 @@ void TServerList::connect(bool additional) {
     if (rc_connect_to_server(connection, index)) {
         void* remoteConnection = connection;
         connection = nullptr;
+        defaultAdditionalConnection = false;
         gtk_widget_hide(window);
-        onConnectedCallback(this, remoteConnection, index, entries[index].name, nickname, account);
+        onConnectedCallback(this, remoteConnection, index, entries[index].name, nickname, account, additional);
     }
     else {
         const char* reason = rc_last_error(connection);
@@ -760,7 +760,7 @@ void TServerList::connectWithAccount(const RC::RCAccount& selectedAccount) {
         return;
     }
     gtk_widget_hide(window);
-    onConnectedCallback(this, nextConnection, serverIndex, entries[index].name, nickname, selectedAccount.name);
+    onConnectedCallback(this, nextConnection, serverIndex, entries[index].name, nickname, selectedAccount.name, true);
 }
 
 void TServerList::disconnectCurrentConnection() {
