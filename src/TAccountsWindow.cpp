@@ -229,6 +229,8 @@ gboolean TAccountsWindow::onAccountContext(GtkWidget* widget, GdkEventButton* ev
     GtkWidget* rights = gtk_menu_item_new_with_label("Edit Rights");
     GtkWidget* comments = gtk_menu_item_new_with_label("Edit Comments");
     GtkWidget* access = gtk_menu_item_new_with_label("Edit Access");
+    GtkWidget* banHistory = gtk_menu_item_new_with_label("Ban History");
+    GtkWidget* staffActivity = gtk_menu_item_new_with_label("Staff Activity");
     GtkWidget* reset = gtk_menu_item_new_with_label("Reset");
     GtkWidget* remove = gtk_menu_item_new_with_label("Delete");
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), attributes);
@@ -237,6 +239,8 @@ gboolean TAccountsWindow::onAccountContext(GtkWidget* widget, GdkEventButton* ev
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), rights);
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), comments);
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), access);
+    gtk_menu_shell_append(GTK_MENU_SHELL(menu), banHistory);
+    gtk_menu_shell_append(GTK_MENU_SHELL(menu), staffActivity);
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), gtk_separator_menu_item_new());
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), reset);
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), remove);
@@ -245,6 +249,8 @@ gboolean TAccountsWindow::onAccountContext(GtkWidget* widget, GdkEventButton* ev
     g_signal_connect(rights, "activate", G_CALLBACK(onEditRights), data);
     g_signal_connect(comments, "activate", G_CALLBACK(onEditComments), data);
     g_signal_connect(access, "activate", G_CALLBACK(onEditAccess), data);
+    g_signal_connect(banHistory, "activate", G_CALLBACK(onBanHistory), data);
+    g_signal_connect(staffActivity, "activate", G_CALLBACK(onStaffActivity), data);
     g_signal_connect(reset, "activate", G_CALLBACK(onReset), data);
     g_signal_connect(remove, "activate", G_CALLBACK(onDeleteAccount), data);
     g_signal_connect(menu, "deactivate", G_CALLBACK(+[](GtkWidget* menuWidget, gpointer) { gtk_widget_destroy(menuWidget); }), nullptr);
@@ -257,6 +263,8 @@ void TAccountsWindow::onEditAccount(GtkMenuItem*, gpointer data) { static_cast<T
 void TAccountsWindow::onEditRights(GtkMenuItem*, gpointer data) { TAccountsWindow* window = static_cast<TAccountsWindow*>(data); const std::string account = window->selectedAccount(); if (!account.empty()) rc_request_player_rights(window->connection, account.c_str()); }
 void TAccountsWindow::onEditComments(GtkMenuItem*, gpointer data) { TAccountsWindow* window = static_cast<TAccountsWindow*>(data); const std::string account = window->selectedAccount(); if (!account.empty()) rc_request_player_comments(window->connection, account.c_str()); }
 void TAccountsWindow::onEditAccess(GtkMenuItem*, gpointer data) { TAccountsWindow* window = static_cast<TAccountsWindow*>(data); const std::string account = window->selectedAccount(); if (!account.empty()) { rc_request_ban_types(window->connection); rc_request_player_ban_by_account(window->connection, account.c_str()); } }
+void TAccountsWindow::onBanHistory(GtkMenuItem*, gpointer data) { TAccountsWindow* window = static_cast<TAccountsWindow*>(data); const std::string account = window->selectedAccount(); if (!account.empty()) rc_request_ban_history(window->connection, account.c_str()); }
+void TAccountsWindow::onStaffActivity(GtkMenuItem*, gpointer data) { TAccountsWindow* window = static_cast<TAccountsWindow*>(data); const std::string account = window->selectedAccount(); if (!account.empty()) rc_request_staff_activity(window->connection, account.c_str()); }
 void TAccountsWindow::onReset(GtkMenuItem*, gpointer data) {
     TAccountsWindow* window = static_cast<TAccountsWindow*>(data);
     const std::string account = window->selectedAccount();

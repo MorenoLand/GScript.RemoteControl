@@ -1,6 +1,7 @@
 #include "TFileBrowserTree.h"
 #include "TEditorFind.h"
 #include "TGScriptEditor.h"
+#include "TMng.h"
 #include "TTheme.h"
 
 #include <grclib.h>
@@ -110,7 +111,7 @@ namespace {
         gchar* lower = g_ascii_strdown(path.c_str() + dot, -1);
         const std::string extension = lower == nullptr ? "" : lower;
         g_free(lower);
-        return extension == ".png" || extension == ".jpg" || extension == ".jpeg" || extension == ".gif" || extension == ".webp" || extension == ".bmp" || extension == ".ico";
+        return extension == ".png" || extension == ".jpg" || extension == ".jpeg" || extension == ".gif" || extension == ".webp" || extension == ".bmp" || extension == ".ico" || extension == ".mng";
     }
 
 #ifdef _WIN32
@@ -431,11 +432,13 @@ TFileBrowserTree::TFileBrowserTree() {
     }), this);
     gtk_drag_dest_set(folderView, static_cast<GtkDestDefaults>(GTK_DEST_DEFAULT_MOTION | GTK_DEST_DEFAULT_DROP), dropTargets, G_N_ELEMENTS(dropTargets), static_cast<GdkDragAction>(GDK_ACTION_COPY | GDK_ACTION_MOVE));
     gtk_drag_dest_set(fileView, static_cast<GtkDestDefaults>(GTK_DEST_DEFAULT_MOTION | GTK_DEST_DEFAULT_DROP), dropTargets, G_N_ELEMENTS(dropTargets), static_cast<GdkDragAction>(GDK_ACTION_COPY | GDK_ACTION_MOVE));
+    gtk_drag_dest_set(modernView, static_cast<GtkDestDefaults>(GTK_DEST_DEFAULT_MOTION | GTK_DEST_DEFAULT_DROP), dropTargets, G_N_ELEMENTS(dropTargets), GDK_ACTION_COPY);
     g_signal_connect(fileView, "drag-begin", G_CALLBACK(onFileDragBegin), this);
     g_signal_connect(fileView, "drag-end", G_CALLBACK(onFileDragEnd), this);
     g_signal_connect(fileView, "drag-data-get", G_CALLBACK(onFileDragDataGet), this);
     g_signal_connect(folderView, "drag-data-received", G_CALLBACK(onDropDataReceived), this);
     g_signal_connect(fileView, "drag-data-received", G_CALLBACK(onDropDataReceived), this);
+    g_signal_connect(modernView, "drag-data-received", G_CALLBACK(onDropDataReceived), this);
     g_signal_connect(closeButton, "clicked", G_CALLBACK(onRefresh), this);
     g_signal_connect(window, "delete-event", G_CALLBACK(onDelete), this);
     previewWindow = gtk_window_new(GTK_WINDOW_POPUP);
@@ -765,13 +768,17 @@ void TFileBrowserTree::showPreview(const std::string& path, int rootX, int rootY
 }
 
 void TFileBrowserTree::cachePreview(const std::string& path, const void* content, int length) {
+    const std::vector<std::uint8_t> mngFrame = TMng::firstPngFrame(content, static_cast<std::size_t>(length));
+    if (TMng::isMNG(content, static_cast<std::size_t>(length)) && mngFrame.empty()) return;
+    const void* imageContent = mngFrame.empty() ? content : mngFrame.data();
+    const int imageLength = mngFrame.empty() ? length : static_cast<int>(mngFrame.size());
     GdkPixbufLoader* loader = gdk_pixbuf_loader_new();
     g_signal_connect(loader, "size-prepared", G_CALLBACK(+[](GdkPixbufLoader* value, int width, int height, gpointer) {
         const double scale = std::min(1.0, std::min(360.0 / std::max(1, width), 260.0 / std::max(1, height)));
         gdk_pixbuf_loader_set_size(value, std::max(1, static_cast<int>(width * scale)), std::max(1, static_cast<int>(height * scale)));
     }), nullptr);
     GError* error = nullptr;
-    const bool loaded = gdk_pixbuf_loader_write(loader, static_cast<const guchar*>(content), length, &error) && gdk_pixbuf_loader_close(loader, &error);
+    const bool loaded = gdk_pixbuf_loader_write(loader, static_cast<const guchar*>(imageContent), imageLength, &error) && gdk_pixbuf_loader_close(loader, &error);
     GdkPixbuf* pixbuf = loaded ? gdk_pixbuf_loader_get_pixbuf(loader) : nullptr;
     if (pixbuf != nullptr) {
         g_object_ref(pixbuf);
@@ -994,6 +1001,19 @@ void TFileBrowserTree::onDropDataReceived(GtkWidget* widget, GdkDragContext* con
             }
             gtk_tree_path_free(rowPath);
         }
+    } else if (widget == browser->modernView) {
+        GtkTreePath* rowPath = gtk_icon_view_get_path_at_pos(GTK_ICON_VIEW(widget), x, y);
+        if (rowPath != nullptr) {
+            GtkTreeIter row;
+            if (gtk_tree_model_get_iter(GTK_TREE_MODEL(browser->modernItems), &row, rowPath)) {
+                gchar* value = nullptr;
+                gboolean folder = false;
+                gtk_tree_model_get(GTK_TREE_MODEL(browser->modernItems), &row, ModernPathColumn, &value, ModernFolderColumn, &folder, -1);
+                if (folder && value != nullptr) destination = value;
+                g_free(value);
+            }
+            gtk_tree_path_free(rowPath);
+        }
     }
     bool success = false;
     if (info == 1) {
@@ -1005,7 +1025,7 @@ void TFileBrowserTree::onDropDataReceived(GtkWidget* widget, GdkDragContext* con
             for (std::string filePath; std::getline(files, filePath);) if (!filePath.empty() && !rc_filebrowser_move(browser->connection, destination.c_str(), filePath.c_str())) { browser->appendLog(rc_last_error(browser->connection)); success = false; }
         }
     } else if (info == 2) {
-        gchar** uris = g_uri_list_extract_uris(reinterpret_cast<const gchar*>(gtk_selection_data_get_data(selection)));
+        gchar** uris = gtk_selection_data_get_uris(selection);
         if (uris != nullptr) {
             success = true;
             for (int index = 0; uris[index] != nullptr; ++index) {

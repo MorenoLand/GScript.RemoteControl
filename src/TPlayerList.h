@@ -39,6 +39,8 @@ private:
     static void onEditAccess(GtkMenuItem*, gpointer data);
     static void onPrivateMessageMenu(GtkMenuItem*, gpointer data);
     static void onHistoryMenu(GtkMenuItem*, gpointer data);
+    static void onBanHistoryMenu(GtkMenuItem*, gpointer data);
+    static void onStaffActivityMenu(GtkMenuItem*, gpointer data);
     static void onDisconnectPlayer(GtkMenuItem*, gpointer data);
     static void onResetPlayer(GtkMenuItem*, gpointer data);
     static gboolean onPMBlink(gpointer data);
@@ -63,6 +65,8 @@ private:
     void editAccount();
     void openSelectedPrivateMessage();
     void openSelectedHistory();
+    void requestSelectedBanHistory();
+    void requestSelectedStaffActivity();
     void disconnectSelectedPlayer();
     void resetSelectedPlayer();
     void updateSelectedPlayerLevel();

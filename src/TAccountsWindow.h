@@ -22,6 +22,8 @@ private:
     static void onEditRights(GtkMenuItem*, gpointer data);
     static void onEditComments(GtkMenuItem*, gpointer data);
     static void onEditAccess(GtkMenuItem*, gpointer data);
+    static void onBanHistory(GtkMenuItem*, gpointer data);
+    static void onStaffActivity(GtkMenuItem*, gpointer data);
     static void onReset(GtkMenuItem*, gpointer data);
     static void onDeleteAccount(GtkMenuItem*, gpointer data);
     static void onApply(GtkButton*, gpointer data);

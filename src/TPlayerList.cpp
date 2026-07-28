@@ -454,6 +454,8 @@ gboolean TPlayerList::onButtonPress(GtkWidget* widget, GdkEventButton* event, gp
     GtkWidget* menu = gtk_menu_new();
     GtkWidget* privateMessage = gtk_menu_item_new_with_label("Private Message");
     GtkWidget* history = gtk_menu_item_new_with_label("History");
+    GtkWidget* banHistory = gtk_menu_item_new_with_label("Ban History");
+    GtkWidget* staffActivity = gtk_menu_item_new_with_label("Staff Activity");
     GtkWidget* profile = gtk_menu_item_new_with_label("Profile");
     GtkWidget* disconnect = gtk_menu_item_new_with_label("Disconnect");
     GtkWidget* reset = gtk_menu_item_new_with_label("Reset");
@@ -463,6 +465,8 @@ gboolean TPlayerList::onButtonPress(GtkWidget* widget, GdkEventButton* event, gp
     GtkWidget* adminMessage = gtk_menu_item_new_with_label("Admin Message");
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), privateMessage);
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), history);
+    gtk_menu_shell_append(GTK_MENU_SHELL(menu), banHistory);
+    gtk_menu_shell_append(GTK_MENU_SHELL(menu), staffActivity);
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), profile);
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), gtk_separator_menu_item_new());
     GtkWidget* access = gtk_menu_item_new_with_label("Edit Access");
@@ -482,6 +486,8 @@ gboolean TPlayerList::onButtonPress(GtkWidget* widget, GdkEventButton* event, gp
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), adminMessage);
     g_signal_connect(privateMessage, "activate", G_CALLBACK(onPrivateMessageMenu), data);
     g_signal_connect(history, "activate", G_CALLBACK(onHistoryMenu), data);
+    g_signal_connect(banHistory, "activate", G_CALLBACK(onBanHistoryMenu), data);
+    g_signal_connect(staffActivity, "activate", G_CALLBACK(onStaffActivityMenu), data);
     g_signal_connect(profile, "activate", G_CALLBACK(+[](GtkMenuItem*, gpointer userData) { static_cast<TPlayerList*>(userData)->editProfile(); }), data);
     g_signal_connect(access, "activate", G_CALLBACK(onEditAccess), data);
     g_signal_connect(attributes, "activate", G_CALLBACK(+[](GtkMenuItem*, gpointer userData) { static_cast<TPlayerList*>(userData)->editAttributes(); }), data);
@@ -508,6 +514,8 @@ gboolean TPlayerList::onButtonPress(GtkWidget* widget, GdkEventButton* event, gp
 void TPlayerList::onEditAccess(GtkMenuItem*, gpointer data) { static_cast<TPlayerList*>(data)->editAccess(); }
 void TPlayerList::onPrivateMessageMenu(GtkMenuItem*, gpointer data) { static_cast<TPlayerList*>(data)->openSelectedPrivateMessage(); }
 void TPlayerList::onHistoryMenu(GtkMenuItem*, gpointer data) { static_cast<TPlayerList*>(data)->openSelectedHistory(); }
+void TPlayerList::onBanHistoryMenu(GtkMenuItem*, gpointer data) { static_cast<TPlayerList*>(data)->requestSelectedBanHistory(); }
+void TPlayerList::onStaffActivityMenu(GtkMenuItem*, gpointer data) { static_cast<TPlayerList*>(data)->requestSelectedStaffActivity(); }
 void TPlayerList::onDisconnectPlayer(GtkMenuItem*, gpointer data) { static_cast<TPlayerList*>(data)->disconnectSelectedPlayer(); }
 void TPlayerList::onResetPlayer(GtkMenuItem*, gpointer data) { static_cast<TPlayerList*>(data)->resetSelectedPlayer(); }
 void TPlayerList::handleBanData(const char* account, const char* computerId, const char* details) {
@@ -1063,8 +1071,12 @@ gboolean TPlayerList::onServerButtonPress(GtkWidget* widget, GdkEventButton* eve
         GtkWidget* menu = gtk_menu_new();
         GtkWidget* privateMessage = gtk_menu_item_new_with_label("Private Message");
         GtkWidget* history = gtk_menu_item_new_with_label("History");
+        GtkWidget* banHistory = gtk_menu_item_new_with_label("Ban History");
+        GtkWidget* staffActivity = gtk_menu_item_new_with_label("Staff Activity");
         gtk_menu_shell_append(GTK_MENU_SHELL(menu), privateMessage);
         gtk_menu_shell_append(GTK_MENU_SHELL(menu), history);
+        gtk_menu_shell_append(GTK_MENU_SHELL(menu), banHistory);
+        gtk_menu_shell_append(GTK_MENU_SHELL(menu), staffActivity);
         g_signal_connect(privateMessage, "activate", G_CALLBACK(+[](GtkMenuItem*, gpointer userData) {
             TPlayerList* remoteList = static_cast<TPlayerList*>(userData);
             GtkTreeModel* model = nullptr;
@@ -1093,6 +1105,26 @@ gboolean TPlayerList::onServerButtonPress(GtkWidget* widget, GdkEventButton* eve
             g_free(account);
             g_free(nick);
         })), list);
+        g_signal_connect(banHistory, "activate", G_CALLBACK(+[](GtkMenuItem*, gpointer userData) {
+            TPlayerList* remoteList = static_cast<TPlayerList*>(userData);
+            GtkTreeModel* model = nullptr;
+            GtkTreeIter row;
+            if (!gtk_tree_selection_get_selected(gtk_tree_view_get_selection(GTK_TREE_VIEW(remoteList->serverTree)), &model, &row)) return;
+            gchar* account = nullptr;
+            gtk_tree_model_get(model, &row, 2, &account, -1);
+            if (account != nullptr && *account != '\0') rc_request_ban_history(remoteList->connection, account);
+            g_free(account);
+        }), list);
+        g_signal_connect(staffActivity, "activate", G_CALLBACK(+[](GtkMenuItem*, gpointer userData) {
+            TPlayerList* remoteList = static_cast<TPlayerList*>(userData);
+            GtkTreeModel* model = nullptr;
+            GtkTreeIter row;
+            if (!gtk_tree_selection_get_selected(gtk_tree_view_get_selection(GTK_TREE_VIEW(remoteList->serverTree)), &model, &row)) return;
+            gchar* account = nullptr;
+            gtk_tree_model_get(model, &row, 2, &account, -1);
+            if (account != nullptr && *account != '\0') rc_request_staff_activity(remoteList->connection, account);
+            g_free(account);
+        }), list);
         g_signal_connect(menu, "deactivate", G_CALLBACK(+[](GtkWidget* menuWidget, gpointer) {
             g_object_ref(menuWidget);
             g_idle_add_full(G_PRIORITY_DEFAULT_IDLE, +[](gpointer menuData) {
@@ -1503,6 +1535,26 @@ void TPlayerList::openSelectedHistory() {
     }
     g_free(account);
     g_free(nick);
+}
+
+void TPlayerList::requestSelectedBanHistory() {
+    GtkTreeModel* model = nullptr;
+    GtkTreeIter row;
+    if (!gtk_tree_selection_get_selected(gtk_tree_view_get_selection(GTK_TREE_VIEW(tree)), &model, &row)) return;
+    gchar* account = nullptr;
+    gtk_tree_model_get(model, &row, PlayerAccountColumn, &account, -1);
+    if (account != nullptr && *account != '\0') rc_request_ban_history(connection, account);
+    g_free(account);
+}
+
+void TPlayerList::requestSelectedStaffActivity() {
+    GtkTreeModel* model = nullptr;
+    GtkTreeIter row;
+    if (!gtk_tree_selection_get_selected(gtk_tree_view_get_selection(GTK_TREE_VIEW(tree)), &model, &row)) return;
+    gchar* account = nullptr;
+    gtk_tree_model_get(model, &row, PlayerAccountColumn, &account, -1);
+    if (account != nullptr && *account != '\0') rc_request_staff_activity(connection, account);
+    g_free(account);
 }
 
 void TPlayerList::disconnectSelectedPlayer() {
