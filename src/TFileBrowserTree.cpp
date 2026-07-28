@@ -25,6 +25,7 @@
 #include <iomanip>
 #include <sstream>
 #include <filesystem>
+#include <chrono>
 #include <vector>
 
 namespace {
@@ -76,6 +77,13 @@ namespace {
         std::ostringstream stream;
         stream << std::put_time(&local, "%Y-%m-%d %H:%M:%S");
         return stream.str();
+    }
+    void applyModifiedTime(const std::filesystem::path& path, int timestamp) {
+        if (timestamp <= 0) return;
+        const auto systemTime = std::chrono::system_clock::from_time_t(timestamp);
+        const auto fileTime = std::filesystem::file_time_type::clock::now() + (systemTime - std::chrono::system_clock::now());
+        std::error_code error;
+        std::filesystem::last_write_time(path, fileTime, error);
     }
 
     GdkPixbuf* loadImage(const char* name) { return gdk_pixbuf_new_from_file((std::string("images/") + name).c_str(), nullptr); }
@@ -427,6 +435,7 @@ void TFileBrowserTree::openFolder(void* nextConnection, const std::string& folde
     gtk_label_set_text(GTK_LABEL(folderPath), (std::string("Current Folder: ") + currentFolder).c_str());
     if (!rc_filebrowser_cd(connection, currentFolder.c_str())) appendLog(rc_last_error(connection));
 }
+void TFileBrowserTree::hide() { hidePreview(); gtk_widget_hide(window); }
 
 void TFileBrowserTree::setDownloadFolder(const std::string& folder) { downloadFolder = folder; }
 void TFileBrowserTree::setDownloadServer(const std::string& server) { downloadServer = server; }
@@ -1069,6 +1078,7 @@ void TFileBrowserTree::onFileReceived(const char* path, const void* content, int
         g_free(destination);
         const std::string localPath(absoluteDestination);
         g_free(absoluteDestination);
+        for (const auto& entry : browser->remoteModifiedTimes) if (pathMatches(entry.first, receivedPath)) { applyModifiedTime(localPath, entry.second); break; }
         const std::string extension = localPath.substr(localPath.find_last_of('.') == std::string::npos ? localPath.size() : localPath.find_last_of('.'));
         if (g_ascii_strcasecmp(extension.c_str(), ".exe") == 0 || g_ascii_strcasecmp(extension.c_str(), ".bat") == 0 || g_ascii_strcasecmp(extension.c_str(), ".sh") == 0) { browser->showTextEditor(path, content, length); return; }
 #ifdef _WIN32
@@ -1106,7 +1116,7 @@ void TFileBrowserTree::onFileReceived(const char* path, const void* content, int
         userDownload = true;
         break;
     }
-    if (previewResponse && !userDownload) return;
+    if (!userDownload) return;
     const std::string destinationFolder = browser->downloadDestinationDirectory();
     if (destinationFolder.empty()) {
         browser->appendLog("Specify a download folder in RC Options first.");
@@ -1124,6 +1134,7 @@ void TFileBrowserTree::onFileReceived(const char* path, const void* content, int
         browser->appendLog("Could not save downloaded file.");
         return;
     }
+    for (const auto& entry : browser->remoteModifiedTimes) if (pathMatches(entry.first, receivedPath)) { applyModifiedTime(destination, entry.second); break; }
     browser->appendLog((std::string("Downloaded file ") + destination).c_str());
     g_free(destination);
 }
@@ -1232,6 +1243,7 @@ void TFileBrowserTree::refreshFiles(const char* folder, int count) {
     const int entryCount = count > 0 ? rc_copy_filebrowser_files(connection, &entries) : 0;
     gtk_tree_sortable_set_sort_column_id(GTK_TREE_SORTABLE(files), GTK_TREE_SORTABLE_UNSORTED_SORT_COLUMN_ID, GTK_SORT_ASCENDING);
     gtk_list_store_clear(files);
+    remoteModifiedTimes.clear();
     currentFolder = responseFolder;
     previewFolder = responseFolder;
     gtk_label_set_text(GTK_LABEL(folderPath), (std::string("Current Folder: ") + responseFolder).c_str());
@@ -1242,6 +1254,8 @@ void TFileBrowserTree::refreshFiles(const char* folder, int count) {
         const std::string size = entries[index].size == 0 ? "" : std::to_string(entries[index].size);
         gtk_list_store_set(files, &row, FileIconColumn, fileIcon(entries[index], textFileIcon, nwFileIcon, scriptFileIcon, gmapFileIcon, binaryFileIcon, fontFileIcon, archiveFileIcon, configFileIcon, unknownFileIcon), FilePathColumn, entries[index].path == nullptr ? "" : entries[index].path, FileRightsColumn, entries[index].rights == nullptr ? "" : entries[index].rights, FileSizeColumn, size.c_str(), FileModifiedColumn, modified.c_str(), FileSizeSortColumn, entries[index].size, FileModifiedSortColumn, entries[index].modified, -1);
         const std::string path = entries[index].path == nullptr ? "" : entries[index].path;
+        remoteModifiedTimes[path] = entries[index].modified;
+        remoteModifiedTimes[responseFolder + path] = entries[index].modified;
         if (isPreviewImage(path) && previewCache.size() + pendingPreviewDownloads.size() < 50 && previewCache.find(path) == previewCache.end() && pendingPreviewDownloads.find(path) == pendingPreviewDownloads.end()) {
             pendingPreviewDownloads[path] = responseFolder;
             if (!rc_filebrowser_download(connection, path.c_str())) pendingPreviewDownloads.erase(path);

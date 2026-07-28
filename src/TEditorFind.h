@@ -211,6 +211,12 @@ inline void openEditorFind(GtkWidget* editor, bool replace = false) {
 
 inline void editorFind(GtkButton*, gpointer data) { openEditorFind(GTK_WIDGET(data)); }
 
+inline gboolean editorFindButtonPress(GtkWidget*, GdkEventButton* event, gpointer data) {
+    if (event->type != GDK_BUTTON_PRESS || event->button != GDK_BUTTON_SECONDARY) return false;
+    openEditorFind(GTK_WIDGET(data), true);
+    return true;
+}
+
 inline void openEditorGoToLine(GtkWidget* editor) {
     GtkTextIter current;
     GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(editor));
@@ -264,12 +270,14 @@ inline void addEditorFindButton(GtkWidget* dialog, GtkWidget* editor) {
     GtkWidget* formatButton = createEditorFormatButton(editor);
     GtkWidget* button = editorIconButton("Find", "edit-find-symbolic");
     gtk_widget_set_tooltip_text(goToLineButton, "Go to line (Ctrl+G)");
-    gtk_widget_set_tooltip_text(button, "Find (Ctrl+F) / Replace (Ctrl+H)");
+    gtk_widget_set_tooltip_text(button, "Find (Ctrl+F) / right-click Replace (Ctrl+H)");
     gtk_container_add(GTK_CONTAINER(gtk_dialog_get_action_area(GTK_DIALOG(dialog))), goToLineButton);
     gtk_container_add(GTK_CONTAINER(gtk_dialog_get_action_area(GTK_DIALOG(dialog))), formatButton);
     gtk_container_add(GTK_CONTAINER(gtk_dialog_get_action_area(GTK_DIALOG(dialog))), button);
     g_signal_connect(goToLineButton, "clicked", G_CALLBACK(editorGoToLine), editor);
     g_signal_connect(button, "clicked", G_CALLBACK(editorFind), editor);
+    gtk_widget_add_events(button, GDK_BUTTON_PRESS_MASK);
+    g_signal_connect(button, "button-press-event", G_CALLBACK(editorFindButtonPress), editor);
     addEditorFindShortcut(editor);
     addEditorGoToLineShortcut(editor);
     gtk_widget_show(goToLineButton);

@@ -19,6 +19,7 @@ class TAccountsWindow;
 class TOptionsWindow;
 class TNPCList;
 class TLevelList;
+class TSyncManager;
 struct WebPAnimation;
 
 class TRemoteFrame {
@@ -30,6 +31,8 @@ public:
     void disconnect();
     void signOut();
     void show();
+    void showServerList() { if (onListServerCallback) onListServerCallback(); }
+    GdkWindow* nativeWindow() const { return window == nullptr ? nullptr : gtk_widget_get_window(window); }
     void toggleVisibility();
     bool openLatestPrivateMessage();
     bool isNCAuthenticated() const;
@@ -76,7 +79,7 @@ private:
     static gboolean onWindowState(GtkWidget*, GdkEventWindowState*, gpointer data);
       static gboolean onGraphicalDraw(GtkWidget*, cairo_t*, gpointer data);
       static void onGraphicalAllocate(GtkWidget*, GdkRectangle*, gpointer data);
-      void repositionGraphicalButtons();
+      void repositionGraphicalButtons(int requestedWidth = 0);
     static gboolean processEvents(gpointer data);
     static void onConnected(void* data);
     static void onDisconnected(const char* reason, void* data);
@@ -178,6 +181,9 @@ private:
     TOptionsWindow* optionsWindow = nullptr;
     TNPCList* npcList = nullptr;
     TLevelList* levelList = nullptr;
+    std::unique_ptr<TSyncManager> syncManager;
+    int syncProgress = 0;
+    bool syncInProgress = false;
     RC::RCOptions options;
     std::filesystem::path applicationDirectory;
     std::unordered_map<std::string, GtkWidget*> channelFields;

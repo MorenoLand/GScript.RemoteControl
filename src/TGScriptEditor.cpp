@@ -162,7 +162,7 @@ namespace {
         return G_SOURCE_REMOVE;
     }
 
-    void preserveEditorTooltip(GtkWidget* editor) { g_idle_add(requeryEditorTooltip, g_object_ref(editor)); }
+    void preserveEditorTooltip(GtkWidget* editor) { g_timeout_add(75, requeryEditorTooltip, g_object_ref(editor)); }
 
     EditorMultiSelectionState* multiSelectionState(GtkWidget* editor) {
         const auto state = std::find_if(multiSelectionStates.begin(), multiSelectionStates.end(), [editor](const auto& value) { return value->editor == editor; });

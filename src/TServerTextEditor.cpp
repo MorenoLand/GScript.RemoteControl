@@ -43,7 +43,7 @@ TServerTextEditor::TServerTextEditor(Kind nextKind, const char* nextTitle) : kin
     GtkWidget* formatButton = createEditorFormatButton(text);
     GtkWidget* findButton = editorIconButton("Find", "edit-find-symbolic");
     gtk_widget_set_tooltip_text(goToLineButton, "Go to line (Ctrl+G)");
-    gtk_widget_set_tooltip_text(findButton, "Find (Ctrl+F) / Replace (Ctrl+H)");
+    gtk_widget_set_tooltip_text(findButton, "Find (Ctrl+F) / right-click Replace (Ctrl+H)");
     GtkWidget* closeButton = editorIconButton("Close", "window-close-symbolic");
     GtkWidget* actions = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 5);
     gtk_box_pack_start(GTK_BOX(actions), goToLineButton, false, false, 0);
@@ -58,6 +58,8 @@ TServerTextEditor::TServerTextEditor(Kind nextKind, const char* nextTitle) : kin
     gtk_box_pack_start(GTK_BOX(root), bottom, false, false, 0);
     g_signal_connect(goToLineButton, "clicked", G_CALLBACK(editorGoToLine), text);
     g_signal_connect(findButton, "clicked", G_CALLBACK(editorFind), text);
+    gtk_widget_add_events(findButton, GDK_BUTTON_PRESS_MASK);
+    g_signal_connect(findButton, "button-press-event", G_CALLBACK(editorFindButtonPress), text);
     g_signal_connect(saveButton, "clicked", G_CALLBACK(onSave), this);
     g_signal_connect(closeButton, "clicked", G_CALLBACK(onClose), this);
     g_signal_connect(window, "delete-event", G_CALLBACK(onDelete), this);

@@ -45,6 +45,8 @@ TLevelList::TLevelList(GtkWindow* parent) {
     gtk_box_pack_end(GTK_BOX(bottom), findButton, false, false, 0);
     gtk_box_pack_start(GTK_BOX(root), bottom, false, false, 0);
     g_signal_connect(findButton, "clicked", G_CALLBACK(editorFind), text);
+    gtk_widget_add_events(findButton, GDK_BUTTON_PRESS_MASK);
+    g_signal_connect(findButton, "button-press-event", G_CALLBACK(editorFindButtonPress), text);
     g_signal_connect(applyButton, "clicked", G_CALLBACK(onApply), this);
     g_signal_connect(closeButton, "clicked", G_CALLBACK(onClose), this);
     g_signal_connect(window, "delete-event", G_CALLBACK(onDelete), this);

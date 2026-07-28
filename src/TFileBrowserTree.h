@@ -12,6 +12,7 @@ public:
     ~TFileBrowserTree();
     void open(void* connection);
     void openFolder(void* connection, const std::string& folder);
+    void hide();
     void setDownloadFolder(const std::string& folder);
     void setDownloadServer(const std::string& server);
     void setServerName(const std::string& server);
@@ -96,6 +97,7 @@ private:
     std::unordered_map<std::string, std::string> pendingDragDownloads;
     std::unordered_map<std::string, std::string> pendingPreviewDownloads;
     std::unordered_map<std::string, int> pendingUserDownloads;
+    std::unordered_map<std::string, int> remoteModifiedTimes;
     std::unordered_map<std::string, GdkPixbuf*> previewCache;
     std::vector<std::string> previewCacheOrder;
     std::vector<std::string> completedDragDownloads;

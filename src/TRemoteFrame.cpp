@@ -20,6 +20,7 @@
 #include "TOptionsWindow.h"
 #include "TNPCList.h"
 #include "TLevelList.h"
+#include "TSyncManager.h"
 #include "TMcpServer.h"
 
 #include <grclib.h>
@@ -39,9 +40,10 @@ extern void remote_control_clear_pm_tray_alert();
 extern void remote_control_set_tray_label(const char* serverName, int playerCount);
 
 namespace {
-std::string remoteControlTitle(const std::string& server = {}, const std::string& players = {}) {
+std::string remoteControlTitle(const std::string& server = {}, const std::string& players = {}, int syncProgress = -1) {
     std::string title = server.empty() ? "Remote Control" : server;
     if (!players.empty()) title += " [" + players + "]";
+    if (syncProgress >= 0) title += " [Sync: " + std::to_string(syncProgress) + "%]";
     return title + " - " + REMOTE_CONTROL_BUILD_DATE;
 }
 }
@@ -137,6 +139,7 @@ TRemoteFrame::TRemoteFrame(const RC::RCOptions& nextOptions, const std::filesyst
     pmNormalEmote = gdk_pixbuf_new_from_file((applicationDirectory / "images" / "pmicon_normal.png").string().c_str(), nullptr);
     pacmanEmote = gdk_pixbuf_new_from_file((applicationDirectory / "images" / "emote_pacman.png").string().c_str(), nullptr);
     window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
+    syncManager = std::make_unique<TSyncManager>(window, applicationDirectory, [this](int progress, bool active) { syncProgress = progress; syncInProgress = active; });
     gtk_widget_set_name(window, "RemoteFrame");
     gtk_window_set_title(GTK_WINDOW(window), remoteControlTitle().c_str());
     gtk_window_set_default_size(GTK_WINDOW(window), 500, 350);
@@ -209,6 +212,9 @@ TRemoteFrame::TRemoteFrame(const RC::RCOptions& nextOptions, const std::filesyst
         gtk_widget_set_hexpand(backgroundImage, true);
         gtk_widget_set_halign(backgroundImage, GTK_ALIGN_FILL);
         gtk_container_add(GTK_CONTAINER(header), backgroundImage);
+        gtk_widget_set_hexpand(fixed, true);
+        gtk_widget_set_halign(fixed, GTK_ALIGN_FILL);
+        gtk_widget_set_valign(fixed, GTK_ALIGN_FILL);
         gtk_overlay_add_overlay(GTK_OVERLAY(header), fixed);
         g_signal_connect(backgroundImage, "draw", G_CALLBACK(onGraphicalDraw), this);
         if (backgroundAnimationIter != nullptr || backgroundWebPAnimation != nullptr) backgroundAnimationSource = g_timeout_add(16, +[](gpointer data) -> gboolean {
@@ -285,7 +291,7 @@ TRemoteFrame::TRemoteFrame(const RC::RCOptions& nextOptions, const std::filesyst
         GtkWidget* filler = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
         gtk_box_pack_start(GTK_BOX(graphicalBase), filler, true, true, 0);
         gtk_box_pack_start(GTK_BOX(root), graphicalContainer, true, true, 0);
-        g_signal_connect(header, "size-allocate", G_CALLBACK(onGraphicalAllocate), this);
+        g_signal_connect(fixed, "size-allocate", G_CALLBACK(onGraphicalAllocate), this);
     }
 
     notebook = gtk_notebook_new();
@@ -346,6 +352,7 @@ TRemoteFrame::TRemoteFrame(const RC::RCOptions& nextOptions, const std::filesyst
 
 gboolean TRemoteFrame::onConfigure(GtkWidget*, GdkEventConfigure* event, gpointer data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
+    frame->repositionGraphicalButtons(event->width);
     GdkWindow* nativeWindow = gtk_widget_get_window(frame->window);
     const bool maximized = nativeWindow != nullptr && (gdk_window_get_state(nativeWindow) & GDK_WINDOW_STATE_MAXIMIZED) != 0;
     if (!frame->windowMaximized && !maximized && event->width > 0 && event->height > 0) {
@@ -385,7 +392,7 @@ gboolean TRemoteFrame::onWindowState(GtkWidget*, GdkEventWindowState* event, gpo
 #else
             gtk_window_resize(GTK_WINDOW(target->window), target->normalWindowWidth, target->normalWindowHeight);
 #endif
-            target->repositionGraphicalButtons();
+            target->repositionGraphicalButtons(target->normalWindowWidth);
             return G_SOURCE_REMOVE;
         }, frame);
         return false;
@@ -456,6 +463,7 @@ void TRemoteFrame::open(void* nextConnection, int serverIndex, const std::string
     connection = nextConnection;
     currentServerIndex = serverIndex;
     this->serverName = serverName;
+    syncManager->setConnection(nextConnection, serverName);
     gtk_window_set_title(GTK_WINDOW(window), remoteControlTitle(serverName).c_str());
     trayPlayerCount = -1;
     setBackupServerName(serverName);
@@ -605,7 +613,7 @@ void TRemoteFrame::onBanListData(const char* type, const char* account, const ch
 
 void TRemoteFrame::onFileBrowser(GtkMenuItem*, gpointer data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
-    if (frame->connection == nullptr) return;
+    if (frame->connection == nullptr || (frame->syncManager != nullptr && frame->syncManager->isFileSyncActive())) return;
     if (frame->fileBrowser == nullptr) frame->fileBrowser = new TFileBrowserTree();
     frame->fileBrowser->setServerName(frame->serverName);
     frame->fileBrowser->setDownloadFolder(frame->options.downloadfolder);
@@ -799,32 +807,36 @@ gboolean TRemoteFrame::onDelete(GtkWidget*, GdkEvent*, gpointer data) {
 void TRemoteFrame::onGraphicalAllocate(GtkWidget*, GdkRectangle* allocation, gpointer data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
     if (allocation->width <= 0 || allocation->height <= 0) return;
-    GtkAllocation containerAllocation;
-    gtk_widget_get_allocation(frame->graphicalContainer, &containerAllocation);
-    frame->graphicalBackgroundWidth = containerAllocation.width > allocation->width ? containerAllocation.width : allocation->width;
-    if (frame->npcServerLabel != nullptr) {
-        gtk_widget_set_size_request(frame->npcServerLabel, frame->graphicalBackgroundWidth, -1);
-        gtk_fixed_move(GTK_FIXED(frame->graphicalFixed), frame->npcServerLabel, 0, 130);
-        for (GtkWidget* shadow : frame->npcServerLabelShadows) if (shadow != nullptr) { gtk_widget_set_size_request(shadow, frame->graphicalBackgroundWidth, -1); gtk_fixed_move(GTK_FIXED(frame->graphicalFixed), shadow, 0, 130); }
-    }
+    frame->graphicalBackgroundWidth = allocation->width;
     gtk_widget_queue_draw(frame->backgroundImage);
-    frame->repositionGraphicalButtons();
+    frame->repositionGraphicalButtons(allocation->width);
 }
 
-void TRemoteFrame::repositionGraphicalButtons() {
+void TRemoteFrame::repositionGraphicalButtons(int requestedWidth) {
     if (graphicalFixed == nullptr) return;
     GtkAllocation allocation;
     gtk_widget_get_allocation(graphicalFixed, &allocation);
-    GtkAllocation containerAllocation;
-    gtk_widget_get_allocation(graphicalContainer, &containerAllocation);
-    const int width = containerAllocation.width > 0 ? containerAllocation.width : (graphicalBackgroundWidth > 0 ? graphicalBackgroundWidth : allocation.width);
+    const int width = requestedWidth > 0 ? requestedWidth : (allocation.width > 0 ? allocation.width : graphicalBackgroundWidth);
     if (width <= 0) return;
+    const int labelWidth = std::min(500, width);
+    const int labelX = std::max(0, (width - labelWidth) / 2);
+    if (npcServerLabel != nullptr) {
+        gtk_widget_set_size_request(npcServerLabel, labelWidth, -1);
+        gtk_fixed_move(GTK_FIXED(graphicalFixed), npcServerLabel, labelX, 130);
+        for (GtkWidget* shadow : npcServerLabelShadows) if (shadow != nullptr) {
+            gtk_widget_set_size_request(shadow, labelWidth, -1);
+            gtk_fixed_move(GTK_FIXED(graphicalFixed), shadow, labelX, 130);
+        }
+    }
     const int positions[15][2] = {{5, 15}, {5, 48}, {38, 15}, {71, 15}, {394, 15}, {427, 15}, {460, 15}, {460, 48}, {460, 81}, {427, 114}, {394, 114}, {360, 114}, {104, 15}, {460, 114}, {361, 15}};
     for (int index = 4; index < 15; ++index) if (index != 12 && graphicalButtons[index] != nullptr) gtk_fixed_move(GTK_FIXED(graphicalFixed), graphicalButtons[index], width - (500 - positions[index][0]), positions[index][1]);
 }
 
 gboolean TRemoteFrame::processEvents(gpointer data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
+    const bool fileBrowserAvailable = frame->syncManager == nullptr || !frame->syncManager->isFileSyncActive();
+    if (frame->graphicalButtons[1] != nullptr) gtk_widget_set_sensitive(frame->graphicalButtons[1], fileBrowserAvailable);
+    if (!fileBrowserAvailable && frame->fileBrowser != nullptr) frame->fileBrowser->hide();
     if (frame->connection != nullptr) {
         rc_process_events(frame->connection);
         GList* toplevels = gtk_window_list_toplevels();
@@ -840,6 +852,20 @@ gboolean TRemoteFrame::processEvents(gpointer data) {
             }
         }
         g_list_free(toplevels);
+        std::function<void(GtkWidget*)> watchActivity = [&](GtkWidget* widget) {
+            if (g_object_get_data(G_OBJECT(widget), "rc-afk-widget") == nullptr) {
+                g_object_set_data(G_OBJECT(widget), "rc-afk-widget", frame);
+                gtk_widget_add_events(widget, GDK_KEY_PRESS_MASK | GDK_BUTTON_PRESS_MASK | GDK_POINTER_MOTION_MASK);
+                g_signal_connect(widget, "key-press-event", G_CALLBACK(onActivityEvent), frame);
+                g_signal_connect(widget, "button-press-event", G_CALLBACK(onActivityEvent), frame);
+                g_signal_connect(widget, "motion-notify-event", G_CALLBACK(onActivityEvent), frame);
+            }
+            if (!GTK_IS_CONTAINER(widget)) return;
+            GList* children = gtk_container_get_children(GTK_CONTAINER(widget));
+            for (GList* child = children; child != nullptr; child = child->next) watchActivity(GTK_WIDGET(child->data));
+            g_list_free(children);
+        };
+        watchActivity(frame->window);
         if (frame->options.afkenabled && !frame->awayNicknameApplied && frame->lastActivity > 0 && g_get_monotonic_time() - frame->lastActivity >= static_cast<gint64>(std::max(1, frame->options.afktimeout)) * 60 * G_USEC_PER_SEC) {
             std::string lower = frame->baseNickname;
             std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char value) { return static_cast<char>(std::tolower(value)); });
@@ -863,7 +889,7 @@ gboolean TRemoteFrame::processEvents(gpointer data) {
             gtk_label_set_text(GTK_LABEL(frame->playersLabel), playerText.c_str());
             for (GtkWidget* shadow : frame->playersLabelShadows) if (shadow != nullptr) gtk_label_set_text(GTK_LABEL(shadow), playerText.c_str());
             const std::string playerLabel = frame->options.labelplayers.empty() ? "Players:" : frame->options.labelplayers;
-            gtk_window_set_title(GTK_WINDOW(frame->window), remoteControlTitle(frame->serverName, playerLabel + " " + std::to_string(count)).c_str());
+            gtk_window_set_title(GTK_WINDOW(frame->window), remoteControlTitle(frame->serverName, playerLabel + " " + std::to_string(count), frame->syncInProgress ? frame->syncProgress : -1).c_str());
             if (count != frame->trayPlayerCount) {
                 frame->trayPlayerCount = count;
                 remote_control_set_tray_label(frame->serverName.c_str(), count);
@@ -1024,7 +1050,7 @@ void TRemoteFrame::graphicalAction(int index) {
     else if (index == 7) onServerOptions(nullptr, this);
     else if (index == 12) return;
     else if (index == 13) onLevels(nullptr, this);
-    else if (index == 14) return;
+    else if (index == 14) syncManager->showWindow();
 }
 
 void TRemoteFrame::appendChat(const std::string& message, bool suppressUrgency, bool suppressEmotes) {
@@ -1609,6 +1635,7 @@ void TRemoteFrame::send() {
 }
 
 void TRemoteFrame::reconnectNPCServer() {
+    syncManager->setConnection(nullptr, serverName);
     if (connection == nullptr) return;
     ncManuallyDisconnected = false;
     updateNCUi(false);

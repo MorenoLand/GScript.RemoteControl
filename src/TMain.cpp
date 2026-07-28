@@ -478,8 +478,10 @@ int main(int argc, char** argv) {
     std::vector<std::unique_ptr<TRemoteFrame>> remoteFrames;
     std::function<void()> switchServer;
     std::function<void()> openAnotherServerList;
-    TServerList serverList([&] { if (remoteFrames.empty()) startFrame->show(); }, [&](void* connection, int serverIndex, const std::string& serverName, const std::string& nickname, const std::string& accountName) {
-        remoteFrames.push_back(std::make_unique<TRemoteFrame>(options, applicationDirectory, [&] { serverList.reopen(); }, [&] { switchServer(); }, [&] { serverList.openListServerSettings(); }));
+    TServerList serverList([&] { if (remoteFrames.empty()) startFrame->show(); }, [&](TServerList* sourceList, void* connection, int serverIndex, const std::string& serverName, const std::string& nickname, const std::string& accountName) {
+        RC::loadRCOptions(options, applicationDirectory);
+        applyRemoteControlTheme(options.theme, options.darkmode);
+        remoteFrames.push_back(std::make_unique<TRemoteFrame>(options, applicationDirectory, [sourceList] { sourceList->reopen(); }, [sourceList] { sourceList->reopen(); }, [sourceList] { sourceList->openListServerSettings(); }));
         TRemoteFrame* frame = remoteFrames.back().get();
         trayRemoteFrames.push_back(frame);
         trayRemoteFrame = frame;
@@ -509,7 +511,17 @@ int main(int argc, char** argv) {
     startFrame = &frame;
     openAnotherServerList = [&] { serverList.openAnotherListServer(); };
     trayStartFrame = startFrame;
-    trayServerListOpen = switchServer;
+    trayServerListOpen = [&] {
+#ifdef _WIN32
+        const HWND foreground = GetForegroundWindow();
+        if (frame.nativeWindow() != nullptr && foreground == reinterpret_cast<HWND>(GDK_WINDOW_HWND(frame.nativeWindow()))) { switchServer(); return; }
+        for (TRemoteFrame* remote : trayRemoteFrames) {
+            if (remote == nullptr || remote->nativeWindow() == nullptr) continue;
+            if (foreground == reinterpret_cast<HWND>(GDK_WINDOW_HWND(remote->nativeWindow()))) { remote->showServerList(); return; }
+        }
+#endif
+        if (trayRemoteFrame != nullptr) trayRemoteFrame->showServerList(); else switchServer();
+    };
     trayFrameSignOut = [&](TRemoteFrame* closing) {
         if (closing == nullptr) return;
         trayPrimaryFrames.erase(closing);

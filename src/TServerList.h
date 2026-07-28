@@ -26,7 +26,7 @@ bool saveListServerProfiles(const std::filesystem::path& path, const std::vector
 
 class TServerList {
 public:
-    TServerList(std::function<void()> onClose, std::function<void(void*, int, const std::string&, const std::string&, const std::string&)> onConnected, std::function<void()> onServerSelected, bool darkMode, const std::string& theme, std::function<void(bool, const std::string&)> onThemeChanged, std::function<std::vector<RC::RCAccount>()> accountChoices = {}, std::function<std::vector<RC::RCAccount>(const std::string&)> accountChoicesForListServer = {}, std::function<void()> onOpenAnother = {});
+    TServerList(std::function<void()> onClose, std::function<void(TServerList*, void*, int, const std::string&, const std::string&, const std::string&)> onConnected, std::function<void()> onServerSelected, bool darkMode, const std::string& theme, std::function<void(bool, const std::string&)> onThemeChanged, std::function<std::vector<RC::RCAccount>()> accountChoices = {}, std::function<std::vector<RC::RCAccount>(const std::string&)> accountChoicesForListServer = {}, std::function<void()> onOpenAnother = {});
     ~TServerList();
 
     void open(std::uint64_t accountId, const std::string& account, const std::string& password, const std::string& nickname, const std::string& listServer);
@@ -73,7 +73,7 @@ private:
     void disconnectCurrentConnection();
     void showEntry(int index);
     std::function<void()> onCloseCallback;
-    std::function<void(void*, int, const std::string&, const std::string&, const std::string&)> onConnectedCallback;
+    std::function<void(TServerList*, void*, int, const std::string&, const std::string&, const std::string&)> onConnectedCallback;
     std::function<void()> onServerSelectedCallback;
     std::function<void(bool, const std::string&)> onThemeChangedCallback;
     std::function<std::vector<RC::RCAccount>()> accountChoicesCallback;
@@ -106,4 +106,5 @@ private:
     std::string theme = "dark";
     std::vector<ServerEntry> entries;
     bool additionalConnect = false;
+    bool defaultAdditionalConnection = false;
 };
