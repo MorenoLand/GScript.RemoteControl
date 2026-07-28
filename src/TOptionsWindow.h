@@ -36,7 +36,6 @@ private:
     GtkWidget* nickname = nullptr;
     GtkWidget* downloadFolder = nullptr;
     GtkWidget* logFile = nullptr;
-    GtkWidget* chatFontSize = nullptr;
     GtkWidget* chatFontFamily = nullptr;
     GtkWidget* ignoreMass = nullptr;
     GtkWidget* ignoreMassClient = nullptr;
@@ -66,7 +65,6 @@ private:
     GtkWidget* autocompleteSource = nullptr;
     GtkWidget* scriptTabWidth = nullptr;
     GtkWidget* scriptUseTabs = nullptr;
-    GtkWidget* scriptFontSize = nullptr;
     GtkWidget* scriptFontFamily = nullptr;
     GtkWidget* formatIndentWidth = nullptr;
     GtkWidget* formatUseTabs = nullptr;

@@ -28,7 +28,7 @@ int main() {
     options.mcpapproveweapon = true; options.mcpapproveclass = true; options.mcpapprovenpc = true; options.mcpserver = true; options.mcplogin = true; options.mcpwindows = true; options.mcpfullcontrol = true;
     options.afkenabled = true; options.afktimeout = 30; options.optionsanimations = false;
     options.modernfilebrowser = true; options.filebrowserhoverpreview = false; options.filebrowserthumbnails = false;
-    options.chatfontfamily = "Tempus Sans ITC"; options.scriptfontfamily = "Serif";
+    options.chatfontfamily = "Tempus Sans ITC Bold Italic"; options.scriptfontfamily = "Serif Italic";
     RC::saveRCOptions(options, saved);
     RC::RCOptions restored;
     RC::loadRCOptions(restored, saved);
@@ -38,7 +38,7 @@ int main() {
     assert(!restored.optionsanimations);
     assert(restored.modernfilebrowser);
     assert(!restored.filebrowserhoverpreview && !restored.filebrowserthumbnails);
-    assert(restored.chatfontfamily == "Tempus Sans ITC" && restored.scriptfontfamily == "Serif");
+    assert(restored.chatfontfamily == "Tempus Sans ITC Bold Italic" && restored.scriptfontfamily == "Serif Italic");
     std::filesystem::remove_all(saved);
     return 0;
 }

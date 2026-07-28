@@ -20,6 +20,7 @@
 #include <vector>
 #include <gtk/gtk.h>
 #include <gtksourceview/gtksource.h>
+#include <fontconfig/fontconfig.h>
 
 
 #ifdef _WIN32
@@ -31,14 +32,17 @@
 #include <unistd.h>
 #endif
 
+void registerBundledFonts(const std::filesystem::path& applicationDirectory) {
+    const auto font = applicationDirectory / "fonts" / "tempus-sans-itc.ttf";
+    if (!std::filesystem::exists(font)) return;
 #ifdef _WIN32
-    void registerBundledFonts(const std::filesystem::path& applicationDirectory) {
-        const auto font = applicationDirectory / "fonts" / "tempus-sans-itc.ttf";
-        if (std::filesystem::exists(font)) AddFontResourceExW(font.c_str(), FR_PRIVATE, nullptr);
-    }
-#else
-    void registerBundledFonts(const std::filesystem::path&) {}
+    AddFontResourceExW(font.c_str(), FR_PRIVATE, nullptr);
+    SendMessageW(HWND_BROADCAST, WM_FONTCHANGE, 0, 0);
 #endif
+    const auto fontPath = font.u8string();
+    FcConfig* config = FcConfigGetCurrent();
+    if (config != nullptr && FcConfigAppFontAddFile(config, reinterpret_cast<const FcChar8*>(fontPath.c_str()))) FcConfigBuildFonts(config);
+}
 
 GtkStatusIcon* pmTrayIcon = nullptr;
 GtkWidget* trayMenu = nullptr;

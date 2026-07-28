@@ -847,7 +847,10 @@ gboolean TFileBrowserTree::onFileButtonRelease(GtkWidget* widget, GdkEventButton
         gboolean sourceFolder = false;
         if (gtk_tree_model_get_iter(model, &row, static_cast<GtkTreePath*>(node->data))) gtk_tree_model_get(model, &row, ModernPathColumn, &source, ModernFolderColumn, &sourceFolder, -1);
         if (!sourceFolder && source != nullptr && *source != '\0') {
-            if (rc_filebrowser_move(browser->connection, destination, source)) moved = true;
+            if (rc_filebrowser_move(browser->connection, destination, source)) {
+                browser->appendLog((std::string("Moved file ") + source + " to " + destination).c_str());
+                moved = true;
+            }
             else browser->appendLog(rc_last_error(browser->connection));
         }
         g_free(source);
@@ -1200,7 +1203,11 @@ void TFileBrowserTree::onDropDataReceived(GtkWidget* widget, GdkDragContext* con
         if (source != nullptr && length > 0) {
             success = true;
             std::istringstream files(std::string(reinterpret_cast<const char*>(source), length));
-            for (std::string filePath; std::getline(files, filePath);) if (!filePath.empty() && !rc_filebrowser_move(browser->connection, destination.c_str(), filePath.c_str())) { browser->appendLog(rc_last_error(browser->connection)); success = false; }
+            for (std::string filePath; std::getline(files, filePath);) {
+                if (filePath.empty()) continue;
+                if (rc_filebrowser_move(browser->connection, destination.c_str(), filePath.c_str())) browser->appendLog((std::string("Moved file ") + filePath + " to " + destination).c_str());
+                else { browser->appendLog(rc_last_error(browser->connection)); success = false; }
+            }
         }
     } else if (info == 2) {
         gchar** uris = gtk_selection_data_get_uris(selection);
@@ -1398,7 +1405,10 @@ void TFileBrowserTree::onMove(GtkMenuItem*, gpointer data) {
     if (gtk_dialog_run(GTK_DIALOG(dialog)) == GTK_RESPONSE_ACCEPT) {
         bool changed = false;
         for (const std::string& path : item->paths) {
-            if (rc_filebrowser_move(item->browser->connection, gtk_entry_get_text(GTK_ENTRY(entry)), path.c_str())) changed = true;
+            if (rc_filebrowser_move(item->browser->connection, gtk_entry_get_text(GTK_ENTRY(entry)), path.c_str())) {
+                item->browser->appendLog((std::string("Moved file ") + path + " to " + gtk_entry_get_text(GTK_ENTRY(entry))).c_str());
+                changed = true;
+            }
             else item->browser->appendLog(rc_last_error(item->browser->connection));
         }
         if (changed) item->browser->queueMutationRefresh();
