@@ -74,6 +74,8 @@ private:
     void clearPreviewCache();
     void hidePreview();
     void showPreview(const std::string& path, int rootX, int rootY);
+    void hideDragPreview();
+    void showDragPreview(int rootX, int rootY);
     void cachePreview(const std::string& path, const void* content, int length);
     GtkWidget* window = nullptr;
     GtkWidget* folderPath = nullptr;
@@ -90,6 +92,9 @@ private:
     GtkWidget* previewWindow = nullptr;
     GtkWidget* previewImage = nullptr;
     GtkWidget* previewLabel = nullptr;
+    GtkWidget* dragPreviewWindow = nullptr;
+    GtkWidget* dragPreviewImage = nullptr;
+    GtkWidget* dragPreviewLabel = nullptr;
     GtkWidget* log = nullptr;
     GdkPixbuf* closedFolderIcon = nullptr;
     GdkPixbuf* openFolderIcon = nullptr;
