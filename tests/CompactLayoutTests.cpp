@@ -195,7 +195,7 @@ int main(int argc, char** argv) {
     require(managerProbe.associationNames, "Account association row does not show profile names");
 
     bool themeApplied = false;
-    TServerList servers([] {}, [](void*, int, const std::string&, const std::string&, const std::string&) {}, [] {}, true, "dark", [&](bool, const std::string& theme) { themeApplied = theme == "light"; });
+    TServerList servers([] {}, [](TServerList*, void*, int, const std::string&, const std::string&, const std::string&, bool) {}, [] {}, true, "dark", [&](bool, const std::string& theme) { themeApplied = theme == "light"; });
     servers.openListServerSettings();
     settleGtk();
     GtkWidget* settings = windowByTitle("RC settings");
