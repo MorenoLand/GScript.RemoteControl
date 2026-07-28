@@ -3,6 +3,8 @@
 #include "TTheme.h"
 
 #include <algorithm>
+
+void refreshGlobalVisibilityHotkey(const std::string& hotkey);
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
@@ -163,6 +165,27 @@ TOptionsWindow::TOptionsWindow(RC::RCOptions& nextOptions, const std::filesystem
     optionAnimations = gtk_check_button_new_with_label("Animate options resizing");
     gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(optionAnimations), options.optionsanimations);
     gtk_grid_attach(GTK_GRID(generalGrid), optionAnimations, 0, 5, 2, 1);
+    gtk_grid_attach(GTK_GRID(generalGrid), gtk_label_new("Global show/hide hotkey:"), 0, 6, 1, 1);
+    GtkWidget* hotkeyOverlay = gtk_overlay_new();
+    globalHotkey = gtk_entry_new();
+    gtk_entry_set_text(GTK_ENTRY(globalHotkey), options.globalhotkey.c_str());
+    gtk_editable_set_editable(GTK_EDITABLE(globalHotkey), false);
+    gtk_entry_set_width_chars(GTK_ENTRY(globalHotkey), 20);
+    gtk_widget_set_tooltip_text(globalHotkey, "Focus and press a key combination");
+    gtk_container_add(GTK_CONTAINER(hotkeyOverlay), globalHotkey);
+    GtkWidget* hotkeyConfirm = gtk_button_new_with_label("OK");
+    gtk_button_set_relief(GTK_BUTTON(hotkeyConfirm), GTK_RELIEF_NONE);
+    GtkCssProvider* hotkeyCss = gtk_css_provider_new();
+    gtk_css_provider_load_from_data(hotkeyCss, "button { background-image: none; background-color: transparent; border: none; box-shadow: none; padding: 2px 7px; }", -1, nullptr);
+    gtk_style_context_add_provider(gtk_widget_get_style_context(hotkeyConfirm), GTK_STYLE_PROVIDER(hotkeyCss), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION + 1);
+    g_object_unref(hotkeyCss);
+    gtk_widget_set_halign(hotkeyConfirm, GTK_ALIGN_END);
+    gtk_widget_set_valign(hotkeyConfirm, GTK_ALIGN_CENTER);
+    gtk_widget_set_tooltip_text(hotkeyConfirm, "Save global show/hide hotkey");
+    gtk_overlay_add_overlay(GTK_OVERLAY(hotkeyOverlay), hotkeyConfirm);
+    gtk_grid_attach(GTK_GRID(generalGrid), hotkeyOverlay, 1, 6, 1, 1);
+    g_signal_connect(globalHotkey, "key-press-event", G_CALLBACK(onGlobalHotkeyKeyPress), this);
+    g_signal_connect(hotkeyConfirm, "clicked", G_CALLBACK(onGlobalHotkeyConfirm), this);
     gtk_box_pack_start(GTK_BOX(general), generalGrid, false, false, 4);
     GtkWidget* script = gtk_box_new(GTK_ORIENTATION_VERTICAL, 5);
     gtk_container_set_border_width(GTK_CONTAINER(script), 5);
@@ -416,6 +439,31 @@ void TOptionsWindow::onThemeChanged(GtkComboBox*, gpointer data) { static_cast<T
 void TOptionsWindow::onSyntaxThemeChanged(GtkComboBox*, gpointer data) { static_cast<TOptionsWindow*>(data)->applySyntaxThemeSelection(); }
 void TOptionsWindow::onSyncSyntaxThemeChanged(GtkToggleButton*, gpointer data) { static_cast<TOptionsWindow*>(data)->applySyntaxThemeSync(); }
 void TOptionsWindow::onLiveEditorOptionChanged(GtkWidget*, gpointer data) { static_cast<TOptionsWindow*>(data)->save(); }
+gboolean TOptionsWindow::onGlobalHotkeyKeyPress(GtkWidget* widget, GdkEventKey* event, gpointer data) {
+    if (event->keyval == GDK_KEY_BackSpace || event->keyval == GDK_KEY_Delete) {
+        gtk_entry_set_text(GTK_ENTRY(widget), "");
+        return true;
+    }
+    if (event->keyval == GDK_KEY_Return || event->keyval == GDK_KEY_KP_Enter) {
+        onGlobalHotkeyConfirm(nullptr, data);
+        return true;
+    }
+    if (event->keyval == GDK_KEY_Control_L || event->keyval == GDK_KEY_Control_R || event->keyval == GDK_KEY_Shift_L || event->keyval == GDK_KEY_Shift_R || event->keyval == GDK_KEY_Alt_L || event->keyval == GDK_KEY_Alt_R || event->keyval == GDK_KEY_Meta_L || event->keyval == GDK_KEY_Meta_R || event->keyval == GDK_KEY_Super_L || event->keyval == GDK_KEY_Super_R) return true;
+    std::string text;
+    if ((event->state & GDK_CONTROL_MASK) != 0) text += "Ctrl+";
+    if ((event->state & GDK_MOD1_MASK) != 0) text += "Alt+";
+    if ((event->state & GDK_SHIFT_MASK) != 0) text += "Shift+";
+    if ((event->state & GDK_SUPER_MASK) != 0) text += "Super+";
+    const gchar* key = gdk_keyval_name(event->keyval);
+    if (key != nullptr) text += key;
+    gtk_entry_set_text(GTK_ENTRY(widget), text.c_str());
+    return true;
+}
+void TOptionsWindow::onGlobalHotkeyConfirm(GtkButton*, gpointer data) {
+    TOptionsWindow* optionsWindow = static_cast<TOptionsWindow*>(data);
+    optionsWindow->save();
+    gtk_widget_grab_focus(optionsWindow->globalHotkey);
+}
 gboolean TOptionsWindow::onLiveEditorOptionFocusOut(GtkWidget*, GdkEventFocus*, gpointer data) { static_cast<TOptionsWindow*>(data)->save(); return false; }
 void TOptionsWindow::onBrowseDownload(GtkButton*, gpointer data) {
     TOptionsWindow* optionsWindow = static_cast<TOptionsWindow*>(data);
@@ -475,6 +523,7 @@ void TOptionsWindow::save() {
     }
     options.afkenabled = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(afkEnabled)); const char* afkId = gtk_combo_box_get_active_id(GTK_COMBO_BOX(afkTimeout)); options.afktimeout = afkId == nullptr ? 15 : std::clamp(std::atoi(afkId), 1, 1440);
     options.optionsanimations = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(optionAnimations));
+    options.globalhotkey = gtk_entry_get_text(GTK_ENTRY(globalHotkey));
     options.nomassmessages = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(ignoreMass)); options.nomassifclienton = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(ignoreMassClient)); options.attachaway = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(attachAway)); options.globalpms = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(globalPMs)); options.buddytracking = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(buddies)); options.separatenc = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(separateNC)); options.rctimestamps = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(timestamps)); options.newpmalerts = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(pmAlerts)); options.notificationsounds = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(notificationSounds)); options.logrcchat = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(logChat)); options.separatefindresults = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(separateFindResults)); options.modernfilebrowser = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(modernFileBrowser)); options.filebrowserhoverpreview = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(fileBrowserHoverPreview)); options.filebrowserthumbnails = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(fileBrowserThumbnails)); options.syntaxhighlighting = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(syntax)); options.autoindenting = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(autoIndent)); options.smarthomeend = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(smartHomeEnd)); options.showbrackets = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(brackets)); options.showlinenumbers = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(lineNumbers)); options.minimap = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(minimap)); options.lsp = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(lsp)); options.scriptdiagnostics = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(scriptDiagnostics)); options.scripttabwidth = std::clamp(std::atoi(gtk_entry_get_text(GTK_ENTRY(scriptTabWidth))), 1, 1000); options.scriptusetabs = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(scriptUseTabs)); readFontButton(scriptFontFamily, options.scriptfontfamily, options.scriptfontsize); options.autocompletesource = gtk_entry_get_text(GTK_ENTRY(autocompleteSource));
     options.formatindentwidth = std::clamp(std::atoi(gtk_entry_get_text(GTK_ENTRY(formatIndentWidth))), 1, 16); options.formatusetabs = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(formatUseTabs)); options.formattrimtrailing = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(formatTrimTrailing)); options.removelinecomments = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(removeLineComments)); options.removeblockcomments = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(removeBlockComments)); options.preserveclientside = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(preserveClientside));
     options.coloredit = colorValue(chatbarTextColor); options.coloreditback = colorValue(chatbarBackgroundColor); options.colorchat = colorValue(chatTextColor); options.colorchatbold = colorValue(chatBoldColor); options.colorchatback = colorValue(chatBackgroundColor); options.colorlabel = colorValue(labelColor); options.colorlabelback = colorValue(labelBackgroundColor); options.labelservers = gtk_entry_get_text(GTK_ENTRY(serverLabel)); options.labelplayers = gtk_entry_get_text(GTK_ENTRY(playersLabel)); options.labelnpcserver = gtk_entry_get_text(GTK_ENTRY(npcServerLabel)); options.background = gtk_entry_get_text(GTK_ENTRY(backgroundImage)); options.syncbackgroundtint = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(syncBackgroundTint)); options.backgroundtint = options.syncbackgroundtint ? tintForTheme(options.theme, options) : colorValueWithAlpha(backgroundTint); options.backgroundtintsolid = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(backgroundTintSolid));
@@ -484,6 +533,7 @@ void TOptionsWindow::save() {
     setRemoteControlSyntaxTheme(options.syntaxtheme);
     refreshGScriptEditorTheme();
     RC::saveRCOptions(options, applicationDirectory);
+    refreshGlobalVisibilityHotkey(options.globalhotkey);
     onSaved(previous);
     saving = false;
 }

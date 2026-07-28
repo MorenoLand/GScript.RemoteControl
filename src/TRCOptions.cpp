@@ -65,6 +65,7 @@ namespace RC {
             else if (key == "afkenabled") options.afkenabled = isTrue(value);
             else if (key == "afktimeout") options.afktimeout = std::clamp(std::stoi(value), 1, 1440);
             else if (key == "optionsanimations") options.optionsanimations = isTrue(value);
+            else if (key == "globalhotkey") options.globalhotkey = value;
             else if (key == "logrcchat") options.logrcchat = isTrue(value);
             else if (key == "separatefindresults") options.separatefindresults = isTrue(value);
             else if (key == "separatenc") options.separatenc = isTrue(value);
@@ -152,6 +153,7 @@ namespace RC {
         writeBool(stream, "afkenabled", options.afkenabled);
         stream << "afktimeout=" << options.afktimeout << '\n';
         writeBool(stream, "optionsanimations", options.optionsanimations);
+        writeString(stream, "globalhotkey", options.globalhotkey);
         writeBool(stream, "logrcchat", options.logrcchat);
         writeBool(stream, "separatefindresults", options.separatefindresults);
         writeString(stream, "chatlogfile", options.chatlogfile);

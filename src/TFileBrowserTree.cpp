@@ -30,6 +30,25 @@
 #include <chrono>
 #include <vector>
 
+struct PreviewAsyncState {
+    TFileBrowserTree* browser = nullptr;
+    guint generation = 0;
+};
+
+struct PreviewDecodeRequest {
+    std::shared_ptr<PreviewAsyncState> state;
+    std::string path;
+    std::string folder;
+    std::vector<std::uint8_t> content;
+    guint generation = 0;
+    GdkPixbuf* preview = nullptr;
+    GdkPixbuf* thumbnail = nullptr;
+    ~PreviewDecodeRequest() {
+        if (preview != nullptr) g_object_unref(preview);
+        if (thumbnail != nullptr) g_object_unref(thumbnail);
+    }
+};
+
 namespace {
 
     std::string safeDownloadComponent(const std::string& value, const std::string& fallback) {
@@ -303,6 +322,9 @@ bool TFileBrowserTree::isPreviewTransferMessage(const char* message) const {
 }
 
 TFileBrowserTree::TFileBrowserTree() {
+    previewAsyncState = std::make_shared<PreviewAsyncState>();
+    previewAsyncState->browser = this;
+    previewWorkerThread = std::thread(&TFileBrowserTree::previewWorkerLoop, this);
     window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
     gtk_window_set_title(GTK_WINDOW(window), "File Browser");
     gtk_window_set_default_size(GTK_WINDOW(window), 800, 600);
@@ -393,13 +415,19 @@ TFileBrowserTree::TFileBrowserTree() {
     GtkCellRenderer* modernIconRenderer = gtk_cell_renderer_pixbuf_new();
     GtkCellRenderer* modernTextRenderer = gtk_cell_renderer_text_new();
     g_object_set(modernIconRenderer, "xalign", 0.5f, "yalign", 0.5f, nullptr);
-    g_object_set(modernTextRenderer, "xalign", 0.5f, "alignment", PANGO_ALIGN_CENTER, "ellipsize", PANGO_ELLIPSIZE_MIDDLE, "width-chars", 12, "max-width-chars", 12, nullptr);
+    g_object_set(modernTextRenderer, "xalign", 0.5f, "alignment", PANGO_ALIGN_CENTER, "ellipsize", PANGO_ELLIPSIZE_MIDDLE, "width-chars", 15, "max-width-chars", 15, nullptr);
     gtk_cell_layout_pack_start(GTK_CELL_LAYOUT(modernView), modernIconRenderer, false);
     gtk_cell_layout_add_attribute(GTK_CELL_LAYOUT(modernView), modernIconRenderer, "pixbuf", ModernIconColumn);
     gtk_cell_layout_pack_start(GTK_CELL_LAYOUT(modernView), modernTextRenderer, false);
     gtk_cell_layout_add_attribute(GTK_CELL_LAYOUT(modernView), modernTextRenderer, "text", ModernNameColumn);
     gtk_icon_view_set_selection_mode(GTK_ICON_VIEW(modernView), GTK_SELECTION_MULTIPLE);
-    gtk_icon_view_set_item_width(GTK_ICON_VIEW(modernView), 96);
+    gtk_icon_view_set_item_width(GTK_ICON_VIEW(modernView), 112);
+    modernSearchPopover = gtk_popover_new(modernView);
+    modernSearchEntry = gtk_search_entry_new();
+    gtk_entry_set_placeholder_text(GTK_ENTRY(modernSearchEntry), "Search files");
+    gtk_container_set_border_width(GTK_CONTAINER(modernSearchPopover), 6);
+    gtk_container_add(GTK_CONTAINER(modernSearchPopover), modernSearchEntry);
+    gtk_widget_show(modernSearchEntry);
     gtk_icon_view_set_item_padding(GTK_ICON_VIEW(modernView), 5);
     gtk_icon_view_set_row_spacing(GTK_ICON_VIEW(modernView), 6);
     gtk_icon_view_set_column_spacing(GTK_ICON_VIEW(modernView), 6);
@@ -444,6 +472,8 @@ TFileBrowserTree::TFileBrowserTree() {
     g_signal_connect(folderView, "button-press-event", G_CALLBACK(onFolderButtonPress), this);
     g_signal_connect(fileView, "button-press-event", G_CALLBACK(onFileButtonPress), this);
     g_signal_connect(modernView, "button-press-event", G_CALLBACK(onModernButtonPress), this);
+    g_signal_connect(modernView, "key-press-event", G_CALLBACK(onModernKeyPress), this);
+    g_signal_connect(modernSearchEntry, "search-changed", G_CALLBACK(onModernSearchChanged), this);
     g_signal_connect(addressEntry, "activate", G_CALLBACK(onAddressActivate), this);
     g_signal_connect(upButton, "clicked", G_CALLBACK(onAddressUp), this);
     g_signal_connect(refreshButton, "clicked", G_CALLBACK(onAddressRefresh), this);
@@ -470,7 +500,7 @@ TFileBrowserTree::TFileBrowserTree() {
     g_signal_connect(folderView, "leave-notify-event", G_CALLBACK(onFileLeave), this);
     g_signal_connect(gtk_scrolled_window_get_vadjustment(GTK_SCROLLED_WINDOW(modernScrolled)), "value-changed", G_CALLBACK(+[](GtkAdjustment*, gpointer data) { static_cast<TFileBrowserTree*>(data)->queueVisibleThumbnails(); }), this);
     g_signal_connect(modernView, "size-allocate", G_CALLBACK(+[](GtkWidget* widget, GtkAllocation* allocation, gpointer data) {
-        gtk_icon_view_set_columns(GTK_ICON_VIEW(widget), std::max(1, allocation->width / 108));
+        gtk_icon_view_set_columns(GTK_ICON_VIEW(widget), std::max(1, allocation->width / 124));
         static_cast<TFileBrowserTree*>(data)->queueVisibleThumbnails();
     }), this);
     gtk_drag_dest_set(folderView, static_cast<GtkDestDefaults>(GTK_DEST_DEFAULT_MOTION | GTK_DEST_DEFAULT_DROP), dropTargets, G_N_ELEMENTS(dropTargets), static_cast<GdkDragAction>(GDK_ACTION_COPY | GDK_ACTION_MOVE));
@@ -507,10 +537,20 @@ TFileBrowserTree::TFileBrowserTree() {
 }
 
 TFileBrowserTree::~TFileBrowserTree() {
+    previewAsyncState->browser = nullptr;
+    ++previewAsyncState->generation;
+    {
+        std::lock_guard<std::mutex> lock(previewWorkerMutex);
+        previewWorkerStop = true;
+        previewWorkerJobs.clear();
+    }
+    previewWorkerCondition.notify_one();
+    if (previewWorkerThread.joinable()) previewWorkerThread.join();
     if (externalWatchId != 0) g_source_remove(externalWatchId);
     if (inlineRenameId != 0) g_source_remove(inlineRenameId);
     if (mutationRefreshId != 0) g_source_remove(mutationRefreshId);
     if (thumbnailLoadId != 0) g_source_remove(thumbnailLoadId);
+    clearModernBuild();
     clearPreviewCache();
     for (const std::string& path : pendingDragLocalPaths) g_remove(path.c_str());
     for (const std::string& path : completedDragDownloads) g_remove(path.c_str());
@@ -559,21 +599,34 @@ void TFileBrowserTree::setDownloadServer(const std::string& server) { downloadSe
 void TFileBrowserTree::setServerName(const std::string& server) { gtk_window_set_title(GTK_WINDOW(window), server.empty() ? "File Browser" : ("File Browser - " + server).c_str()); }
 void TFileBrowserTree::setModernFileBrowser(bool enabled) {
     modernFileBrowser = enabled;
+    ++previewAsyncState->generation;
+    clearModernBuild();
+    {
+        std::lock_guard<std::mutex> lock(previewWorkerMutex);
+        previewWorkerJobs.clear();
+    }
+    queuedPreviewDownloads.clear();
+    visiblePreviewPaths.clear();
+    if (thumbnailLoadId != 0) { g_source_remove(thumbnailLoadId); thumbnailLoadId = 0; }
     gtk_stack_set_visible_child_name(GTK_STACK(pathStack), enabled ? "modern" : "classic");
     gtk_stack_set_visible_child_name(GTK_STACK(fileViewStack), enabled ? "modern" : "classic");
     gtk_entry_set_text(GTK_ENTRY(addressEntry), currentFolder.c_str());
-    if (enabled) { rebuildModernItems(); queueVisibleThumbnails(); }
+    if (enabled) rebuildModernItems();
 }
 void TFileBrowserTree::setHoverPreviews(bool enabled) {
     hoverPreviews = enabled;
-    if (!enabled) hidePreview();
+    if (!enabled) {
+        hidePreview();
+        hoveredPreviewPath.clear();
+        if (!modernThumbnails) queuedPreviewDownloads.clear();
+    }
     else if (modernFileBrowser) queueVisibleThumbnails();
     else if (connection != nullptr && !currentFolder.empty()) rc_filebrowser_cd(connection, currentFolder.c_str());
 }
 void TFileBrowserTree::setModernThumbnails(bool enabled) {
     modernThumbnails = enabled;
     if (!enabled && !hoverPreviews) queuedPreviewDownloads.clear();
-    if (modernFileBrowser) { rebuildModernItems(); queueVisibleThumbnails(); }
+    if (modernFileBrowser) rebuildModernItems();
 }
 std::string TFileBrowserTree::downloadDestinationDirectory() const {
     if (downloadFolder.empty()) return {};
@@ -612,10 +665,20 @@ void TFileBrowserTree::navigateTo(const std::string& folder) {
     while (normalized.find("//") != std::string::npos) normalized.replace(normalized.find("//"), 2, "/");
     if (normalized == ".") normalized.clear();
     if (!normalized.empty() && normalized.back() != '/') normalized += '/';
+    ++previewAsyncState->generation;
+    clearModernBuild();
+    {
+        std::lock_guard<std::mutex> lock(previewWorkerMutex);
+        previewWorkerJobs.clear();
+    }
     currentFolder = normalized;
     gtk_list_store_clear(files);
     gtk_list_store_clear(modernItems);
     queuedPreviewDownloads.clear();
+    visiblePreviewPaths.clear();
+    if (thumbnailLoadId != 0) { g_source_remove(thumbnailLoadId); thumbnailLoadId = 0; }
+    if (previewFolder != normalized) clearPreviewCache();
+    previewFolder = normalized;
     hidePreview();
     gtk_label_set_text(GTK_LABEL(folderPath), (std::string("Current Folder: ") + normalized).c_str());
     gtk_entry_set_text(GTK_ENTRY(addressEntry), normalized.c_str());
@@ -801,6 +864,58 @@ gboolean TFileBrowserTree::onModernButtonPress(GtkWidget* widget, GdkEventButton
     g_free(itemPath);
     g_free(rights);
     return true;
+}
+
+gboolean TFileBrowserTree::onModernKeyPress(GtkWidget*, GdkEventKey* event, gpointer data) {
+    TFileBrowserTree* browser = static_cast<TFileBrowserTree*>(data);
+    if (event->keyval == GDK_KEY_Escape && gtk_widget_get_visible(browser->modernSearchPopover)) {
+        gtk_widget_hide(browser->modernSearchPopover);
+        gtk_entry_set_text(GTK_ENTRY(browser->modernSearchEntry), "");
+        return true;
+    }
+    const bool explicitSearch = (event->state & GDK_CONTROL_MASK) != 0 && (event->keyval == GDK_KEY_f || event->keyval == GDK_KEY_F);
+    const gunichar character = gdk_keyval_to_unicode(event->keyval);
+    const bool typedSearch = character != 0 && !g_unichar_iscntrl(character) && (event->state & (GDK_CONTROL_MASK | GDK_MOD1_MASK)) == 0;
+    if (!explicitSearch && !typedSearch) return false;
+    gtk_widget_show_all(browser->modernSearchPopover);
+    gtk_popover_popup(GTK_POPOVER(browser->modernSearchPopover));
+    gtk_widget_grab_focus(browser->modernSearchEntry);
+    if (typedSearch) {
+        gchar encoded[7] = {};
+        g_unichar_to_utf8(character, encoded);
+        gtk_entry_set_text(GTK_ENTRY(browser->modernSearchEntry), encoded);
+        gtk_editable_set_position(GTK_EDITABLE(browser->modernSearchEntry), -1);
+    }
+    return true;
+}
+
+void TFileBrowserTree::onModernSearchChanged(GtkSearchEntry* entry, gpointer data) {
+    TFileBrowserTree* browser = static_cast<TFileBrowserTree*>(data);
+    const gchar* query = gtk_entry_get_text(GTK_ENTRY(entry));
+    if (query == nullptr || *query == '\0') return;
+    gchar* foldedQuery = g_utf8_strdown(query, -1);
+    GtkTreeIter row;
+    gboolean valid = gtk_tree_model_get_iter_first(GTK_TREE_MODEL(browser->modernItems), &row);
+    int index = 0;
+    while (valid) {
+        gchar* name = nullptr;
+        gtk_tree_model_get(GTK_TREE_MODEL(browser->modernItems), &row, ModernNameColumn, &name, -1);
+        gchar* foldedName = g_utf8_strdown(name == nullptr ? "" : name, -1);
+        const bool match = std::strstr(foldedName, foldedQuery) != nullptr;
+        g_free(foldedName);
+        g_free(name);
+        if (match) {
+            GtkTreePath* path = gtk_tree_path_new_from_indices(index, -1);
+            gtk_icon_view_unselect_all(GTK_ICON_VIEW(browser->modernView));
+            gtk_icon_view_select_path(GTK_ICON_VIEW(browser->modernView), path);
+            gtk_icon_view_scroll_to_path(GTK_ICON_VIEW(browser->modernView), path, true, 0.5f, 0.5f);
+            gtk_tree_path_free(path);
+            break;
+        }
+        valid = gtk_tree_model_iter_next(GTK_TREE_MODEL(browser->modernItems), &row);
+        ++index;
+    }
+    g_free(foldedQuery);
 }
 
 gboolean TFileBrowserTree::onModernMotion(GtkWidget* widget, GdkEventMotion* event, gpointer data) {
@@ -1064,31 +1179,99 @@ void TFileBrowserTree::showPreview(const std::string& path, int rootX, int rootY
     gtk_window_move(GTK_WINDOW(previewWindow), x, y);
 }
 
+bool TFileBrowserTree::canAutoPreview(const std::string& path) const {
+    if (!isPreviewImage(path)) return false;
+    const auto sizeEntry = previewFileSizes.find(path);
+    if (sizeEntry == previewFileSizes.end() || sizeEntry->second == 0) return false;
+    gchar* loweredText = g_ascii_strdown(path.c_str(), -1);
+    const std::string lowered = loweredText == nullptr ? path : loweredText;
+    g_free(loweredText);
+    const bool animated = lowered.ends_with(".gif") || lowered.ends_with(".mng");
+    if (animated) return false;
+    const bool tileset = lowered.find("tileset") != std::string::npos || lowered.find("_tiles") != std::string::npos || lowered.find("-tiles") != std::string::npos;
+    const std::uint64_t limit = tileset ? 128 * 1024 : 512 * 1024;
+    return sizeEntry->second <= limit;
+}
+
 void TFileBrowserTree::cachePreview(const std::string& path, const void* content, int length) {
-    const std::vector<std::uint8_t> mngFrame = TMng::firstPngFrame(content, static_cast<std::size_t>(length));
-    if (TMng::isMNG(content, static_cast<std::size_t>(length)) && mngFrame.empty()) return;
-    const void* imageContent = mngFrame.empty() ? content : mngFrame.data();
-    const int imageLength = mngFrame.empty() ? length : static_cast<int>(mngFrame.size());
-    GdkPixbufLoader* loader = gdk_pixbuf_loader_new();
-    g_signal_connect(loader, "size-prepared", G_CALLBACK(+[](GdkPixbufLoader* value, int width, int height, gpointer) {
-        const double scale = std::min(1.0, std::min(360.0 / std::max(1, width), 260.0 / std::max(1, height)));
-        gdk_pixbuf_loader_set_size(value, std::max(1, static_cast<int>(width * scale)), std::max(1, static_cast<int>(height * scale)));
-    }), nullptr);
-    GError* error = nullptr;
-    const bool loaded = gdk_pixbuf_loader_write(loader, static_cast<const guchar*>(imageContent), imageLength, &error) && gdk_pixbuf_loader_close(loader, &error);
-    GdkPixbuf* pixbuf = loaded ? gdk_pixbuf_loader_get_pixbuf(loader) : nullptr;
-    if (pixbuf != nullptr) {
-        g_object_ref(pixbuf);
-        const auto existing = previewCache.find(path);
-        if (existing != previewCache.end()) g_object_unref(existing->second);
-        else previewCacheOrder.push_back(path);
-        previewCache[path] = pixbuf;
-        while (previewCacheOrder.size() > 50) { const std::string oldest = previewCacheOrder.front(); previewCacheOrder.erase(previewCacheOrder.begin()); g_object_unref(previewCache[oldest]); previewCache.erase(oldest); }
-        updateModernThumbnail(path, pixbuf);
-        if (hoveredPreviewPath == path) showPreview(path, previewRootX, previewRootY);
+    auto request = std::make_shared<PreviewDecodeRequest>();
+    request->state = previewAsyncState;
+    request->path = path;
+    request->folder = previewFolder;
+    request->generation = previewAsyncState->generation;
+    request->content.assign(static_cast<const std::uint8_t*>(content), static_cast<const std::uint8_t*>(content) + length);
+    {
+        std::lock_guard<std::mutex> lock(previewWorkerMutex);
+        previewWorkerJobs.clear();
+        previewWorkerJobs.push_back(std::move(request));
     }
-    if (error != nullptr) g_error_free(error);
-    g_object_unref(loader);
+    previewWorkerCondition.notify_one();
+}
+
+void TFileBrowserTree::previewWorkerLoop() {
+    while (true) {
+        std::shared_ptr<PreviewDecodeRequest> request;
+        {
+            std::unique_lock<std::mutex> lock(previewWorkerMutex);
+            previewWorkerCondition.wait(lock, [&] { return previewWorkerStop || !previewWorkerJobs.empty(); });
+            if (previewWorkerStop) return;
+            request = std::move(previewWorkerJobs.front());
+            previewWorkerJobs.pop_front();
+        }
+        const std::size_t dot = request->path.find_last_of('.');
+        gchar* lower = dot == std::string::npos ? nullptr : g_ascii_strdown(request->path.c_str() + dot, -1);
+        const bool isMng = lower != nullptr && std::string(lower) == ".mng";
+        g_free(lower);
+        std::vector<std::uint8_t> mngFrame;
+        if (isMng) mngFrame = TMng::firstPngFrame(request->content.data(), request->content.size());
+        if (!isMng || !mngFrame.empty()) {
+            const void* imageContent = isMng ? mngFrame.data() : request->content.data();
+            const int imageLength = static_cast<int>(isMng ? mngFrame.size() : request->content.size());
+            GdkPixbufLoader* loader = gdk_pixbuf_loader_new();
+            g_signal_connect(loader, "size-prepared", G_CALLBACK(+[](GdkPixbufLoader* value, int width, int height, gpointer) {
+                const double scale = std::min(1.0, std::min(360.0 / std::max(1, width), 260.0 / std::max(1, height)));
+                gdk_pixbuf_loader_set_size(value, std::max(1, static_cast<int>(width * scale)), std::max(1, static_cast<int>(height * scale)));
+            }), nullptr);
+            GError* error = nullptr;
+            const bool loaded = gdk_pixbuf_loader_write(loader, static_cast<const guchar*>(imageContent), imageLength, &error) && gdk_pixbuf_loader_close(loader, &error);
+            GdkPixbuf* pixbuf = loaded ? gdk_pixbuf_loader_get_pixbuf(loader) : nullptr;
+            if (pixbuf != nullptr) {
+                request->preview = GDK_PIXBUF(g_object_ref(pixbuf));
+                const int width = gdk_pixbuf_get_width(pixbuf);
+                const int height = gdk_pixbuf_get_height(pixbuf);
+                const double scale = std::min(88.0 / std::max(1, width), 88.0 / std::max(1, height));
+                request->thumbnail = gdk_pixbuf_scale_simple(pixbuf, std::max(1, static_cast<int>(width * scale)), std::max(1, static_cast<int>(height * scale)), GDK_INTERP_BILINEAR);
+            }
+            if (error != nullptr) g_error_free(error);
+            g_object_unref(loader);
+        }
+        auto* completion = new std::shared_ptr<PreviewDecodeRequest>(std::move(request));
+        g_main_context_invoke(nullptr, onPreviewDecoded, completion);
+    }
+}
+
+gboolean TFileBrowserTree::onPreviewDecoded(gpointer data) {
+    std::shared_ptr<PreviewDecodeRequest> request = std::move(*static_cast<std::shared_ptr<PreviewDecodeRequest>*>(data));
+    delete static_cast<std::shared_ptr<PreviewDecodeRequest>*>(data);
+    TFileBrowserTree* browser = request->state->browser;
+    if (browser != nullptr && request->preview != nullptr && request->generation == request->state->generation && request->folder == browser->previewFolder && (!browser->modernFileBrowser || std::find(browser->visiblePreviewPaths.begin(), browser->visiblePreviewPaths.end(), request->path) != browser->visiblePreviewPaths.end())) {
+        const auto existing = browser->previewCache.find(request->path);
+        if (existing != browser->previewCache.end()) g_object_unref(existing->second);
+        else browser->previewCacheOrder.push_back(request->path);
+        browser->previewCache[request->path] = request->preview;
+        request->preview = nullptr;
+        while (browser->previewCacheOrder.size() > 50) { const std::string oldest = browser->previewCacheOrder.front(); browser->previewCacheOrder.erase(browser->previewCacheOrder.begin()); g_object_unref(browser->previewCache[oldest]); browser->previewCache.erase(oldest); }
+        const auto row = browser->modernItemIndices.find(request->path);
+        if (browser->modernThumbnails && request->thumbnail != nullptr && row != browser->modernItemIndices.end()) {
+            GtkTreeIter item;
+            GtkTreePath* itemPath = gtk_tree_path_new_from_indices(row->second, -1);
+            if (gtk_tree_model_get_iter(GTK_TREE_MODEL(browser->modernItems), &item, itemPath)) gtk_list_store_set(browser->modernItems, &item, ModernIconColumn, request->thumbnail, -1);
+            gtk_tree_path_free(itemPath);
+        }
+        if (browser->hoverPreviews && browser->hoveredPreviewPath == request->path) browser->showPreview(request->path, browser->previewRootX, browser->previewRootY);
+    }
+    if (browser != nullptr) browser->startNextPreviewDownload();
+    return G_SOURCE_REMOVE;
 }
 
 #ifdef _WIN32
@@ -1597,10 +1780,12 @@ void TFileBrowserTree::onFileReceived(const char* path, const void* content, int
     bool previewResponse = false;
     for (auto iterator = browser->pendingPreviewDownloads.begin(); iterator != browser->pendingPreviewDownloads.end(); ++iterator) {
         if (!pathMatches(iterator->first, receivedPath)) continue;
-        if (iterator->second == browser->previewFolder) browser->cachePreview(iterator->first, content, length);
+        const bool wanted = iterator->second == browser->previewFolder && (!browser->modernFileBrowser || std::find(browser->visiblePreviewPaths.begin(), browser->visiblePreviewPaths.end(), iterator->first) != browser->visiblePreviewPaths.end());
+        const std::string previewPath = iterator->first;
         browser->pendingPreviewDownloads.erase(iterator);
         previewResponse = true;
-        browser->startNextPreviewDownload();
+        if (wanted) browser->cachePreview(previewPath, content, length);
+        else browser->startNextPreviewDownload();
         break;
     }
     for (auto iterator = browser->pendingDragDownloads.begin(); iterator != browser->pendingDragDownloads.end(); ++iterator) {
@@ -1740,6 +1925,7 @@ void TFileBrowserTree::showTextEditor(const char* path, const void* content, int
     applyRemoteControlSourceStyle(sourceBuffer);
     GtkWidget* editor = gtk_source_view_new_with_buffer(sourceBuffer);
     configureGScriptEditor(editor);
+    setGScriptEditorConnection(editor, connection);
     addEditorFindButton(dialog, editor);
     gtk_text_view_set_monospace(GTK_TEXT_VIEW(editor), true);
     gtk_text_buffer_set_text(GTK_TEXT_BUFFER(sourceBuffer), static_cast<const char*>(content), length);
@@ -1780,7 +1966,10 @@ void TFileBrowserTree::refresh() {
 
 void TFileBrowserTree::rebuildModernItems() {
     if (modernItems == nullptr) return;
+    clearModernBuild();
     gtk_list_store_clear(modernItems);
+    modernItemIndices.clear();
+    std::unordered_map<GdkPixbuf*, GdkPixbuf*> scaledIcons;
     std::string prefix = currentFolder;
     if (!prefix.empty() && prefix.back() != '/') prefix += '/';
     for (const std::string& storedPath : folderPaths) {
@@ -1789,12 +1978,8 @@ void TFileBrowserTree::rebuildModernItems() {
         if (!prefix.empty() && !path.starts_with(prefix)) continue;
         const std::string remainder = prefix.empty() ? path : path.substr(prefix.size());
         if (remainder.empty() || remainder.find('/') != std::string::npos) continue;
-        GtkTreeIter item;
-        gtk_list_store_append(modernItems, &item);
-        const std::string remotePath = path + "/";
-        GdkPixbuf* icon = scaledIcon(closedFolderLargeIcon, 48, 48);
-        gtk_list_store_set(modernItems, &item, ModernIconColumn, icon, ModernNameColumn, remainder.c_str(), ModernPathColumn, remotePath.c_str(), ModernFolderColumn, TRUE, ModernRightsColumn, "", -1);
-        if (icon != nullptr) g_object_unref(icon);
+        if (closedFolderLargeIcon != nullptr) g_object_ref(closedFolderLargeIcon);
+        pendingModernItems.push_back({closedFolderLargeIcon, remainder, path + "/", "", true});
     }
     GtkTreeIter source;
     gboolean valid = gtk_tree_model_get_iter_first(GTK_TREE_MODEL(files), &source);
@@ -1805,31 +1990,72 @@ void TFileBrowserTree::rebuildModernItems() {
         gtk_tree_model_get(GTK_TREE_MODEL(files), &source, FileIconColumn, &icon, FilePathColumn, &path, FileRightsColumn, &rights, -1);
         const std::string itemPath = path == nullptr ? "" : path;
         const auto cached = previewCache.find(itemPath);
-        GdkPixbuf* displayed = scaledIcon(icon, 44, 44);
-        GdkPixbuf* thumbnail = nullptr;
-        if (modernThumbnails && cached != previewCache.end()) {
-            if (displayed != nullptr) g_object_unref(displayed);
+        GdkPixbuf* displayed = nullptr;
+        if (modernThumbnails && cached != previewCache.end() && canAutoPreview(itemPath)) {
             const int width = gdk_pixbuf_get_width(cached->second);
             const int height = gdk_pixbuf_get_height(cached->second);
             const double scale = std::min(88.0 / std::max(1, width), 88.0 / std::max(1, height));
-            thumbnail = gdk_pixbuf_scale_simple(cached->second, std::max(1, static_cast<int>(width * scale)), std::max(1, static_cast<int>(height * scale)), GDK_INTERP_BILINEAR);
-            displayed = thumbnail;
+            displayed = gdk_pixbuf_scale_simple(cached->second, std::max(1, static_cast<int>(width * scale)), std::max(1, static_cast<int>(height * scale)), GDK_INTERP_BILINEAR);
+        } else {
+            if (scaledIcons.find(icon) == scaledIcons.end()) scaledIcons[icon] = scaledIcon(icon, 44, 44);
+            displayed = scaledIcons[icon];
+            if (displayed != nullptr) g_object_ref(displayed);
         }
-        GtkTreeIter item;
-        gtk_list_store_append(modernItems, &item);
-        gtk_list_store_set(modernItems, &item, ModernIconColumn, displayed, ModernNameColumn, itemPath.c_str(), ModernPathColumn, itemPath.c_str(), ModernFolderColumn, FALSE, ModernRightsColumn, rights == nullptr ? "" : rights, -1);
-        if ((!modernThumbnails || cached == previewCache.end()) && displayed != nullptr) g_object_unref(displayed);
-        if (thumbnail != nullptr) g_object_unref(thumbnail);
+        pendingModernItems.push_back({displayed, itemPath, itemPath, rights == nullptr ? "" : rights, false});
         if (icon != nullptr) g_object_unref(icon);
         g_free(path);
         g_free(rights);
         valid = gtk_tree_model_iter_next(GTK_TREE_MODEL(files), &source);
     }
+    for (const auto& icon : scaledIcons) if (icon.second != nullptr) g_object_unref(icon.second);
+    modernBuildIndex = 0;
+    if (pendingModernItems.empty()) queueVisibleThumbnails();
+    else modernBuildId = g_idle_add_full(G_PRIORITY_LOW, appendModernItems, this, nullptr);
+}
+
+void TFileBrowserTree::clearModernBuild() {
+    if (modernBuildId != 0) {
+        g_source_remove(modernBuildId);
+        modernBuildId = 0;
+    }
+    for (ModernPendingItem& item : pendingModernItems) {
+        if (item.icon != nullptr) g_object_unref(item.icon);
+    }
+    pendingModernItems.clear();
+    modernBuildIndex = 0;
+}
+
+gboolean TFileBrowserTree::appendModernItems(gpointer data) {
+    TFileBrowserTree* browser = static_cast<TFileBrowserTree*>(data);
+    constexpr std::size_t batchSize = 64;
+    const std::size_t end = std::min(browser->modernBuildIndex + batchSize, browser->pendingModernItems.size());
+    while (browser->modernBuildIndex < end) {
+        ModernPendingItem& pending = browser->pendingModernItems[browser->modernBuildIndex];
+        GtkTreeIter item;
+        gtk_list_store_append(browser->modernItems, &item);
+        gtk_list_store_set(browser->modernItems, &item, ModernIconColumn, pending.icon, ModernNameColumn, pending.name.c_str(), ModernPathColumn, pending.path.c_str(), ModernFolderColumn, pending.folder, ModernRightsColumn, pending.rights.c_str(), -1);
+        browser->modernItemIndices[pending.path] = static_cast<int>(browser->modernBuildIndex);
+        if (pending.icon != nullptr) {
+            g_object_unref(pending.icon);
+            pending.icon = nullptr;
+        }
+        ++browser->modernBuildIndex;
+    }
+    if (browser->modernBuildIndex < browser->pendingModernItems.size()) return G_SOURCE_CONTINUE;
+    browser->modernBuildId = 0;
+    browser->pendingModernItems.clear();
+    browser->modernBuildIndex = 0;
+    browser->queueVisibleThumbnails();
+    return G_SOURCE_REMOVE;
 }
 
 void TFileBrowserTree::queueVisibleThumbnails() {
-    if (!modernFileBrowser || (!modernThumbnails && !hoverPreviews) || thumbnailLoadId != 0) return;
-    thumbnailLoadId = g_idle_add(loadVisibleThumbnails, this);
+    if (!modernFileBrowser || (!modernThumbnails && !hoverPreviews)) return;
+    if (modernBuildId != 0) return;
+    queuedPreviewDownloads.clear();
+    visiblePreviewPaths.clear();
+    if (thumbnailLoadId != 0) g_source_remove(thumbnailLoadId);
+    thumbnailLoadId = g_timeout_add(300, loadVisibleThumbnails, this);
 }
 
 void TFileBrowserTree::startNextPreviewDownload() {
@@ -1837,6 +2063,7 @@ void TFileBrowserTree::startNextPreviewDownload() {
     while (!queuedPreviewDownloads.empty()) {
         const std::string path = queuedPreviewDownloads.front();
         queuedPreviewDownloads.erase(queuedPreviewDownloads.begin());
+        if (!canAutoPreview(path)) continue;
         if (previewCache.find(path) != previewCache.end()) continue;
         pendingPreviewDownloads[path] = previewFolder;
         if (std::find(previewTransferPaths.begin(), previewTransferPaths.end(), path) == previewTransferPaths.end()) previewTransferPaths.push_back(path);
@@ -1853,18 +2080,29 @@ gboolean TFileBrowserTree::loadVisibleThumbnails(gpointer data) {
     GtkTreePath* start = nullptr;
     GtkTreePath* end = nullptr;
     if (!gtk_icon_view_get_visible_range(GTK_ICON_VIEW(browser->modernView), &start, &end)) return G_SOURCE_REMOVE;
-    while (gtk_tree_path_compare(start, end) <= 0 && browser->previewCache.size() + browser->pendingPreviewDownloads.size() + browser->queuedPreviewDownloads.size() < 50) {
+    const gint* startIndices = gtk_tree_path_get_indices(start);
+    const gint* endIndices = gtk_tree_path_get_indices(end);
+    if (startIndices == nullptr || endIndices == nullptr) { gtk_tree_path_free(start); gtk_tree_path_free(end); return G_SOURCE_REMOVE; }
+    const int itemCount = gtk_tree_model_iter_n_children(GTK_TREE_MODEL(browser->modernItems), nullptr);
+    const int first = std::max(0, startIndices[0]);
+    const int last = std::min(itemCount - 1, endIndices[0]);
+    gtk_tree_path_free(start);
+    gtk_tree_path_free(end);
+    constexpr std::size_t maximumRequests = 12;
+    for (int index = first; index <= last; ++index) {
+        GtkTreePath* item = gtk_tree_path_new_from_indices(index, -1);
         GtkTreeIter row;
         gchar* path = nullptr;
         gboolean folder = false;
-        if (gtk_tree_model_get_iter(GTK_TREE_MODEL(browser->modernItems), &row, start)) gtk_tree_model_get(GTK_TREE_MODEL(browser->modernItems), &row, ModernPathColumn, &path, ModernFolderColumn, &folder, -1);
+        if (gtk_tree_model_get_iter(GTK_TREE_MODEL(browser->modernItems), &row, item)) gtk_tree_model_get(GTK_TREE_MODEL(browser->modernItems), &row, ModernPathColumn, &path, ModernFolderColumn, &folder, -1);
         const std::string itemPath = path == nullptr ? "" : path;
-        if (!folder && isPreviewImage(itemPath) && browser->previewCache.find(itemPath) == browser->previewCache.end() && browser->pendingPreviewDownloads.find(itemPath) == browser->pendingPreviewDownloads.end() && std::find(browser->queuedPreviewDownloads.begin(), browser->queuedPreviewDownloads.end(), itemPath) == browser->queuedPreviewDownloads.end()) browser->queuedPreviewDownloads.push_back(itemPath);
+        if (!folder && browser->canAutoPreview(itemPath)) {
+            browser->visiblePreviewPaths.push_back(itemPath);
+            if (browser->queuedPreviewDownloads.size() < maximumRequests && browser->previewCache.find(itemPath) == browser->previewCache.end() && browser->pendingPreviewDownloads.find(itemPath) == browser->pendingPreviewDownloads.end()) browser->queuedPreviewDownloads.push_back(itemPath);
+        }
         g_free(path);
-        gtk_tree_path_next(start);
+        gtk_tree_path_free(item);
     }
-    gtk_tree_path_free(start);
-    gtk_tree_path_free(end);
     browser->startNextPreviewDownload();
     return G_SOURCE_REMOVE;
 }
@@ -1918,6 +2156,7 @@ void TFileBrowserTree::refreshFiles(const char* folder, int count) {
     gtk_tree_sortable_set_sort_column_id(GTK_TREE_SORTABLE(files), GTK_TREE_SORTABLE_UNSORTED_SORT_COLUMN_ID, GTK_SORT_ASCENDING);
     gtk_list_store_clear(files);
     remoteModifiedTimes.clear();
+    previewFileSizes.clear();
     currentFolder = responseFolder;
     previewFolder = responseFolder;
     gtk_label_set_text(GTK_LABEL(folderPath), (std::string("Current Folder: ") + responseFolder).c_str());
@@ -1930,14 +2169,15 @@ void TFileBrowserTree::refreshFiles(const char* folder, int count) {
         const std::string size = entries[index].size == 0 ? "" : std::to_string(entries[index].size);
         gtk_list_store_set(files, &row, FileIconColumn, fileIcon(entries[index], textFileIcon, nwFileIcon, scriptFileIcon, gmapFileIcon, binaryFileIcon, fontFileIcon, archiveFileIcon, configFileIcon, unknownFileIcon), FilePathColumn, entries[index].path == nullptr ? "" : entries[index].path, FileRightsColumn, entries[index].rights == nullptr ? "" : entries[index].rights, FileSizeColumn, size.c_str(), FileModifiedColumn, modified.c_str(), FileSizeSortColumn, entries[index].size, FileModifiedSortColumn, entries[index].modified, -1);
         const std::string path = entries[index].path == nullptr ? "" : entries[index].path;
+        previewFileSizes[path] = entries[index].size;
         remoteModifiedTimes[path] = entries[index].modified;
         remoteModifiedTimes[responseFolder + path] = entries[index].modified;
-        if (!modernFileBrowser && hoverPreviews && isPreviewImage(path) && previewCache.size() + pendingPreviewDownloads.size() + queuedPreviewDownloads.size() < 50 && previewCache.find(path) == previewCache.end() && pendingPreviewDownloads.find(path) == pendingPreviewDownloads.end() && std::find(queuedPreviewDownloads.begin(), queuedPreviewDownloads.end(), path) == queuedPreviewDownloads.end()) queuedPreviewDownloads.push_back(path);
+        if (!modernFileBrowser && hoverPreviews && canAutoPreview(path) && previewCache.size() + pendingPreviewDownloads.size() + queuedPreviewDownloads.size() < 50 && previewCache.find(path) == previewCache.end() && pendingPreviewDownloads.find(path) == pendingPreviewDownloads.end() && std::find(queuedPreviewDownloads.begin(), queuedPreviewDownloads.end(), path) == queuedPreviewDownloads.end()) queuedPreviewDownloads.push_back(path);
     }
     gtk_tree_sortable_set_sort_column_id(GTK_TREE_SORTABLE(files), FilePathColumn, GTK_SORT_ASCENDING);
     rc_free_filebrowser_files(entries, entryCount);
     if (!modernFileBrowser) startNextPreviewDownload();
-    if (modernFileBrowser) { rebuildModernItems(); queueVisibleThumbnails(); }
+    if (modernFileBrowser) rebuildModernItems();
 }
 
 void TFileBrowserTree::addFolder(const char* pattern, const char* rights) {

@@ -34,6 +34,9 @@ public:
     void showServerList() { if (onListServerCallback) onListServerCallback(); }
     GdkWindow* nativeWindow() const { return window == nullptr ? nullptr : gtk_widget_get_window(window); }
     void toggleVisibility();
+    bool isVisible() const;
+    void hideFromTray();
+    void showFromTray();
     bool openLatestPrivateMessage();
     bool isNCAuthenticated() const;
     const std::string& currentServerName() const;
@@ -89,6 +92,7 @@ private:
     static void onMessage(const char* message, void* data);
     static void onIrcMessage(const char* channel, const char* line, void* data);
     static void onPrivateMessage(int playerId, const char* account, const char* nick, const char* message, const char* type, void* data);
+    static void onPlayerPropChanged(int playerId, const char* property, const char* value, void* data);
     static void onPlayerPropertiesChanged(int playerId, const char* properties, void* data);
     static void onServerData(const char* type, const char* content, void* data);
     static gboolean scrollChatToBottom(gpointer data);
@@ -164,6 +168,10 @@ private:
     int normalWindowY = 0;
     bool hasNativeNormalWindowGeometry = false;
     bool windowMaximized = false;
+    int trayWindowX = 0;
+    int trayWindowY = 0;
+    bool trayWindowPositionValid = false;
+    bool trayWindowMaximized = false;
     std::vector<std::string> chatHistory;
     int chatHistoryIndex = -1;
     guint eventSource = 0;

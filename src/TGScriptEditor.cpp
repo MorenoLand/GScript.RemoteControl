@@ -3,6 +3,7 @@
 #include "TGS2Diagnostics.h"
 #include "TTheme.h"
 
+#include <grclib.h>
 #include <gtksourceview/gtksource.h>
 #include <openssl/err.h>
 #include <openssl/ssl.h>
@@ -16,6 +17,7 @@
 #include <set>
 #include <string>
 #include <thread>
+#include <unordered_map>
 #include <vector>
 
 void ensureGScriptEditorMinimap(GtkWidget* editor);
@@ -59,8 +61,9 @@ namespace {
     }
     typedef struct _RemoteCompletionProvider { GObject parent; GtkWidget* editor; } RemoteCompletionProvider;
     typedef struct _RemoteCompletionProviderClass { GObjectClass parentClass; } RemoteCompletionProviderClass;
-    struct EditorCompletionState { GtkWidget* editor; RemoteCompletionProvider* provider; GtkWidget* signaturePopover; GtkWidget* signatureLabel; };
+    struct EditorCompletionState { GtkWidget* editor; RemoteCompletionProvider* provider; GtkWidget* signaturePopover; GtkWidget* signatureLabel; void* connection; };
     std::vector<EditorCompletionState> editorCompletionStates;
+    std::unordered_map<void*, std::unordered_map<int, std::string>> playerCommunityNames;
     struct EditorSelection { GtkTextMark* anchor; GtkTextMark* caret; };
     struct EditorMultiSelectionState { GtkWidget* editor; GtkTextTag* tag; std::vector<EditorSelection> selections; bool applying; };
     std::vector<std::unique_ptr<EditorMultiSelectionState>> multiSelectionStates;
@@ -349,7 +352,9 @@ namespace {
         gint bufferY = 0;
         gtk_text_view_window_to_buffer_coords(GTK_TEXT_VIEW(editor), GTK_TEXT_WINDOW_WIDGET, static_cast<gint>(event->x), static_cast<gint>(event->y), &bufferX, &bufferY);
         GtkTextIter caret;
-        gtk_text_view_get_iter_at_location(GTK_TEXT_VIEW(editor), &caret, bufferX, bufferY);
+        gint trailing = 0;
+        gtk_text_view_get_iter_at_position(GTK_TEXT_VIEW(editor), &caret, &trailing, bufferX, bufferY);
+        if (trailing > 0) gtk_text_iter_forward_chars(&caret, trailing);
         GtkTextIter anchor = caret;
         if ((event->state & GDK_SHIFT_MASK) != 0 && !state->selections.empty()) {
             GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(editor));
@@ -646,6 +651,23 @@ namespace {
         return result;
     }
 
+    bool completionInsideString(GtkTextIter iter) {
+        GtkTextIter start = iter;
+        gtk_text_iter_set_line_offset(&start, 0);
+        gchar* value = gtk_text_iter_get_text(&start, &iter);
+        gunichar quote = 0;
+        bool escaped = false;
+        for (const char* cursor = value; cursor != nullptr && *cursor != '\0'; cursor = g_utf8_next_char(cursor)) {
+            const gunichar character = g_utf8_get_char(cursor);
+            if (escaped) escaped = false;
+            else if (character == '\\') escaped = true;
+            else if (quote == 0 && (character == '"' || character == '\'')) quote = character;
+            else if (character == quote) quote = 0;
+        }
+        g_free(value);
+        return quote != 0;
+    }
+
     std::vector<std::string> localIdentifiers(GtkWidget* editor) {
         GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(editor));
         GtkTextIter start;
@@ -728,8 +750,8 @@ namespace {
 
     bool findEditorDefinition(GtkWidget* editor, const std::string& name, ApiDefinition& result) {
         const std::string lowerName = lowerText(name);
-        for (const ApiDefinition& definition : localFunctionDefinitions(editor)) if (lowerText(definition.name) == lowerName) { result = definition; return true; }
         if (const ApiDefinition* definition = findDefinition(name)) { result = *definition; return true; }
+        for (const ApiDefinition& definition : localFunctionDefinitions(editor)) if (lowerText(definition.name) == lowerName) { result = definition; return true; }
         return false;
     }
 
@@ -854,8 +876,9 @@ namespace {
         if (prefix.size() < 2 && gtk_source_completion_context_get_activation(context) == GTK_SOURCE_COMPLETION_ACTIVATION_INTERACTIVE) { gtk_source_completion_context_add_proposals(context, provider, nullptr, true); return; }
         std::set<std::string> seen;
         GList* proposals = nullptr;
-        std::vector<ApiDefinition> definitions = localFunctionDefinitions(remote->editor);
-        definitions.insert(definitions.end(), apiDefinitions.begin(), apiDefinitions.end());
+        std::vector<ApiDefinition> definitions = apiDefinitions;
+        const std::vector<ApiDefinition> localDefinitions = localFunctionDefinitions(remote->editor);
+        definitions.insert(definitions.end(), localDefinitions.begin(), localDefinitions.end());
         for (const ApiDefinition& definition : definitions) {
             if (!seen.insert(lowerText(definition.name)).second) continue;
             if (!prefix.empty() && lowerText(definition.name).rfind(prefix, 0) != 0) continue;
@@ -867,6 +890,32 @@ namespace {
             }
             GtkSourceCompletionItem* item = gtk_source_completion_item_new(label.c_str(), definition.name.c_str(), nullptr, definitionInfo(definition).c_str());
             proposals = g_list_prepend(proposals, item);
+        }
+        const auto state = std::find_if(editorCompletionStates.begin(), editorCompletionStates.end(), [remote](const EditorCompletionState& value) { return value.editor == remote->editor; });
+        if (state != editorCompletionStates.end() && state->connection != nullptr && completionInsideString(iter)) {
+            RCPlayer* players = nullptr;
+            const int count = rc_get_players(state->connection, &players);
+            const auto communities = playerCommunityNames.find(state->connection);
+            for (int index = 0; index < count; ++index) {
+                const std::string account = players[index].account == nullptr ? "" : players[index].account;
+                const std::string nick = players[index].nick == nullptr ? "" : players[index].nick;
+                std::string communityName;
+                if (communities != playerCommunityNames.end()) {
+                    const auto community = communities->second.find(players[index].id);
+                    if (community != communities->second.end()) communityName = community->second;
+                }
+                const std::pair<std::string, const char*> aliases[] = {{account, "ACCOUNT"}, {nick, "NICK"}, {communityName, "COMMUNITY"}};
+                std::set<std::string> aliasesSeen;
+                for (const auto& [alias, kind] : aliases) {
+                    const std::string lowerAlias = lowerText(alias);
+                    if (alias.empty() || !aliasesSeen.insert(lowerAlias).second || (!prefix.empty() && lowerAlias.rfind(prefix, 0) != 0)) continue;
+                    if (!seen.insert("player:" + lowerAlias).second) continue;
+                    const std::string label = alias + "  [" + kind + "]";
+                    const std::string detail = "Online player" + (account.empty() ? std::string() : " — " + account);
+                    GtkSourceCompletionItem* item = gtk_source_completion_item_new(label.c_str(), account.empty() ? alias.c_str() : account.c_str(), nullptr, detail.c_str());
+                    proposals = g_list_prepend(proposals, item);
+                }
+            }
         }
         for (const std::string& name : localIdentifiers(remote->editor)) {
             const std::string lowerName = lowerText(name);
@@ -1030,6 +1079,15 @@ namespace {
 }
 
 void setGScriptEditorCacheDirectory(const std::filesystem::path& directory) { completionCacheFile = directory / "scriptapi.json"; }
+void setGScriptEditorConnection(GtkWidget* editor, void* connection) {
+    const auto state = std::find_if(editorCompletionStates.begin(), editorCompletionStates.end(), [editor](const EditorCompletionState& value) { return value.editor == editor; });
+    if (state != editorCompletionStates.end()) state->connection = connection;
+}
+void updateGScriptEditorPlayerProperty(void* connection, int playerId, const char* property, const char* value) {
+    if (connection == nullptr || property == nullptr) return;
+    if (g_ascii_strcasecmp(property, "account") == 0) playerCommunityNames[connection].erase(playerId);
+    else if (g_ascii_strcasecmp(property, "community") == 0) playerCommunityNames[connection][playerId] = value == nullptr ? "" : value;
+}
 
 void requestGScriptHelp(const std::string& query, std::function<void(std::vector<std::string>)> callback) {
     if (!apiDefinitions.empty()) { callback(formatScriptHelp(apiDefinitions, query)); return; }
@@ -1254,7 +1312,7 @@ void configureGScriptEditor(GtkWidget* editor, bool script) {
         gtk_widget_set_margin_top(signatureLabel, 6);
         gtk_widget_set_margin_bottom(signatureLabel, 6);
         gtk_container_add(GTK_CONTAINER(signaturePopover), signatureLabel);
-        editorCompletionStates.push_back({editor, provider, signaturePopover, signatureLabel});
+        editorCompletionStates.push_back({editor, provider, signaturePopover, signatureLabel, nullptr});
         g_signal_connect(editor, "destroy", G_CALLBACK(+[](GtkWidget* widget, gpointer) {
             const auto state = std::find_if(editorCompletionStates.begin(), editorCompletionStates.end(), [widget](const EditorCompletionState& value) { return value.editor == widget; });
             if (state != editorCompletionStates.end()) {

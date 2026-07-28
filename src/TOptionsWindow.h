@@ -19,6 +19,8 @@ private:
     static void onSyncSyntaxThemeChanged(GtkToggleButton*, gpointer data);
     static void onLiveEditorOptionChanged(GtkWidget*, gpointer data);
     static gboolean onLiveEditorOptionFocusOut(GtkWidget*, GdkEventFocus*, gpointer data);
+    static gboolean onGlobalHotkeyKeyPress(GtkWidget*, GdkEventKey*, gpointer data);
+    static void onGlobalHotkeyConfirm(GtkButton*, gpointer data);
     static void onBrowseDownload(GtkButton*, gpointer data);
     static void onBrowseLog(GtkButton*, gpointer data);
     static void onBrowseAutocompleteSource(GtkButton*, gpointer data);
@@ -44,6 +46,7 @@ private:
     GtkWidget* afkEnabled = nullptr;
     GtkWidget* afkTimeout = nullptr;
     GtkWidget* optionAnimations = nullptr;
+    GtkWidget* globalHotkey = nullptr;
     GtkWidget* buddies = nullptr;
     GtkWidget* separateNC = nullptr;
     GtkWidget* timestamps = nullptr;

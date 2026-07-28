@@ -188,6 +188,7 @@ void TScriptList::showEditor(const char* name, const char* script) {
     applyRemoteControlSourceStyle(sourceBuffer);
     GtkWidget* editor = gtk_source_view_new_with_buffer(sourceBuffer);
     configureGScriptEditor(editor);
+    setGScriptEditorConnection(editor, connection);
     addEditorFindButton(dialog, editor);
     gtk_text_view_set_monospace(GTK_TEXT_VIEW(editor), true);
     gtk_text_buffer_set_text(GTK_TEXT_BUFFER(sourceBuffer), script, -1);

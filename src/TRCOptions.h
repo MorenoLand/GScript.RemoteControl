@@ -17,6 +17,7 @@ namespace RC {
         bool afkenabled = false;
         int afktimeout = 15;
         bool optionsanimations = true;
+        std::string globalhotkey;
         bool logrcchat = false;
         bool separatefindresults = true;
         std::string chatlogfile = ".\\logs\\log.txt";

@@ -5,6 +5,22 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include <memory>
+#include <condition_variable>
+#include <cstdint>
+#include <deque>
+#include <mutex>
+#include <thread>
+
+struct PreviewAsyncState;
+struct PreviewDecodeRequest;
+struct ModernPendingItem {
+    GdkPixbuf* icon = nullptr;
+    std::string name;
+    std::string path;
+    std::string rights;
+    bool folder = false;
+};
 
 class TFileBrowserTree {
 public:
@@ -33,10 +49,13 @@ private:
     static gboolean onFileLeave(GtkWidget*, GdkEventCrossing*, gpointer data);
     static gboolean onModernButtonPress(GtkWidget*, GdkEventButton*, gpointer data);
     static gboolean onModernMotion(GtkWidget*, GdkEventMotion*, gpointer data);
+    static gboolean onModernKeyPress(GtkWidget*, GdkEventKey*, gpointer data);
+    static void onModernSearchChanged(GtkSearchEntry*, gpointer data);
     static void onAddressActivate(GtkEntry*, gpointer data);
     static void onAddressUp(GtkButton*, gpointer data);
     static void onAddressRefresh(GtkButton*, gpointer data);
     static gboolean loadVisibleThumbnails(gpointer data);
+    static gboolean appendModernItems(gpointer data);
     static void onFileDragBegin(GtkWidget*, GdkDragContext*, gpointer data);
     static void onFileDragEnd(GtkWidget*, GdkDragContext*, gpointer data);
     static void onFileDragDataGet(GtkWidget*, GdkDragContext*, GtkSelectionData*, guint, guint, gpointer data);
@@ -71,12 +90,16 @@ private:
     void queueVisibleThumbnails();
     void startNextPreviewDownload();
     void updateModernThumbnail(const std::string& path, GdkPixbuf* pixbuf);
+    void clearModernBuild();
     void clearPreviewCache();
     void hidePreview();
     void showPreview(const std::string& path, int rootX, int rootY);
+    bool canAutoPreview(const std::string& path) const;
     void hideDragPreview();
     void showDragPreview(int rootX, int rootY);
     void cachePreview(const std::string& path, const void* content, int length);
+    void previewWorkerLoop();
+    static gboolean onPreviewDecoded(gpointer);
     GtkWidget* window = nullptr;
     GtkWidget* folderPath = nullptr;
     GtkWidget* pathStack = nullptr;
@@ -88,6 +111,8 @@ private:
     GtkWidget* fileView = nullptr;
     GtkWidget* fileViewStack = nullptr;
     GtkWidget* modernView = nullptr;
+    GtkWidget* modernSearchPopover = nullptr;
+    GtkWidget* modernSearchEntry = nullptr;
     GtkCellRenderer* fileNameRenderer = nullptr;
     GtkWidget* previewWindow = nullptr;
     GtkWidget* previewImage = nullptr;
@@ -128,10 +153,14 @@ private:
     std::unordered_map<std::string, std::string> pendingDragDownloads;
     std::unordered_map<std::string, std::string> pendingPreviewDownloads;
     std::vector<std::string> queuedPreviewDownloads;
+    std::vector<std::string> visiblePreviewPaths;
     std::vector<std::string> previewTransferPaths;
     std::unordered_map<std::string, int> pendingUserDownloads;
     std::unordered_map<std::string, int> remoteModifiedTimes;
+    std::unordered_map<std::string, std::uint64_t> previewFileSizes;
     std::unordered_map<std::string, GdkPixbuf*> previewCache;
+    std::unordered_map<std::string, int> modernItemIndices;
+    std::vector<ModernPendingItem> pendingModernItems;
     std::vector<std::string> previewCacheOrder;
     std::vector<std::string> completedDragDownloads;
     std::vector<std::string> pendingDragLocalPaths;
@@ -143,6 +172,14 @@ private:
     bool hoverPreviews = true;
     bool modernThumbnails = true;
     guint thumbnailLoadId = 0;
+    guint modernBuildId = 0;
+    std::size_t modernBuildIndex = 0;
+    std::shared_ptr<PreviewAsyncState> previewAsyncState;
+    std::thread previewWorkerThread;
+    std::mutex previewWorkerMutex;
+    std::condition_variable previewWorkerCondition;
+    std::deque<std::shared_ptr<PreviewDecodeRequest>> previewWorkerJobs;
+    bool previewWorkerStop = false;
     int previewRootX = 0;
     int previewRootY = 0;
     std::string downloadDestinationDirectory() const;

@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
@@ -83,13 +84,16 @@ namespace {
 
 #ifdef _WIN32
     constexpr int ServerListHotkeyId = 0x5243;
+    constexpr int VisibilityHotkeyId = 0x5244;
     constexpr UINT TrayMenuOpenId = 1;
     constexpr UINT TrayMenuServerListId = 2;
     constexpr UINT TrayMenuQuitId = 3;
     constexpr UINT TrayMenuSignOutId = 4;
     HWND serverListHotkeyWindow = nullptr;
+    std::string visibilityHotkey;
     UINT trayMenuWidth = 132;
     HMENU trayActiveMenu = nullptr;
+    void onTrayOpen(GtkMenuItem*, gpointer);
     const wchar_t* trayMenuText(UINT itemId) {
         const auto dynamic = trayMenuDynamicText.find(itemId);
         if (dynamic != trayMenuDynamicText.end()) return dynamic->second.c_str();
@@ -100,10 +104,10 @@ namespace {
         return L"";
     }
     LRESULT CALLBACK trayMenuWindowProcedure(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
-        if (message == WM_MENURBUTTONUP && trayActiveMenu != nullptr) {
-            const UINT itemId = GetMenuItemID(trayActiveMenu, static_cast<int>(lParam));
+        if (message == WM_MENURBUTTONUP && trayActiveMenu != nullptr && reinterpret_cast<HMENU>(lParam) == trayActiveMenu) {
+            const UINT itemId = GetMenuItemID(trayActiveMenu, static_cast<int>(wParam));
             const auto target = trayMenuDynamicTargets.find(itemId);
-            if (target != trayMenuDynamicTargets.end()) {
+            if (target != trayMenuDynamicTargets.end() && itemId >= 100 && (itemId - 100) % 2 == 0) {
                 TRemoteFrame* frame = target->second;
                 if (trayPrimaryFrames.contains(frame)) trayPrimaryFrames.erase(frame); else trayPrimaryFrames.insert(frame);
                 const std::wstring marker = trayPrimaryFrames.contains(frame) ? L"[*] " : L"";
@@ -154,6 +158,10 @@ namespace {
             if (trayServerListOpen) trayServerListOpen();
             return GDK_FILTER_REMOVE;
         }
+        if (message->message == WM_HOTKEY && message->wParam == VisibilityHotkeyId) {
+            onTrayOpen(nullptr, nullptr);
+            return GDK_FILTER_REMOVE;
+        }
         return GDK_FILTER_CONTINUE;
     }
 #endif
@@ -181,8 +189,14 @@ namespace {
 
     void onTrayOpen(GtkMenuItem*, gpointer) {
         clearTrayPMAlert();
-        for (TRemoteFrame* frame : trayRemoteFrames) if (frame != nullptr && frame->isConnected() && trayPrimaryFrames.contains(frame)) { trayRemoteFrame = frame; break; }
-        if (trayRemoteFrame != nullptr) trayRemoteFrame->show();
+        bool openedPrimary = false;
+        for (TRemoteFrame* frame : trayRemoteFrames) if (frame != nullptr && frame->isConnected() && trayPrimaryFrames.contains(frame)) {
+            frame->showFromTray();
+            trayRemoteFrame = frame;
+            openedPrimary = true;
+        }
+        if (openedPrimary) return;
+        if (trayRemoteFrame != nullptr) trayRemoteFrame->showFromTray();
         else if (trayStartFrame != nullptr) trayStartFrame->show();
     }
 
@@ -195,13 +209,21 @@ namespace {
         if (traySignOut) traySignOut();
     }
 
-    void onTrayFrameShow(GtkMenuItem*, gpointer data) { trayRemoteFrame = static_cast<TRemoteFrame*>(data); onTrayOpen(nullptr, nullptr); }
+    void onTrayFrameShow(GtkMenuItem*, gpointer data) { trayRemoteFrame = static_cast<TRemoteFrame*>(data); trayRemoteFrame->showFromTray(); clearTrayPMAlert(); }
     void onTrayFrameSignOut(GtkMenuItem*, gpointer data) { if (trayFrameSignOut) trayFrameSignOut(static_cast<TRemoteFrame*>(data)); }
 
     void onTrayQuit(GtkMenuItem*, gpointer) { gtk_main_quit(); }
 
     void toggleTrayApplication() {
-        if (trayRemoteFrame != nullptr) trayRemoteFrame->toggleVisibility();
+        std::vector<TRemoteFrame*> primaryFrames;
+        for (TRemoteFrame* frame : trayRemoteFrames) if (frame != nullptr && frame->isConnected() && trayPrimaryFrames.contains(frame)) primaryFrames.push_back(frame);
+        if (!primaryFrames.empty()) {
+            const bool hide = std::any_of(primaryFrames.begin(), primaryFrames.end(), [](TRemoteFrame* frame) { return frame->isVisible(); });
+            for (TRemoteFrame* frame : primaryFrames) {
+                if (hide) frame->hideFromTray();
+                else frame->showFromTray();
+            }
+        } else if (trayRemoteFrame != nullptr) trayRemoteFrame->toggleVisibility();
         else if (trayStartFrame != nullptr) trayStartFrame->toggleVisibility();
     }
 
@@ -271,7 +293,7 @@ namespace {
         SetWindowLongPtrW(owner, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(trayMenuWindowProcedure));
         trayActiveMenu = menu;
         SetForegroundWindow(owner);
-        const UINT command = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON | TPM_LEFTALIGN | TPM_BOTTOMALIGN, cursor.x, cursor.y, 0, owner, nullptr);
+        const UINT command = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_LEFTBUTTON | TPM_LEFTALIGN | TPM_BOTTOMALIGN, cursor.x, cursor.y, 0, owner, nullptr);
         DestroyMenu(menu);
         trayActiveMenu = nullptr;
         DeleteObject(menuBackground);
@@ -392,6 +414,46 @@ namespace {
         darkThemeProvider = provider;
     }
 
+}
+
+void refreshGlobalVisibilityHotkey(const std::string& hotkey) {
+#ifdef _WIN32
+    visibilityHotkey = hotkey;
+    if (serverListHotkeyWindow == nullptr) return;
+    UnregisterHotKey(serverListHotkeyWindow, VisibilityHotkeyId);
+    if (hotkey.empty()) return;
+    UINT modifiers = MOD_NOREPEAT;
+    UINT key = 0;
+    std::size_t start = 0;
+    while (start <= hotkey.size()) {
+        const std::size_t separator = hotkey.find('+', start);
+        std::string token = hotkey.substr(start, separator == std::string::npos ? std::string::npos : separator - start);
+        std::transform(token.begin(), token.end(), token.begin(), [](unsigned char value) { return static_cast<char>(std::tolower(value)); });
+        if (token == "ctrl" || token == "control") modifiers |= MOD_CONTROL;
+        else if (token == "alt") modifiers |= MOD_ALT;
+        else if (token == "shift") modifiers |= MOD_SHIFT;
+        else if (token == "super" || token == "meta" || token == "win") modifiers |= MOD_WIN;
+        else if (token.size() == 1) key = static_cast<UINT>(VkKeyScanA(static_cast<CHAR>(std::toupper(static_cast<unsigned char>(token[0])))) & 0xff);
+        else if (token.size() > 1 && token[0] == 'f') {
+            const int number = std::atoi(token.c_str() + 1);
+            if (number >= 1 && number <= 24) key = VK_F1 + number - 1;
+        } else if (token == "space") key = VK_SPACE;
+        else if (token == "tab") key = VK_TAB;
+        else if (token == "escape" || token == "esc") key = VK_ESCAPE;
+        else if (token == "return" || token == "enter") key = VK_RETURN;
+        else if (token == "home") key = VK_HOME;
+        else if (token == "end") key = VK_END;
+        else if (token == "page_up") key = VK_PRIOR;
+        else if (token == "page_down") key = VK_NEXT;
+        else if (token == "insert") key = VK_INSERT;
+        else if (token == "delete") key = VK_DELETE;
+        if (separator == std::string::npos) break;
+        start = separator + 1;
+    }
+    if (key != 0) RegisterHotKey(serverListHotkeyWindow, VisibilityHotkeyId, modifiers, key);
+#else
+    (void)hotkey;
+#endif
 }
 
 void applyRemoteControlTheme(const std::string& theme, bool darkMode) {
@@ -568,6 +630,7 @@ int main(int argc, char** argv) {
         gdk_window_add_filter(startWindow, onWindowsMessage, nullptr);
         serverListHotkeyWindow = reinterpret_cast<HWND>(GDK_WINDOW_HWND(startWindow));
         RegisterHotKey(serverListHotkeyWindow, ServerListHotkeyId, MOD_NOREPEAT, VK_F8);
+        refreshGlobalVisibilityHotkey(options.globalhotkey);
     }
 #else
     frame.show();
@@ -577,6 +640,7 @@ int main(int argc, char** argv) {
 #ifdef _WIN32
     if (serverListHotkeyWindow != nullptr) {
         UnregisterHotKey(serverListHotkeyWindow, ServerListHotkeyId);
+        UnregisterHotKey(serverListHotkeyWindow, VisibilityHotkeyId);
         if (GdkWindow* startWindow = frame.nativeWindow()) gdk_window_remove_filter(startWindow, onWindowsMessage, nullptr);
     }
 #endif

@@ -499,6 +499,7 @@ void TRemoteFrame::open(void* nextConnection, int serverIndex, const std::string
     rc_on_irc_message(connection, onIrcMessage, this);
     rc_on_private_message_ex(connection, onPrivateMessage, this);
     rc_on_player_properties_changed(connection, onPlayerPropertiesChanged, this);
+    rc_on_player_prop_changed(connection, onPlayerPropChanged, this);
     rc_on_server_data(connection, onServerData, this);
     rc_on_account_list(connection, onAccountList, this);
     rc_on_player_text_data(connection, onPlayerText, this);
@@ -545,6 +546,23 @@ void TRemoteFrame::show() {
 void TRemoteFrame::toggleVisibility() {
     if (gtk_widget_get_visible(window)) gtk_widget_hide(window);
     else show();
+}
+
+bool TRemoteFrame::isVisible() const { return window != nullptr && gtk_widget_get_visible(window); }
+
+void TRemoteFrame::hideFromTray() {
+    if (!isVisible()) return;
+    gtk_window_get_position(GTK_WINDOW(window), &trayWindowX, &trayWindowY);
+    trayWindowPositionValid = true;
+    trayWindowMaximized = gtk_window_is_maximized(GTK_WINDOW(window));
+    gtk_widget_hide(window);
+}
+
+void TRemoteFrame::showFromTray() {
+    gtk_widget_show_all(window);
+    if (trayWindowPositionValid && !trayWindowMaximized) gtk_window_move(GTK_WINDOW(window), trayWindowX, trayWindowY);
+    if (trayWindowMaximized) gtk_window_maximize(GTK_WINDOW(window));
+    gtk_window_present(GTK_WINDOW(window));
 }
 
 bool TRemoteFrame::openLatestPrivateMessage() {
@@ -1071,6 +1089,11 @@ void TRemoteFrame::onPlayerPropertiesChanged(int playerId, const char* propertie
     frame->playerList->setServerName(frame->serverName);
     frame->playerList->setPlayerProperties(playerId, properties);
     frame->updateMassPMAcceptance();
+}
+
+void TRemoteFrame::onPlayerPropChanged(int playerId, const char* property, const char* value, void* data) {
+    TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
+    updateGScriptEditorPlayerProperty(frame->connection, playerId, property, value);
 }
 
 void TRemoteFrame::onServerData(const char* type, const char* content, void* data) {
