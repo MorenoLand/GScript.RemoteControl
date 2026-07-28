@@ -618,6 +618,9 @@ void TRemoteFrame::onFileBrowser(GtkMenuItem*, gpointer data) {
     frame->fileBrowser->setServerName(frame->serverName);
     frame->fileBrowser->setDownloadFolder(frame->options.downloadfolder);
     frame->fileBrowser->setDownloadServer(frame->serverName);
+    frame->fileBrowser->setModernFileBrowser(frame->options.modernfilebrowser);
+    frame->fileBrowser->setHoverPreviews(frame->options.filebrowserhoverpreview);
+    frame->fileBrowser->setModernThumbnails(frame->options.filebrowserthumbnails);
     frame->fileBrowser->open(frame->connection);
 }
 
@@ -1121,6 +1124,9 @@ void TRemoteFrame::applyOptions(const RC::RCOptions& previous) {
     if (playerList != nullptr && options.attachaway != previous.attachaway) playerList->setAttachAway(options.attachaway);
     if (options.separatenc != previous.separatenc) setNCChannelVisible(options.separatenc);
     if (fileBrowser != nullptr && options.downloadfolder != previous.downloadfolder) fileBrowser->setDownloadFolder(options.downloadfolder);
+    if (fileBrowser != nullptr && options.modernfilebrowser != previous.modernfilebrowser) fileBrowser->setModernFileBrowser(options.modernfilebrowser);
+    if (fileBrowser != nullptr && options.filebrowserhoverpreview != previous.filebrowserhoverpreview) fileBrowser->setHoverPreviews(options.filebrowserhoverpreview);
+    if (fileBrowser != nullptr && options.filebrowserthumbnails != previous.filebrowserthumbnails) fileBrowser->setModernThumbnails(options.filebrowserthumbnails);
     if (options.background != previous.background) reloadBackground();
     if (options.backgroundtint != previous.backgroundtint && backgroundImage != nullptr) gtk_widget_queue_draw(backgroundImage);
     refreshTheme();
@@ -1536,8 +1542,12 @@ gboolean TRemoteFrame::onFindResultClick(GtkWidget* widget, GdkEventButton* even
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
     if (frame->connection == nullptr) return true;
     if (frame->fileBrowser == nullptr) frame->fileBrowser = new TFileBrowserTree();
+    frame->fileBrowser->setServerName(frame->serverName);
     frame->fileBrowser->setDownloadFolder(frame->options.downloadfolder);
     frame->fileBrowser->setDownloadServer(frame->serverName);
+    frame->fileBrowser->setModernFileBrowser(frame->options.modernfilebrowser);
+    frame->fileBrowser->setHoverPreviews(frame->options.filebrowserhoverpreview);
+    frame->fileBrowser->setModernThumbnails(frame->options.filebrowserthumbnails);
     frame->fileBrowser->openFolder(frame->connection, folder);
     return true;
 }

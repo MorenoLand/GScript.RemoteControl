@@ -52,6 +52,9 @@ private:
     GtkWidget* notificationSounds = nullptr;
     GtkWidget* logChat = nullptr;
     GtkWidget* separateFindResults = nullptr;
+    GtkWidget* modernFileBrowser = nullptr;
+    GtkWidget* fileBrowserHoverPreview = nullptr;
+    GtkWidget* fileBrowserThumbnails = nullptr;
     GtkWidget* syntax = nullptr;
     GtkWidget* autoIndent = nullptr;
     GtkWidget* smartHomeEnd = nullptr;

@@ -16,6 +16,9 @@ public:
     void setDownloadFolder(const std::string& folder);
     void setDownloadServer(const std::string& server);
     void setServerName(const std::string& server);
+    void setModernFileBrowser(bool enabled);
+    void setHoverPreviews(bool enabled);
+    void setModernThumbnails(bool enabled);
 private:
     static void onRefresh(GtkButton*, gpointer data);
     static void onFolderSelected(GtkTreeSelection*, gpointer data);
@@ -27,6 +30,12 @@ private:
 #endif
     static gboolean onFileMotion(GtkWidget*, GdkEventMotion*, gpointer data);
     static gboolean onFileLeave(GtkWidget*, GdkEventCrossing*, gpointer data);
+    static gboolean onModernButtonPress(GtkWidget*, GdkEventButton*, gpointer data);
+    static gboolean onModernMotion(GtkWidget*, GdkEventMotion*, gpointer data);
+    static void onAddressActivate(GtkEntry*, gpointer data);
+    static void onAddressUp(GtkButton*, gpointer data);
+    static void onAddressRefresh(GtkButton*, gpointer data);
+    static gboolean loadVisibleThumbnails(gpointer data);
     static void onFileDragBegin(GtkWidget*, GdkDragContext*, gpointer data);
     static void onFileDragEnd(GtkWidget*, GdkDragContext*, gpointer data);
     static void onFileDragDataGet(GtkWidget*, GdkDragContext*, GtkSelectionData*, guint, guint, gpointer data);
@@ -53,16 +62,26 @@ private:
     bool isPreviewTransferMessage(const char* message) const;
     void showTextEditor(const char* path, const void* content, int length);
     void showItemMenu(GtkWidget* view, GdkEventButton* event, bool folder);
+    void navigateTo(const std::string& folder);
+    void rebuildModernItems();
+    void queueVisibleThumbnails();
+    void startNextPreviewDownload();
+    void updateModernThumbnail(const std::string& path, GdkPixbuf* pixbuf);
     void clearPreviewCache();
     void hidePreview();
     void showPreview(const std::string& path, int rootX, int rootY);
     void cachePreview(const std::string& path, const void* content, int length);
     GtkWidget* window = nullptr;
     GtkWidget* folderPath = nullptr;
+    GtkWidget* pathStack = nullptr;
+    GtkWidget* addressEntry = nullptr;
     GtkTreeStore* folders = nullptr;
     GtkListStore* files = nullptr;
+    GtkListStore* modernItems = nullptr;
     GtkWidget* folderView = nullptr;
     GtkWidget* fileView = nullptr;
+    GtkWidget* fileViewStack = nullptr;
+    GtkWidget* modernView = nullptr;
     GtkCellRenderer* fileNameRenderer = nullptr;
     GtkWidget* previewWindow = nullptr;
     GtkWidget* previewImage = nullptr;
@@ -96,6 +115,8 @@ private:
     std::vector<std::string> pendingDragSelectionPaths;
     std::unordered_map<std::string, std::string> pendingDragDownloads;
     std::unordered_map<std::string, std::string> pendingPreviewDownloads;
+    std::vector<std::string> queuedPreviewDownloads;
+    std::vector<std::string> previewTransferPaths;
     std::unordered_map<std::string, int> pendingUserDownloads;
     std::unordered_map<std::string, int> remoteModifiedTimes;
     std::unordered_map<std::string, GdkPixbuf*> previewCache;
@@ -105,6 +126,11 @@ private:
     std::string dragStagingFolder;
     std::string previewFolder;
     std::string hoveredPreviewPath;
+    std::vector<std::string> folderPaths;
+    bool modernFileBrowser = false;
+    bool hoverPreviews = true;
+    bool modernThumbnails = true;
+    guint thumbnailLoadId = 0;
     int previewRootX = 0;
     int previewRootY = 0;
     std::string downloadDestinationDirectory() const;

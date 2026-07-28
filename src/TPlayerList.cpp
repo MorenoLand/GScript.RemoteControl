@@ -534,10 +534,8 @@ void TPlayerList::handleBanListData(const char* type, const char* account, const
     const std::string history = content == nullptr ? "" : content;
     if (history.empty()) {
         gtk_text_buffer_set_text(buffer, "(none)", -1);
-    } else if (listType != "banhistory") {
-        gtk_text_buffer_set_text(buffer, history.c_str(), -1);
     } else {
-        GtkTextTag* headerTag = gtk_text_buffer_create_tag(buffer, "ban-history-header", "foreground", remoteControlDarkMode() ? "#ff00ff" : "#a000a0", "weight", PANGO_WEIGHT_BOLD, nullptr);
+        GtkTextTag* headerTag = gtk_text_buffer_create_tag(buffer, "history-header", "foreground", remoteControlDarkMode() ? "#ff00ff" : "#a000a0", "weight", PANGO_WEIGHT_BOLD, nullptr);
         const auto isDigit = [](char value) { return value >= '0' && value <= '9'; };
         bool hasEntry = false;
         size_t lineStart = 0;

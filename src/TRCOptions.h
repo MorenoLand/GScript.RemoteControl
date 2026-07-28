@@ -21,6 +21,9 @@ namespace RC {
         bool separatefindresults = true;
         std::string chatlogfile = ".\\logs\\log.txt";
         std::string downloadfolder = ".\\Downloads\\";
+        bool modernfilebrowser = false;
+        bool filebrowserhoverpreview = true;
+        bool filebrowserthumbnails = true;
         bool dontsavepassword = false;
         bool graphicalmenu = true;
         bool darkmode = true;
