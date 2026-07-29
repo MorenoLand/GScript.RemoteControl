@@ -119,11 +119,11 @@ int main(int argc, char** argv) {
     settleGtk();
     require(gtk_window_get_transient_for(GTK_WINDOW(placementError)) == GTK_WINDOW(login), "Error dialog is not transient to its login parent");
     GtkWidget* placementLabel = widgetByName(placementError, "ErrorMsgLabel");
-    require(placementLabel != nullptr && std::string(gtk_label_get_text(GTK_LABEL(placementLabel))) == "first,\nsecond", "Error dialog does not break after commas");
+    require(placementLabel != nullptr && std::string(gtk_label_get_text(GTK_LABEL(placementLabel))) == "first, second", "Error dialog does not preserve original label text");
     gint errorWidth = 0;
     gint errorHeight = 0;
     gtk_window_get_size(GTK_WINDOW(placementError), &errorWidth, &errorHeight);
-    require(errorWidth <= 500, "Error dialog exceeds compact width");
+    require(errorWidth <= 400, "Error dialog exceeds original compact width");
     gtk_widget_destroy(placementError);
     gint loginMinimum = 0;
     gint loginNatural = 0;
