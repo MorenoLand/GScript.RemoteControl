@@ -20,6 +20,7 @@ class TOptionsWindow;
 class TNPCList;
 class TLevelList;
 class TSyncManager;
+class TExtensionsManager;
 struct WebPAnimation;
 
 class TRemoteFrame {
@@ -70,6 +71,7 @@ private:
     static void onServerOptions(GtkMenuItem*, gpointer data);
     static void onServerFlags(GtkMenuItem*, gpointer data);
     static void onFolderConfig(GtkMenuItem*, gpointer data);
+    static void onExtensions(GtkMenuItem*, gpointer data);
     static gboolean onGraphicalButton(GtkWidget*, GdkEventButton*, gpointer data);
     static void onLocalNPCSubmit(GtkDialog*, gint response, gpointer data);
     static void onLocalNPCData(const char* level, const char* content, void* data);
@@ -197,6 +199,7 @@ private:
     TNPCList* npcList = nullptr;
     TLevelList* levelList = nullptr;
     std::unique_ptr<TSyncManager> syncManager;
+    std::unique_ptr<TExtensionsManager> extensionsManager;
     int syncProgress = 0;
     bool syncInProgress = false;
     RC::RCOptions options;

@@ -21,6 +21,7 @@
 #include "TNPCList.h"
 #include "TLevelList.h"
 #include "TSyncManager.h"
+#include "TExtensions.h"
 #include "TMcpServer.h"
 
 #include <grclib.h>
@@ -171,6 +172,7 @@ TRemoteFrame::TRemoteFrame(const RC::RCOptions& nextOptions, const std::filesyst
         } else {
             addMenuItem(menu, "Server Flags", G_CALLBACK(onServerFlags));
             addMenuItem(menu, "Level-NPC dump", G_CALLBACK(onLocalNPCDump));
+            addMenuItem(menu, "Extensions", G_CALLBACK(onExtensions));
         }
         gtk_menu_item_set_submenu(GTK_MENU_ITEM(item), menu);
         gtk_menu_shell_append(GTK_MENU_SHELL(menuBar), item);
@@ -328,6 +330,7 @@ TRemoteFrame::TRemoteFrame(const RC::RCOptions& nextOptions, const std::filesyst
         gtk_widget_set_margin_top(notebook, 156);
         gtk_overlay_add_overlay(GTK_OVERLAY(graphicalContainer), notebook);
     } else gtk_box_pack_start(GTK_BOX(root), notebook, true, true, 0);
+    extensionsManager = std::make_unique<TExtensionsManager>(GTK_WINDOW(window), applicationDirectory, [this](const std::string& extension, const std::string& output) { appendChannelMessage(extension, output); }, [this](const std::string& extension) { removeChannel(extension); });
 
     editField = gtk_entry_new();
     gtk_widget_set_name(editField, "EditField");
@@ -454,6 +457,7 @@ TRemoteFrame::~TRemoteFrame() {
         if (GTK_IS_WINDOW(candidate) && g_object_get_data(G_OBJECT(candidate), "rc-afk-frame") == this) { g_signal_handlers_disconnect_by_func(candidate, reinterpret_cast<gpointer>(G_CALLBACK(onActivityEvent)), this); g_object_set_data(G_OBJECT(candidate), "rc-afk-frame", nullptr); }
     }
     g_list_free(toplevels);
+    extensionsManager.reset();
     if (window != nullptr) gtk_widget_destroy(window);
     if (notebookTabProvider != nullptr) { gtk_style_context_remove_provider_for_screen(gdk_screen_get_default(), GTK_STYLE_PROVIDER(notebookTabProvider)); g_object_unref(notebookTabProvider); }
     if (backgroundPixbuf != nullptr) g_object_unref(backgroundPixbuf);
@@ -825,6 +829,8 @@ gboolean TRemoteFrame::onEditKey(GtkWidget*, GdkEventKey* event, gpointer data) 
     return true;
 }
 
+void TRemoteFrame::onExtensions(GtkMenuItem*, gpointer data) { TRemoteFrame* frame = static_cast<TRemoteFrame*>(data); if (frame->extensionsManager != nullptr) frame->extensionsManager->showWindow(); }
+
 void TRemoteFrame::onMentionChanged(GtkEditable*, gpointer data) {
     static_cast<TRemoteFrame*>(data)->refreshMentionCompletion();
 }
@@ -1186,7 +1192,7 @@ void TRemoteFrame::graphicalAction(int index) {
     else if (index == 5) onServerFlags(nullptr, this);
     else if (index == 6) onFolderConfig(nullptr, this);
     else if (index == 7) onServerOptions(nullptr, this);
-    else if (index == 12) return;
+    else if (index == 12) if (extensionsManager != nullptr) extensionsManager->showWindow();
     else if (index == 13) onLevels(nullptr, this);
     else if (index == 14) syncManager->showWindow();
 }
@@ -1571,11 +1577,20 @@ void TRemoteFrame::appendChannelMessage(const std::string& channel, const std::s
         gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(field), GTK_WRAP_WORD_CHAR);
         configureChatField(field);
         gtk_container_add(GTK_CONTAINER(scrolled), field);
-        gtk_notebook_append_page(GTK_NOTEBOOK(notebook), scrolled, gtk_label_new(channel.c_str()));
+        GtkWidget* tab = gtk_event_box_new();
+        gtk_container_add(GTK_CONTAINER(tab), gtk_label_new(channel.c_str()));
+        gtk_widget_add_events(tab, GDK_BUTTON_PRESS_MASK);
+        g_object_set_data(G_OBJECT(tab), "remote-frame", this);
+        g_object_set_data_full(G_OBJECT(tab), "remote-channel", g_strdup(channel.c_str()), g_free);
+        g_signal_connect(tab, "button-press-event", G_CALLBACK(+[](GtkWidget* widget, GdkEventButton* event, gpointer) -> gboolean { if (event->button != 3) return false; GtkWidget* menu = gtk_menu_new(); GtkWidget* close = gtk_menu_item_new_with_label("Close"); g_object_set_data(G_OBJECT(close), "remote-frame", g_object_get_data(G_OBJECT(widget), "remote-frame")); g_object_set_data_full(G_OBJECT(close), "remote-channel", g_strdup(static_cast<const char*>(g_object_get_data(G_OBJECT(widget), "remote-channel"))), g_free); g_signal_connect(close, "activate", G_CALLBACK(+[](GtkMenuItem* item, gpointer) { auto* frame = static_cast<TRemoteFrame*>(g_object_get_data(G_OBJECT(item), "remote-frame")); const char* channel = static_cast<const char*>(g_object_get_data(G_OBJECT(item), "remote-channel")); if (frame != nullptr && channel != nullptr) frame->removeChannel(channel); }), nullptr); gtk_menu_shell_append(GTK_MENU_SHELL(menu), close); gtk_widget_show_all(menu); gtk_menu_popup_at_pointer(GTK_MENU(menu), reinterpret_cast<GdkEvent*>(event)); return true; }), nullptr);
+        const int page = gtk_notebook_append_page(GTK_NOTEBOOK(notebook), scrolled, tab);
         gtk_notebook_set_tab_detachable(GTK_NOTEBOOK(notebook), scrolled, false);
         gtk_notebook_set_tab_reorderable(GTK_NOTEBOOK(notebook), scrolled, true);
+        gtk_widget_show_all(tab);
         gtk_widget_show_all(scrolled);
+        gtk_notebook_set_current_page(GTK_NOTEBOOK(notebook), page);
     }
+    if (message.empty()) return;
     GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(field));
     ChatTags& tags = chatTagsFor(buffer);
     GtkTextIter end;
