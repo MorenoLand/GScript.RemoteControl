@@ -16,12 +16,14 @@ namespace RC {
         bool attachaway = true;
         bool afkenabled = false;
         int afktimeout = 15;
-        bool optionsanimations = true;
         std::string globalhotkey;
         bool logrcchat = false;
         bool separatefindresults = true;
         std::string chatlogfile = ".\\logs\\log.txt";
         std::string downloadfolder = ".\\Downloads\\";
+        std::string externaleditorworkspace = ".\\ExternalEditor\\";
+        std::string externaleditorcommand;
+        std::string externaleditorscope = "off";
         bool modernfilebrowser = false;
         bool filebrowserhoverpreview = true;
         bool filebrowserthumbnails = false;

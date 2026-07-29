@@ -22,6 +22,8 @@ private:
     static gboolean onGlobalHotkeyKeyPress(GtkWidget*, GdkEventKey*, gpointer data);
     static void onGlobalHotkeyConfirm(GtkButton*, gpointer data);
     static void onBrowseDownload(GtkButton*, gpointer data);
+    static void onBrowseExternalWorkspace(GtkButton*, gpointer data);
+    static void onBrowseExternalEditor(GtkButton*, gpointer data);
     static void onBrowseLog(GtkButton*, gpointer data);
     static void onBrowseAutocompleteSource(GtkButton*, gpointer data);
     static void onBrowseBackground(GtkButton*, gpointer data);
@@ -31,12 +33,13 @@ private:
     void applyThemeSelection();
     void applySyntaxThemeSelection();
     void applySyntaxThemeSync();
-    void resizeToPage(GtkWidget* page);
-    static gboolean animateResize(gpointer data);
     GtkWidget* window = nullptr;
     GtkWidget* notebook = nullptr;
     GtkWidget* nickname = nullptr;
     GtkWidget* downloadFolder = nullptr;
+    GtkWidget* externalEditorWorkspace = nullptr;
+    GtkWidget* externalEditorCommand = nullptr;
+    GtkWidget* externalEditorScope = nullptr;
     GtkWidget* logFile = nullptr;
     GtkWidget* chatFontFamily = nullptr;
     GtkWidget* ignoreMass = nullptr;
@@ -45,7 +48,6 @@ private:
     GtkWidget* attachAway = nullptr;
     GtkWidget* afkEnabled = nullptr;
     GtkWidget* afkTimeout = nullptr;
-    GtkWidget* optionAnimations = nullptr;
     GtkWidget* globalHotkey = nullptr;
     GtkWidget* buddies = nullptr;
     GtkWidget* separateNC = nullptr;
@@ -112,6 +114,4 @@ private:
     std::filesystem::path applicationDirectory;
     std::function<void(const RC::RCOptions&)> onSaved;
     bool saving = false;
-    guint animationSource = 0;
-    int animationTargetHeight = 400;
 };

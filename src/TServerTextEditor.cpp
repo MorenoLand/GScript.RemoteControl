@@ -7,7 +7,7 @@
 #include <grclib.h>
 #include <gtksourceview/gtksource.h>
 
-TServerTextEditor::TServerTextEditor(Kind nextKind, const char* nextTitle) : kind(nextKind), title(nextTitle == nullptr ? "Script" : nextTitle) {
+TServerTextEditor::TServerTextEditor(Kind nextKind, const char* nextTitle, RC::RCOptions* nextOptions) : kind(nextKind), title(nextTitle == nullptr ? "Script" : nextTitle), options(nextOptions) {
     window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
     gtk_window_set_title(GTK_WINDOW(window), this->title.c_str());
     gtk_window_set_default_size(GTK_WINDOW(window), 600, 460);
@@ -65,7 +65,7 @@ TServerTextEditor::TServerTextEditor(Kind nextKind, const char* nextTitle) : kin
     g_signal_connect(window, "delete-event", G_CALLBACK(onDelete), this);
 }
 
-void TServerTextEditor::setServerName(const std::string& server) { gtk_window_set_title(GTK_WINDOW(window), server.empty() ? title.c_str() : (title + " - " + server).c_str()); }
+void TServerTextEditor::setServerName(const std::string& server) { serverName = server; gtk_window_set_title(GTK_WINDOW(window), server.empty() ? title.c_str() : (title + " - " + server).c_str()); }
 
 TServerTextEditor::~TServerTextEditor() { if (window != nullptr) gtk_widget_destroy(window); }
 void TServerTextEditor::hide() { if (window != nullptr) gtk_widget_hide(window); }
@@ -75,14 +75,25 @@ void TServerTextEditor::open(void* nextConnection) {
     if (kind == Kind::ServerOptions) rc_request_server_options(connection);
     else if (kind == Kind::ServerFlags) rc_request_server_flags(connection);
     else rc_request_folder_config(connection);
-    gtk_widget_show_all(window);
-    gtk_window_present(GTK_WINDOW(window));
+    if (options == nullptr || options->externaleditorscope != "text") { gtk_widget_show_all(window); gtk_window_present(GTK_WINDOW(window)); }
 }
 
 void TServerTextEditor::setContent(const char* content) {
     const std::string text = content == nullptr ? "" : content;
     const std::string type = kind == Kind::ServerOptions ? "serveroptions" : kind == Kind::ServerFlags ? "serverflags" : "folderconfig";
     backupEditorText(type, "", text, false);
+    if (options != nullptr && options->externaleditorscope == "text") {
+        if (externalEditor == nullptr || externalWorkspace != options->externaleditorworkspace || externalCommand != options->externaleditorcommand) {
+            externalWorkspace = options->externaleditorworkspace;
+            externalCommand = options->externaleditorcommand;
+            externalEditor = std::make_unique<TExternalEditor>(externalWorkspace, externalCommand);
+        }
+        externalEditor->open(serverName, "text", type + ".txt", text, [this](const std::string& updated) {
+            backupEditorText(kind == Kind::ServerOptions ? "serveroptions" : kind == Kind::ServerFlags ? "serverflags" : "folderconfig", "", updated, true);
+            if (kind == Kind::ServerOptions) rc_upload_server_options(connection, updated.c_str()); else if (kind == Kind::ServerFlags) rc_upload_server_flags(connection, updated.c_str()); else rc_upload_folder_config(connection, updated.c_str());
+        });
+        return;
+    }
     gtk_text_buffer_set_text(buffer, text.c_str(), -1);
 }
 void TServerTextEditor::onSave(GtkButton*, gpointer data) { static_cast<TServerTextEditor*>(data)->save(); }

@@ -693,7 +693,7 @@ void TRemoteFrame::onFileBrowser(GtkMenuItem*, gpointer data) {
 void TRemoteFrame::onClasses(GtkMenuItem*, gpointer data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
     if (frame->connection == nullptr || rc_is_nc_authenticated(frame->connection) == 0) return;
-    if (frame->classList == nullptr) frame->classList = new TScriptList("classes");
+    if (frame->classList == nullptr) frame->classList = new TScriptList("classes", &frame->options);
     frame->classList->setServerName(frame->serverName);
     frame->classList->open(frame->connection);
 }
@@ -701,7 +701,7 @@ void TRemoteFrame::onClasses(GtkMenuItem*, gpointer data) {
 void TRemoteFrame::onWeapons(GtkMenuItem*, gpointer data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
     if (frame->connection == nullptr || rc_is_nc_authenticated(frame->connection) == 0) return;
-    if (frame->weaponList == nullptr) frame->weaponList = new TScriptList("weapons");
+    if (frame->weaponList == nullptr) frame->weaponList = new TScriptList("weapons", &frame->options);
     frame->weaponList->setServerName(frame->serverName);
     frame->weaponList->open(frame->connection);
 }
@@ -790,7 +790,7 @@ void TRemoteFrame::onLocalNPCData(const char*, const char* content, void* data) 
 void TRemoteFrame::onServerOptions(GtkMenuItem*, gpointer data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
     if (frame->connection == nullptr) return;
-    if (frame->serverOptionsEditor == nullptr) frame->serverOptionsEditor = new TServerTextEditor(TServerTextEditor::Kind::ServerOptions, "Server Options");
+    if (frame->serverOptionsEditor == nullptr) frame->serverOptionsEditor = new TServerTextEditor(TServerTextEditor::Kind::ServerOptions, "Server Options", &frame->options);
     frame->serverOptionsEditor->setServerName(frame->serverName);
     frame->serverOptionsEditor->open(frame->connection);
 }
@@ -803,7 +803,7 @@ void TRemoteFrame::onListServerSettings(GtkButton*, gpointer data) {
 void TRemoteFrame::onServerFlags(GtkMenuItem*, gpointer data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
     if (frame->connection == nullptr) return;
-    if (frame->serverFlagsEditor == nullptr) frame->serverFlagsEditor = new TServerTextEditor(TServerTextEditor::Kind::ServerFlags, "Server Flags");
+    if (frame->serverFlagsEditor == nullptr) frame->serverFlagsEditor = new TServerTextEditor(TServerTextEditor::Kind::ServerFlags, "Server Flags", &frame->options);
     frame->serverFlagsEditor->setServerName(frame->serverName);
     frame->serverFlagsEditor->open(frame->connection);
 }
@@ -811,7 +811,7 @@ void TRemoteFrame::onServerFlags(GtkMenuItem*, gpointer data) {
 void TRemoteFrame::onFolderConfig(GtkMenuItem*, gpointer data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
     if (frame->connection == nullptr) return;
-    if (frame->folderConfigEditor == nullptr) frame->folderConfigEditor = new TServerTextEditor(TServerTextEditor::Kind::FolderConfig, "Folder Config");
+    if (frame->folderConfigEditor == nullptr) frame->folderConfigEditor = new TServerTextEditor(TServerTextEditor::Kind::FolderConfig, "Folder Config", &frame->options);
     frame->folderConfigEditor->setServerName(frame->serverName);
     frame->folderConfigEditor->open(frame->connection);
 }
@@ -1651,12 +1651,12 @@ void TRemoteFrame::appendChannelMessage(const std::string& channel, const std::s
         g_object_set_data(G_OBJECT(tab), "remote-frame", this);
         g_object_set_data_full(G_OBJECT(tab), "remote-channel", g_strdup(channel.c_str()), g_free);
         g_signal_connect(tab, "button-press-event", G_CALLBACK(+[](GtkWidget* widget, GdkEventButton* event, gpointer) -> gboolean { if (event->button != 3) return false; GtkWidget* menu = gtk_menu_new(); GtkWidget* close = gtk_menu_item_new_with_label("Close"); g_object_set_data(G_OBJECT(close), "remote-frame", g_object_get_data(G_OBJECT(widget), "remote-frame")); g_object_set_data_full(G_OBJECT(close), "remote-channel", g_strdup(static_cast<const char*>(g_object_get_data(G_OBJECT(widget), "remote-channel"))), g_free); g_signal_connect(close, "activate", G_CALLBACK(+[](GtkMenuItem* item, gpointer) { auto* frame = static_cast<TRemoteFrame*>(g_object_get_data(G_OBJECT(item), "remote-frame")); const char* channel = static_cast<const char*>(g_object_get_data(G_OBJECT(item), "remote-channel")); if (frame != nullptr && channel != nullptr) frame->removeChannel(channel); }), nullptr); gtk_menu_shell_append(GTK_MENU_SHELL(menu), close); gtk_widget_show_all(menu); gtk_menu_popup_at_pointer(GTK_MENU(menu), reinterpret_cast<GdkEvent*>(event)); return true; }), nullptr);
-        const int page = gtk_notebook_append_page(GTK_NOTEBOOK(notebook), scrolled, tab);
+        gtk_notebook_append_page(GTK_NOTEBOOK(notebook), scrolled, tab);
         gtk_notebook_set_tab_detachable(GTK_NOTEBOOK(notebook), scrolled, false);
         gtk_notebook_set_tab_reorderable(GTK_NOTEBOOK(notebook), scrolled, true);
         gtk_widget_show_all(tab);
         gtk_widget_show_all(scrolled);
-        gtk_notebook_set_current_page(GTK_NOTEBOOK(notebook), page);
+        gtk_notebook_set_current_page(GTK_NOTEBOOK(notebook), 0);
     }
     if (message.empty()) return;
     GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(field));

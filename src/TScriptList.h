@@ -1,11 +1,14 @@
 #pragma once
 
 #include <gtk/gtk.h>
+#include "TRCOptions.h"
+#include "TExternalEditor.h"
+#include <memory>
 #include <string>
 
 class TScriptList {
 public:
-    explicit TScriptList(std::string type);
+    TScriptList(std::string type, RC::RCOptions* options);
     ~TScriptList();
     void open(void* connection);
     void hide();
@@ -30,4 +33,8 @@ private:
     GtkWidget* tree = nullptr;
     void* connection = nullptr;
     std::string serverName;
+    RC::RCOptions* options = nullptr;
+    std::unique_ptr<TExternalEditor> externalEditor;
+    std::string externalWorkspace;
+    std::string externalCommand;
 };

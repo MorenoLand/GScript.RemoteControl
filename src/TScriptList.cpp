@@ -16,7 +16,7 @@ namespace {
     TScriptList* weaponList = nullptr;
 }
 
-TScriptList::TScriptList(std::string nextType) : type(std::move(nextType)) {
+TScriptList::TScriptList(std::string nextType, RC::RCOptions* nextOptions) : type(std::move(nextType)), options(nextOptions) {
     window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
     gtk_window_set_title(GTK_WINDOW(window), (type == "classes" ? "Classes" : "Weapon/GUI-Script List"));
     gtk_window_set_default_size(GTK_WINDOW(window), 540, 460);
@@ -175,6 +175,19 @@ void TScriptList::onScript(const char* scriptType, const char* name, int, const 
 }
 
 void TScriptList::showEditor(const char* name, const char* script) {
+    if (options != nullptr && (options->externaleditorscope == "scripts" || options->externaleditorscope == "text")) {
+        if (externalEditor == nullptr || externalWorkspace != options->externaleditorworkspace || externalCommand != options->externaleditorcommand) {
+            externalWorkspace = options->externaleditorworkspace;
+            externalCommand = options->externaleditorcommand;
+            externalEditor = std::make_unique<TExternalEditor>(externalWorkspace, externalCommand);
+        }
+        const std::string scriptName = name == nullptr ? "" : name;
+        externalEditor->open(serverName, type, scriptName, script == nullptr ? "" : script, [this, scriptName](const std::string& updated) {
+            backupEditorText(type == "weapons" ? "weapon" : "class", scriptName, updated, true);
+            if (type == "weapons") rc_update_weapon(connection, scriptName.c_str(), "", updated.c_str()); else rc_update_class(connection, scriptName.c_str(), updated.c_str());
+        });
+        return;
+    }
     struct EditorState { void* connection; bool weapon; std::string name; GtkWidget* editor; };
     const std::string editorTitle = serverName.empty() ? std::string(name) : std::string(name) + " - " + serverName;
     GtkWidget* dialog = gtk_dialog_new_with_buttons(editorTitle.c_str(), GTK_WINDOW(window), static_cast<GtkDialogFlags>(0), "Apply", GTK_RESPONSE_ACCEPT, "Close", GTK_RESPONSE_CANCEL, nullptr);

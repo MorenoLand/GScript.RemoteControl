@@ -145,6 +145,19 @@ TOptionsWindow::TOptionsWindow(RC::RCOptions& nextOptions, const std::filesystem
     downloadFolder = addEntry(GTK_GRID(generalGrid), "Downloadfolder:", options.downloadfolder, 1);
     GtkWidget* downloadBrowse = gtk_button_new_with_label("Browse");
     gtk_grid_attach(GTK_GRID(generalGrid), downloadBrowse, 2, 1, 1, 1);
+    externalEditorWorkspace = addEntry(GTK_GRID(generalGrid), "External workspace:", options.externaleditorworkspace, 8);
+    externalEditorCommand = addEntry(GTK_GRID(generalGrid), "External editor command:", options.externaleditorcommand, 9);
+    GtkWidget* externalWorkspaceBrowse = gtk_button_new_with_label("Browse");
+    GtkWidget* externalEditorBrowse = gtk_button_new_with_label("Browse");
+    gtk_grid_attach(GTK_GRID(generalGrid), externalWorkspaceBrowse, 2, 8, 1, 1);
+    gtk_grid_attach(GTK_GRID(generalGrid), externalEditorBrowse, 2, 9, 1, 1);
+    externalEditorScope = gtk_combo_box_text_new();
+    gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(externalEditorScope), "off", "Disabled");
+    gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(externalEditorScope), "scripts", "Scripts only");
+    gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(externalEditorScope), "text", "Scripts + RC text editors");
+    gtk_combo_box_set_active_id(GTK_COMBO_BOX(externalEditorScope), options.externaleditorscope.c_str());
+    gtk_grid_attach(GTK_GRID(generalGrid), gtk_label_new("External editor mode:"), 0, 10, 1, 1);
+    gtk_grid_attach(GTK_GRID(generalGrid), externalEditorScope, 1, 10, 2, 1);
     logChat = gtk_check_button_new_with_label("Log RC Chat");
     gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(logChat), options.logrcchat);
     gtk_grid_attach(GTK_GRID(generalGrid), logChat, 0, 2, 1, 1);
@@ -162,9 +175,6 @@ TOptionsWindow::TOptionsWindow(RC::RCOptions& nextOptions, const std::filesystem
     gtk_combo_box_set_active_id(GTK_COMBO_BOX(afkTimeout), std::to_string(options.afktimeout).c_str());
     gtk_grid_attach(GTK_GRID(generalGrid), gtk_label_new("Away timeout:"), 0, 4, 1, 1);
     gtk_grid_attach(GTK_GRID(generalGrid), afkTimeout, 1, 4, 1, 1);
-    optionAnimations = gtk_check_button_new_with_label("Animate options resizing");
-    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(optionAnimations), options.optionsanimations);
-    gtk_grid_attach(GTK_GRID(generalGrid), optionAnimations, 0, 5, 2, 1);
     gtk_grid_attach(GTK_GRID(generalGrid), gtk_label_new("Global show/hide hotkey:"), 0, 6, 1, 1);
     GtkWidget* hotkeyOverlay = gtk_overlay_new();
     globalHotkey = gtk_entry_new();
@@ -372,6 +382,8 @@ TOptionsWindow::TOptionsWindow(RC::RCOptions& nextOptions, const std::filesystem
     g_signal_connect(scriptTabWidth, "changed", G_CALLBACK(onLiveEditorOptionChanged), this);
     g_signal_connect(autocompleteSource, "focus-out-event", G_CALLBACK(onLiveEditorOptionFocusOut), this);
     g_signal_connect(downloadBrowse, "clicked", G_CALLBACK(onBrowseDownload), this);
+    g_signal_connect(externalWorkspaceBrowse, "clicked", G_CALLBACK(onBrowseExternalWorkspace), this);
+    g_signal_connect(externalEditorBrowse, "clicked", G_CALLBACK(onBrowseExternalEditor), this);
     g_signal_connect(logBrowse, "clicked", G_CALLBACK(onBrowseLog), this);
     g_signal_connect(autocompleteBrowse, "clicked", G_CALLBACK(onBrowseAutocompleteSource), this);
     g_signal_connect(backgroundBrowse, "clicked", G_CALLBACK(onBrowseBackground), this);
@@ -407,7 +419,7 @@ TOptionsWindow::TOptionsWindow(RC::RCOptions& nextOptions, const std::filesystem
     }), this);
     g_signal_connect(window, "delete-event", G_CALLBACK(onDelete), this);
 }
-TOptionsWindow::~TOptionsWindow() { if (animationSource != 0) g_source_remove(animationSource); if (window != nullptr) gtk_widget_destroy(window); }
+TOptionsWindow::~TOptionsWindow() { if (window != nullptr) gtk_widget_destroy(window); }
 void TOptionsWindow::setServerName(const std::string& server) { gtk_window_set_title(GTK_WINDOW(window), server.empty() ? "Options" : ("Options - " + server).c_str()); }
 void TOptionsWindow::open() {
     RC::RCOptions persisted = options;
@@ -417,23 +429,11 @@ void TOptionsWindow::open() {
     gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(mcpApproveClass), options.mcpapproveclass);
     gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(mcpApproveNpc), options.mcpapprovenpc);
     gtk_widget_show_all(window);
-    g_idle_add(+[](gpointer data) -> gboolean {
-        TOptionsWindow* optionsWindow = static_cast<TOptionsWindow*>(data);
-        const int page = gtk_notebook_get_current_page(GTK_NOTEBOOK(optionsWindow->notebook));
-        optionsWindow->resizeToPage(gtk_notebook_get_nth_page(GTK_NOTEBOOK(optionsWindow->notebook), page));
-        return G_SOURCE_REMOVE;
-    }, this);
     gtk_window_present(GTK_WINDOW(window));
 }
 void TOptionsWindow::onClose(GtkButton*, gpointer data) { TOptionsWindow* window = static_cast<TOptionsWindow*>(data); window->save(); gtk_widget_hide(window->window); }
 void TOptionsWindow::onPageChanged(GtkNotebook*, GtkWidget*, guint, gpointer data) {
     TOptionsWindow* optionsWindow = static_cast<TOptionsWindow*>(data);
-    g_idle_add(+[](gpointer value) -> gboolean {
-        TOptionsWindow* optionsWindow = static_cast<TOptionsWindow*>(value);
-        const int page = gtk_notebook_get_current_page(GTK_NOTEBOOK(optionsWindow->notebook));
-        optionsWindow->resizeToPage(gtk_notebook_get_nth_page(GTK_NOTEBOOK(optionsWindow->notebook), page));
-        return G_SOURCE_REMOVE;
-    }, optionsWindow);
 }
 void TOptionsWindow::onThemeChanged(GtkComboBox*, gpointer data) { static_cast<TOptionsWindow*>(data)->applyThemeSelection(); }
 void TOptionsWindow::onSyntaxThemeChanged(GtkComboBox*, gpointer data) { static_cast<TOptionsWindow*>(data)->applySyntaxThemeSelection(); }
@@ -476,6 +476,19 @@ void TOptionsWindow::onBrowseDownload(GtkButton*, gpointer data) {
     }
     gtk_widget_destroy(dialog);
 }
+void TOptionsWindow::onBrowseExternalWorkspace(GtkButton*, gpointer data) {
+    TOptionsWindow* optionsWindow = static_cast<TOptionsWindow*>(data);
+    GtkWidget* dialog = gtk_file_chooser_dialog_new("External editor workspace", GTK_WINDOW(optionsWindow->window), GTK_FILE_CHOOSER_ACTION_SELECT_FOLDER, "Cancel", GTK_RESPONSE_CANCEL, "Select", GTK_RESPONSE_ACCEPT, nullptr);
+    gtk_file_chooser_set_filename(GTK_FILE_CHOOSER(dialog), gtk_entry_get_text(GTK_ENTRY(optionsWindow->externalEditorWorkspace)));
+    if (gtk_dialog_run(GTK_DIALOG(dialog)) == GTK_RESPONSE_ACCEPT) { gchar* path = gtk_file_chooser_get_filename(GTK_FILE_CHOOSER(dialog)); gtk_entry_set_text(GTK_ENTRY(optionsWindow->externalEditorWorkspace), path); g_free(path); }
+    gtk_widget_destroy(dialog);
+}
+void TOptionsWindow::onBrowseExternalEditor(GtkButton*, gpointer data) {
+    TOptionsWindow* optionsWindow = static_cast<TOptionsWindow*>(data);
+    GtkWidget* dialog = gtk_file_chooser_dialog_new("External editor executable", GTK_WINDOW(optionsWindow->window), GTK_FILE_CHOOSER_ACTION_OPEN, "Cancel", GTK_RESPONSE_CANCEL, "Select", GTK_RESPONSE_ACCEPT, nullptr);
+    if (gtk_dialog_run(GTK_DIALOG(dialog)) == GTK_RESPONSE_ACCEPT) { gchar* path = gtk_file_chooser_get_filename(GTK_FILE_CHOOSER(dialog)); gtk_entry_set_text(GTK_ENTRY(optionsWindow->externalEditorCommand), path); g_free(path); }
+    gtk_widget_destroy(dialog);
+}
 void TOptionsWindow::onBrowseLog(GtkButton*, gpointer data) {
     TOptionsWindow* optionsWindow = static_cast<TOptionsWindow*>(data);
     GtkWidget* dialog = gtk_file_chooser_dialog_new("RC chat log", GTK_WINDOW(optionsWindow->window), GTK_FILE_CHOOSER_ACTION_SAVE, "Cancel", GTK_RESPONSE_CANCEL, "Select", GTK_RESPONSE_ACCEPT, nullptr);
@@ -513,7 +526,7 @@ void TOptionsWindow::save() {
     if (saving) return;
     saving = true;
     const RC::RCOptions previous = options;
-    options.nickname = gtk_entry_get_text(GTK_ENTRY(nickname)); options.downloadfolder = gtk_entry_get_text(GTK_ENTRY(downloadFolder)); options.chatlogfile = gtk_entry_get_text(GTK_ENTRY(logFile)); readFontButton(chatFontFamily, options.chatfontfamily, options.chatfontsize);
+    options.nickname = gtk_entry_get_text(GTK_ENTRY(nickname)); options.downloadfolder = gtk_entry_get_text(GTK_ENTRY(downloadFolder)); options.externaleditorworkspace = gtk_entry_get_text(GTK_ENTRY(externalEditorWorkspace)); options.externaleditorcommand = gtk_entry_get_text(GTK_ENTRY(externalEditorCommand)); if (const char* externalScope = gtk_combo_box_get_active_id(GTK_COMBO_BOX(externalEditorScope))) options.externaleditorscope = externalScope; options.chatlogfile = gtk_entry_get_text(GTK_ENTRY(logFile)); readFontButton(chatFontFamily, options.chatfontfamily, options.chatfontsize);
     if (const char* selectedTheme = gtk_combo_box_get_active_id(GTK_COMBO_BOX(theme))) options.theme = selectedTheme;
     if (const char* selectedSyntaxTheme = gtk_combo_box_get_active_id(GTK_COMBO_BOX(syntaxTheme))) options.syntaxtheme = selectedSyntaxTheme;
     options.darkmode = options.theme == "system" ? options.darkmode : options.theme != "light"; options.syncsyntaxtheme = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(syncSyntaxTheme)); options.synccolors = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(syncColors));
@@ -522,7 +535,6 @@ void TOptionsWindow::save() {
         gtk_combo_box_set_active_id(GTK_COMBO_BOX(syntaxTheme), options.syntaxtheme.c_str());
     }
     options.afkenabled = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(afkEnabled)); const char* afkId = gtk_combo_box_get_active_id(GTK_COMBO_BOX(afkTimeout)); options.afktimeout = afkId == nullptr ? 15 : std::clamp(std::atoi(afkId), 1, 1440);
-    options.optionsanimations = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(optionAnimations));
     options.globalhotkey = gtk_entry_get_text(GTK_ENTRY(globalHotkey));
     options.nomassmessages = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(ignoreMass)); options.nomassifclienton = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(ignoreMassClient)); options.attachaway = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(attachAway)); options.globalpms = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(globalPMs)); options.buddytracking = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(buddies)); options.separatenc = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(separateNC)); options.rctimestamps = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(timestamps)); options.newpmalerts = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(pmAlerts)); options.notificationsounds = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(notificationSounds)); options.logrcchat = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(logChat)); options.separatefindresults = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(separateFindResults)); options.modernfilebrowser = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(modernFileBrowser)); options.filebrowserhoverpreview = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(fileBrowserHoverPreview)); options.filebrowserthumbnails = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(fileBrowserThumbnails)); options.syntaxhighlighting = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(syntax)); options.autoindenting = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(autoIndent)); options.smarthomeend = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(smartHomeEnd)); options.showbrackets = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(brackets)); options.showlinenumbers = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(lineNumbers)); options.minimap = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(minimap)); options.lsp = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(lsp)); options.scriptdiagnostics = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(scriptDiagnostics)); options.scripttabwidth = std::clamp(std::atoi(gtk_entry_get_text(GTK_ENTRY(scriptTabWidth))), 1, 1000); options.scriptusetabs = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(scriptUseTabs)); readFontButton(scriptFontFamily, options.scriptfontfamily, options.scriptfontsize); options.autocompletesource = gtk_entry_get_text(GTK_ENTRY(autocompleteSource));
     options.formatindentwidth = std::clamp(std::atoi(gtk_entry_get_text(GTK_ENTRY(formatIndentWidth))), 1, 16); options.formatusetabs = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(formatUseTabs)); options.formattrimtrailing = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(formatTrimTrailing)); options.removelinecomments = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(removeLineComments)); options.removeblockcomments = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(removeBlockComments)); options.preserveclientside = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(preserveClientside));
@@ -538,27 +550,6 @@ void TOptionsWindow::save() {
     saving = false;
 }
 
-void TOptionsWindow::resizeToPage(GtkWidget* page) {
-    if (page == nullptr || window == nullptr) return;
-    GtkRequisition minimum{};
-    GtkRequisition natural{};
-    gtk_widget_get_preferred_size(page, &minimum, &natural);
-    animationTargetHeight = std::clamp(natural.height + 115, 260, 760);
-    if (animationSource != 0) { g_source_remove(animationSource); animationSource = 0; }
-    if (!options.optionsanimations) { gtk_window_resize(GTK_WINDOW(window), 460, animationTargetHeight); return; }
-    animationSource = g_timeout_add(15, animateResize, this);
-}
-
-gboolean TOptionsWindow::animateResize(gpointer data) {
-    TOptionsWindow* optionsWindow = static_cast<TOptionsWindow*>(data);
-    int width = 460;
-    int height = 400;
-    gtk_window_get_size(GTK_WINDOW(optionsWindow->window), &width, &height);
-    const int difference = optionsWindow->animationTargetHeight - height;
-    if (std::abs(difference) <= 2) { gtk_window_resize(GTK_WINDOW(optionsWindow->window), width, optionsWindow->animationTargetHeight); optionsWindow->animationSource = 0; return G_SOURCE_REMOVE; }
-    gtk_window_resize(GTK_WINDOW(optionsWindow->window), width, height + (difference > 0 ? std::max(2, difference / 4) : std::min(-2, difference / 4)));
-    return G_SOURCE_CONTINUE;
-}
 void TOptionsWindow::applySyntaxThemeSelection() {
     const char* selected = gtk_combo_box_get_active_id(GTK_COMBO_BOX(syntaxTheme));
     if (selected == nullptr || options.syntaxtheme == selected) return;

@@ -64,7 +64,6 @@ namespace RC {
             else if (key == "attachaway") options.attachaway = isTrue(value);
             else if (key == "afkenabled") options.afkenabled = isTrue(value);
             else if (key == "afktimeout") options.afktimeout = std::clamp(std::stoi(value), 1, 1440);
-            else if (key == "optionsanimations") options.optionsanimations = isTrue(value);
             else if (key == "globalhotkey") options.globalhotkey = value;
             else if (key == "logrcchat") options.logrcchat = isTrue(value);
             else if (key == "separatefindresults") options.separatefindresults = isTrue(value);
@@ -72,6 +71,9 @@ namespace RC {
             else if (key == "rctimestamps") options.rctimestamps = isTrue(value);
             else if (key == "chatlogfile") options.chatlogfile = value;
             else if (key == "downloadfolder") options.downloadfolder = value;
+            else if (key == "externaleditorworkspace") options.externaleditorworkspace = value;
+            else if (key == "externaleditorcommand") options.externaleditorcommand = value;
+            else if (key == "externaleditorscope") options.externaleditorscope = value;
             else if (key == "modernfilebrowser") options.modernfilebrowser = isTrue(value);
             else if (key == "filebrowserhoverpreview") options.filebrowserhoverpreview = isTrue(value);
             else if (key == "filebrowserthumbnails") options.filebrowserthumbnails = isTrue(value);
@@ -152,12 +154,14 @@ namespace RC {
         writeBool(stream, "attachaway", options.attachaway);
         writeBool(stream, "afkenabled", options.afkenabled);
         stream << "afktimeout=" << options.afktimeout << '\n';
-        writeBool(stream, "optionsanimations", options.optionsanimations);
         writeString(stream, "globalhotkey", options.globalhotkey);
         writeBool(stream, "logrcchat", options.logrcchat);
         writeBool(stream, "separatefindresults", options.separatefindresults);
         writeString(stream, "chatlogfile", options.chatlogfile);
         writeString(stream, "downloadfolder", options.downloadfolder);
+        writeString(stream, "externaleditorworkspace", options.externaleditorworkspace);
+        writeString(stream, "externaleditorcommand", options.externaleditorcommand);
+        writeString(stream, "externaleditorscope", options.externaleditorscope);
         writeBool(stream, "modernfilebrowser", options.modernfilebrowser);
         writeBool(stream, "filebrowserhoverpreview", options.filebrowserhoverpreview);
         writeBool(stream, "filebrowserthumbnails", options.filebrowserthumbnails);
