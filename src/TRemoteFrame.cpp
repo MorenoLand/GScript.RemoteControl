@@ -257,15 +257,17 @@ TRemoteFrame::TRemoteFrame(const RC::RCOptions& nextOptions, const std::filesyst
             return G_SOURCE_CONTINUE;
         }, this);
         const int positions[15][2] = {{5, 15}, {5, 48}, {38, 15}, {71, 15}, {394, 15}, {427, 15}, {460, 15}, {460, 48}, {460, 81}, {427, 114}, {394, 114}, {360, 114}, {104, 15}, {460, 114}, {361, 15}};
+        const char* tooltips[15] = {"Player List", "File Browser", "Accounts", "Toalls", "Options", "Server Flags", "Folder Options", "Server Options", "Local NPCs", "Classes", "Weapons", "NPCs", "Extensions", "Level List", "Sync & Git"};
         for (int index = 0; index < 15; ++index) {
             GtkWidget* button = gtk_event_box_new();
             gtk_event_box_set_visible_window(GTK_EVENT_BOX(button), false);
+            gtk_widget_add_events(button, GDK_BUTTON_PRESS_MASK | GDK_BUTTON_RELEASE_MASK);
             GtkWidget* buttonImage = gtk_image_new_from_file((applicationDirectory / "images" / options.buttonimagefiles[index]).string().c_str());
             gtk_container_add(GTK_CONTAINER(button), buttonImage);
             g_object_set_data(G_OBJECT(button), "button-index", GINT_TO_POINTER(index));
             g_signal_connect(button, "button-press-event", G_CALLBACK(onGraphicalButton), this);
             g_signal_connect(button, "button-release-event", G_CALLBACK(onGraphicalButton), this);
-            if (index == 14) gtk_widget_set_tooltip_text(button, "GUI scripts");
+            gtk_widget_set_tooltip_text(button, tooltips[index]);
             gtk_fixed_put(GTK_FIXED(fixed), button, positions[index][0], positions[index][1]);
             graphicalButtons[index] = button;
             if (index >= 8 && index != 12) gtk_widget_hide(button);
@@ -714,7 +716,9 @@ void TRemoteFrame::onNPCs(GtkMenuItem*, gpointer data) {
 
 void TRemoteFrame::onLevels(GtkMenuItem*, gpointer data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
-    if (frame->connection == nullptr || rc_is_nc_authenticated(frame->connection) == 0) return;
+    const int authenticated = frame->connection == nullptr ? 0 : rc_is_nc_authenticated(frame->connection);
+    remoteControlDebugLog("level list requested: connection=%p authenticated=%d", frame->connection, authenticated);
+    if (frame->connection == nullptr || authenticated == 0) return;
     if (frame->levelList == nullptr) frame->levelList = new TLevelList(GTK_WINDOW(frame->window));
     frame->levelList->setServerName(frame->serverName);
     frame->levelList->open(frame->connection);
@@ -815,6 +819,8 @@ void TRemoteFrame::onFolderConfig(GtkMenuItem*, gpointer data) {
 gboolean TRemoteFrame::onGraphicalButton(GtkWidget* button, GdkEventButton* event, gpointer data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
     const int index = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(button), "button-index"));
+    remoteControlDebugLog("graphical button event: index=%d type=%d button=%u", index, event == nullptr ? -1 : event->type, event == nullptr ? 0 : event->button);
+    if (event == nullptr || event->button != GDK_BUTTON_PRIMARY || index < 0 || index >= static_cast<int>(frame->graphicalButtons.size())) return false;
     std::string imageName = event->type == GDK_BUTTON_PRESS ? frame->options.buttonimagefilespressed[index] : frame->options.buttonimagefiles[index];
     if (event->type == GDK_BUTTON_PRESS && imageName == frame->options.buttonimagefiles[index]) {
         const std::size_t suffix = imageName.rfind("_normal");
@@ -826,7 +832,10 @@ gboolean TRemoteFrame::onGraphicalButton(GtkWidget* button, GdkEventButton* even
     const std::filesystem::path imagePath = frame->applicationDirectory / "images" / imageName;
     GtkWidget* image = gtk_bin_get_child(GTK_BIN(button));
     gtk_image_set_from_file(GTK_IMAGE(image), imagePath.string().c_str());
-    if (event->type == GDK_BUTTON_RELEASE) frame->graphicalAction(index);
+    if (event->type == GDK_BUTTON_RELEASE) {
+        remoteControlDebugLog("graphical button release: index=%d", index);
+        frame->graphicalAction(index);
+    }
     return true;
 }
 
@@ -965,7 +974,11 @@ void TRemoteFrame::repositionGraphicalButtons(int requestedWidth) {
     if (graphicalFixed == nullptr) return;
     GtkAllocation allocation;
     gtk_widget_get_allocation(graphicalFixed, &allocation);
-    const int width = requestedWidth > 0 ? requestedWidth : (allocation.width > 0 ? allocation.width : graphicalBackgroundWidth);
+    int width = requestedWidth > 0 ? requestedWidth : (allocation.width > 0 ? allocation.width : graphicalBackgroundWidth);
+    const int containerWidth = graphicalContainer == nullptr ? 0 : gtk_widget_get_allocated_width(graphicalContainer);
+    const int windowWidth = window == nullptr ? 0 : gtk_widget_get_allocated_width(window);
+    if (containerWidth > 0) width = std::min(width, containerWidth);
+    if (windowWidth > 0) width = std::min(width, windowWidth);
     if (width <= 0) return;
     const int labelWidth = std::min(500, width);
     const int labelX = std::max(0, (width - labelWidth) / 2);
@@ -981,7 +994,7 @@ void TRemoteFrame::repositionGraphicalButtons(int requestedWidth) {
         }
     }
     const int positions[15][2] = {{5, 15}, {5, 48}, {38, 15}, {71, 15}, {394, 15}, {427, 15}, {460, 15}, {460, 48}, {460, 81}, {427, 114}, {394, 114}, {360, 114}, {104, 15}, {460, 114}, {361, 15}};
-    for (int index = 4; index < 15; ++index) if (index != 12 && graphicalButtons[index] != nullptr) gtk_fixed_move(GTK_FIXED(graphicalFixed), graphicalButtons[index], width - (500 - positions[index][0]), positions[index][1]);
+    for (int index = 4; index < 15; ++index) if (index != 12 && graphicalButtons[index] != nullptr) gtk_fixed_move(GTK_FIXED(graphicalFixed), graphicalButtons[index], std::clamp(width - (500 - positions[index][0]), 0, std::max(0, width - 32)), positions[index][1]);
 }
 
 gboolean TRemoteFrame::processEvents(gpointer data) {
@@ -1202,6 +1215,7 @@ void TRemoteFrame::addMenuItem(GtkWidget* menu, const char* label, GCallback cal
 }
 
 void TRemoteFrame::graphicalAction(int index) {
+    remoteControlDebugLog("graphical action: index=%d", index);
     if (index == 0) onPlayerList(nullptr, this);
     else if (index == 1) onFileBrowser(nullptr, this);
     else if (index == 2) onAccounts(nullptr, this);
@@ -1214,9 +1228,14 @@ void TRemoteFrame::graphicalAction(int index) {
     else if (index == 5) onServerFlags(nullptr, this);
     else if (index == 6) onFolderConfig(nullptr, this);
     else if (index == 7) onServerOptions(nullptr, this);
-    else if (index == 12) if (extensionsManager != nullptr) extensionsManager->showWindow();
+    else if (index == 12) {
+        if (extensionsManager != nullptr) extensionsManager->showWindow();
+    }
     else if (index == 13) onLevels(nullptr, this);
-    else if (index == 14) syncManager->showWindow();
+    else if (index == 14) {
+        remoteControlDebugLog("sync window requested: manager=%p", syncManager.get());
+        if (syncManager != nullptr) syncManager->showWindow();
+    }
 }
 
 void TRemoteFrame::appendChat(const std::string& message, bool suppressUrgency, bool suppressEmotes) {
@@ -1456,7 +1475,10 @@ void TRemoteFrame::configureChatField(GtkWidget* field) {
     gtk_style_context_add_provider(context, GTK_STYLE_PROVIDER(provider), GTK_STYLE_PROVIDER_PRIORITY_USER);
     g_object_set_data_full(G_OBJECT(field), "remote-chat-provider", provider, g_object_unref);
     if (g_object_get_data(G_OBJECT(field), "remote-chat-links") == nullptr) {
+        gtk_widget_add_events(field, GDK_POINTER_MOTION_MASK | GDK_LEAVE_NOTIFY_MASK);
         g_signal_connect(field, "button-press-event", G_CALLBACK(onChatLinkClick), this);
+        g_signal_connect(field, "motion-notify-event", G_CALLBACK(onChatMotion), this);
+        g_signal_connect(field, "leave-notify-event", G_CALLBACK(+[](GtkWidget* widget, GdkEventCrossing*, gpointer) -> gboolean { GdkWindow* window = gtk_text_view_get_window(GTK_TEXT_VIEW(widget), GTK_TEXT_WINDOW_TEXT); if (window != nullptr) gdk_window_set_cursor(window, nullptr); return false; }), this);
         g_object_set_data(G_OBJECT(field), "remote-chat-links", GINT_TO_POINTER(1));
     }
 }
@@ -1557,6 +1579,26 @@ gboolean TRemoteFrame::onChatLinkClick(GtkWidget* widget, GdkEventButton* event,
     gtk_show_uri_on_window(GTK_WINDOW(static_cast<TRemoteFrame*>(data)->window), url, event->time, &error);
     if (error != nullptr) g_error_free(error);
     return true;
+}
+
+gboolean TRemoteFrame::onChatMotion(GtkWidget* widget, GdkEventMotion* event, gpointer) {
+    gint x = 0;
+    gint y = 0;
+    gtk_text_view_window_to_buffer_coords(GTK_TEXT_VIEW(widget), GTK_TEXT_WINDOW_WIDGET, static_cast<gint>(event->x), static_cast<gint>(event->y), &x, &y);
+    GtkTextIter iter;
+    gtk_text_view_get_iter_at_location(GTK_TEXT_VIEW(widget), &iter, x, y);
+    GSList* tags = gtk_text_iter_get_tags(&iter);
+    bool link = false;
+    for (GSList* item = tags; item != nullptr; item = item->next) if (g_object_get_data(G_OBJECT(item->data), "remote-chat-url") != nullptr) { link = true; break; }
+    g_slist_free(tags);
+    GdkWindow* textWindow = gtk_text_view_get_window(GTK_TEXT_VIEW(widget), GTK_TEXT_WINDOW_TEXT);
+    if (textWindow != nullptr) {
+        GdkDisplay* display = gdk_window_get_display(textWindow);
+        GdkCursor* cursor = gdk_cursor_new_from_name(display, link ? "pointer" : "text");
+        gdk_window_set_cursor(textWindow, cursor);
+        if (cursor != nullptr) g_object_unref(cursor);
+    }
+    return false;
 }
 
 void TRemoteFrame::applyEmotes(GtkTextBuffer* buffer, gint startOffset, const std::string& message) {

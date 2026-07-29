@@ -423,7 +423,9 @@ void TExtensionsManager::refresh() {
         g_signal_connect(enabled, "toggled", G_CALLBACK(onEnable), this);
         GtkWidget* open = gtk_button_new_with_label("Open");
         GtkWidget* log = gtk_button_new_with_label(extension.log.empty() ? "View Log" : "View Log •");
-        GtkWidget* outputTab = gtk_button_new_with_label(extension.outputToTab ? "Output Tab On" : "Output Tab");
+        GtkWidget* outputTab = gtk_button_new_with_label("Output Tab");
+        GtkStyleContext* outputContext = gtk_widget_get_style_context(outputTab);
+        if (extension.outputToTab) gtk_style_context_add_class(outputContext, "suggested-action");
         g_object_set_data(G_OBJECT(open), "extension-index", GSIZE_TO_POINTER(index));
         g_object_set_data(G_OBJECT(log), "extension-index", GSIZE_TO_POINTER(index));
         g_object_set_data(G_OBJECT(outputTab), "extension-index", GSIZE_TO_POINTER(index));
@@ -452,6 +454,7 @@ void TExtensionsManager::showWindow() {
         gtk_window_set_default_size(GTK_WINDOW(window), 520, 320);
         gtk_window_set_transient_for(GTK_WINDOW(window), parent);
         gtk_window_set_position(GTK_WINDOW(window), GTK_WIN_POS_CENTER_ON_PARENT);
+        g_signal_connect(window, "delete-event", G_CALLBACK(+[](GtkWidget* widget, GdkEvent*, gpointer) -> gboolean { gtk_widget_hide(widget); return true; }), nullptr);
         GtkWidget* root = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
         gtk_container_set_border_width(GTK_CONTAINER(root), 8);
         gtk_container_add(GTK_CONTAINER(window), root);

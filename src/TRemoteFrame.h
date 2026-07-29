@@ -119,6 +119,7 @@ private:
     ChatTags& chatTagsFor(GtkTextBuffer* buffer);
     void applyChatUrls(GtkTextBuffer* buffer, gint startOffset, gint endOffset);
     static gboolean onChatLinkClick(GtkWidget* widget, GdkEventButton* event, gpointer data);
+    static gboolean onChatMotion(GtkWidget* widget, GdkEventMotion* event, gpointer data);
     void applyEmotes(GtkTextBuffer* buffer, gint startOffset, const std::string& message);
     bool applyAlertTag(std::string& message, bool allowUrgency);
     void send();
