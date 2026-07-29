@@ -31,6 +31,7 @@
 
 #include <cctype>
 #include <algorithm>
+#include <cmath>
 #include <ctime>
 #include <fstream>
 #include <iomanip>
@@ -41,12 +42,33 @@ extern void remote_control_clear_pm_tray_alert();
 extern void remote_control_set_tray_label(const char* serverName, int playerCount);
 
 namespace {
+struct ChannelScrollRequest { GtkWidget* field = nullptr; double previousValue = 0.0; };
 std::string remoteControlTitle(const std::string& server = {}, const std::string& players = {}, int syncProgress = -1) {
     std::string title = server.empty() ? "Remote Control" : server;
     if (!players.empty()) title += " [" + players + "]";
     if (syncProgress >= 0) title += " [Sync: " + std::to_string(syncProgress) + "%]";
     return title + " - " + REMOTE_CONTROL_BUILD_DATE;
 }
+
+}
+
+gboolean TRemoteFrame::scrollChannelToBottom(gpointer data) {
+    auto* request = static_cast<ChannelScrollRequest*>(data);
+    GtkWidget* field = request->field;
+    GtkWidget* scrolled = gtk_widget_get_parent(field);
+    if (GTK_IS_SCROLLED_WINDOW(scrolled)) {
+        GtkAdjustment* adjustment = gtk_scrolled_window_get_vadjustment(GTK_SCROLLED_WINDOW(scrolled));
+        if (std::abs(gtk_adjustment_get_value(adjustment) - request->previousValue) <= 2.0) {
+            GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(field));
+            GtkTextIter end;
+            gtk_text_buffer_get_end_iter(buffer, &end);
+            gtk_text_view_scroll_to_iter(GTK_TEXT_VIEW(field), &end, 0.0, false, 0.0, 1.0);
+            gtk_adjustment_set_value(adjustment, gtk_adjustment_get_upper(adjustment) - gtk_adjustment_get_page_size(adjustment));
+        }
+    }
+    g_object_unref(field);
+    delete request;
+    return G_SOURCE_REMOVE;
 }
 
 struct WebPAnimation {
@@ -1565,6 +1587,10 @@ void TRemoteFrame::appendChannelMessage(const std::string& channel, const std::s
         removeChannel(channel);
         return;
     }
+    GtkWidget* existingScrolled = channelFields.count(channel) == 0 ? nullptr : gtk_widget_get_parent(channelFields[channel]);
+    GtkAdjustment* existingAdjustment = existingScrolled != nullptr && GTK_IS_SCROLLED_WINDOW(existingScrolled) ? gtk_scrolled_window_get_vadjustment(GTK_SCROLLED_WINDOW(existingScrolled)) : nullptr;
+    const double previousValue = existingAdjustment == nullptr ? 0.0 : gtk_adjustment_get_value(existingAdjustment);
+    const bool followBottom = existingAdjustment == nullptr || gtk_adjustment_get_upper(existingAdjustment) - gtk_adjustment_get_page_size(existingAdjustment) - previousValue <= 2.0;
     const bool colorAlert = message.rfind("#ALERT", 0) == 0;
     std::string display = message;
     const bool alert = applyAlertTag(display, true);
@@ -1626,14 +1652,7 @@ void TRemoteFrame::appendChannelMessage(const std::string& channel, const std::s
         if (!hasActiveRemoteControlWindow()) gtk_window_set_urgency_hint(GTK_WINDOW(window), true);
         if (options.notificationsounds) gdk_beep();
     }
-    GtkTextIter scrollEnd;
-    gtk_text_buffer_get_end_iter(buffer, &scrollEnd);
-    gtk_text_view_scroll_to_iter(GTK_TEXT_VIEW(field), &scrollEnd, 0.0, false, 0.0, 1.0);
-    GtkWidget* scrolled = gtk_widget_get_parent(field);
-    if (GTK_IS_SCROLLED_WINDOW(scrolled)) {
-        GtkAdjustment* adjustment = gtk_scrolled_window_get_vadjustment(GTK_SCROLLED_WINDOW(scrolled));
-        gtk_adjustment_set_value(adjustment, gtk_adjustment_get_upper(adjustment) - gtk_adjustment_get_page_size(adjustment));
-    }
+    if (followBottom) g_idle_add(scrollChannelToBottom, new ChannelScrollRequest{GTK_WIDGET(g_object_ref(field)), previousValue});
 }
 
 void TRemoteFrame::removeChannel(const std::string& channel) {

@@ -99,6 +99,7 @@ private:
     static void onRawPacket(int packetId, const char* data, int length, void* dataPtr);
     static void onServerData(const char* type, const char* content, void* data);
     static gboolean scrollChatToBottom(gpointer data);
+    static gboolean scrollChannelToBottom(gpointer data);
 
     void appendChat(const std::string& message, bool suppressUrgency = false, bool suppressEmotes = false);
     void appendChatLog(const std::string& message) const;
