@@ -1636,6 +1636,8 @@ void TRemoteFrame::appendChannelMessage(const std::string& channel, const std::s
     const bool colorAlert = message.rfind("#ALERT", 0) == 0;
     std::string display = message;
     const bool alert = applyAlertTag(display, true);
+    GtkWidget* selectedPage = gtk_notebook_get_nth_page(GTK_NOTEBOOK(notebook), gtk_notebook_get_current_page(GTK_NOTEBOOK(notebook)));
+    if (selectedPage == nullptr) selectedPage = chatScrolled;
     GtkWidget*& field = channelFields[channel];
     if (field == nullptr) {
         GtkWidget* scrolled = gtk_scrolled_window_new(nullptr, nullptr);
@@ -1656,7 +1658,19 @@ void TRemoteFrame::appendChannelMessage(const std::string& channel, const std::s
         gtk_notebook_set_tab_reorderable(GTK_NOTEBOOK(notebook), scrolled, true);
         gtk_widget_show_all(tab);
         gtk_widget_show_all(scrolled);
-        gtk_notebook_set_current_page(GTK_NOTEBOOK(notebook), 0);
+        const int selectedIndex = gtk_notebook_page_num(GTK_NOTEBOOK(notebook), selectedPage);
+        if (selectedIndex >= 0) gtk_notebook_set_current_page(GTK_NOTEBOOK(notebook), selectedIndex);
+        struct SelectionRestore { GtkWidget* notebook; GtkWidget* page; };
+        auto* restore = new SelectionRestore{GTK_WIDGET(g_object_ref(notebook)), GTK_WIDGET(g_object_ref(selectedPage))};
+        g_idle_add_full(G_PRIORITY_DEFAULT_IDLE, +[](gpointer data) -> gboolean {
+            auto* restore = static_cast<SelectionRestore*>(data);
+            const int page = gtk_notebook_page_num(GTK_NOTEBOOK(restore->notebook), restore->page);
+            if (page >= 0) gtk_notebook_set_current_page(GTK_NOTEBOOK(restore->notebook), page);
+            g_object_unref(restore->page);
+            g_object_unref(restore->notebook);
+            delete restore;
+            return G_SOURCE_REMOVE;
+        }, restore, nullptr);
     }
     if (message.empty()) return;
     GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(field));
