@@ -18,7 +18,7 @@ int main() {
     assert(options.scriptfontsize == 10);
     assert(options.scriptfontfamily == "Monospace");
     assert(!options.filebrowserthumbnails);
-    assert(options.background == "rc_graalonline2.jpg");
+    assert(options.background == "rc_background.png");
     assert(options.timestampformat == "[%I:%M %p]");
     assert(options.buttonimagefiles[0] == "rc_playerlist_normal.png");
     assert(options.buttonimagefilespressed[11] == "rc_npclist_normal.png");

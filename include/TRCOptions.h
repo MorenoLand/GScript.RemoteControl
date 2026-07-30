@@ -64,7 +64,7 @@ namespace RC {
         bool removeblockcomments = false;
         bool preserveclientside = true;
         std::vector<std::string> webbrowsers = {"firefox", "mozilla", "konqueror", "netscape"};
-        std::string background = "rc_graalonline2.jpg";
+        std::string background = "rc_background.png";
         std::string backgroundtint = "#00000000";
         bool syncbackgroundtint = false;
         bool backgroundtintsolid = false;

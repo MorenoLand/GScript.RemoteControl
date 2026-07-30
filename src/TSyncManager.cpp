@@ -1,4 +1,5 @@
 #include "TSyncManager.h"
+#include "TEncryption.h"
 #include <grclib.h>
 #include <cctype>
 #include <cstdint>
@@ -10,16 +11,12 @@
 #include <functional>
 #include <iomanip>
 #include <openssl/crypto.h>
-#include <openssl/evp.h>
-#include <openssl/rand.h>
 #include <sstream>
 
 namespace {
 constexpr gint64 pullInterval = 15LL * 60LL * G_USEC_PER_SEC;
 constexpr std::array<unsigned char, 8> credentialMagic = {'G', 'S', 'R', 'C', 'G', 'I', 'T', '1'};
-constexpr std::size_t keySize = 32;
-constexpr std::size_t nonceSize = 12;
-constexpr std::size_t tagSize = 16;
+constexpr std::size_t keySize = RC::Encryption::keySize;
 enum FileRootColumn { FileRootSelected, FileRootPath, FileRootLabel, FileRootIcon, FileRootLoaded, FileRootPlaceholder, FileRootColumnCount };
 
 std::string safeName(const std::string& value) {
@@ -188,67 +185,25 @@ bool writeBytes(const std::filesystem::path& path, const std::vector<unsigned ch
 
 bool loadStoreKey(std::array<unsigned char, keySize>& key) {
     const std::filesystem::path directory = std::filesystem::path(g_get_user_config_dir()) / "GScriptRC";
-    const std::filesystem::path path = directory / "accounts.key";
-    std::vector<unsigned char> stored;
-    if (readBytes(path, stored) && stored.size() == key.size()) {
-        std::copy(stored.begin(), stored.end(), key.begin());
-        OPENSSL_cleanse(stored.data(), stored.size());
-        return true;
-    }
-    if (RAND_bytes(key.data(), static_cast<int>(key.size())) != 1) return false;
-    return writeBytes(path, std::vector<unsigned char>(key.begin(), key.end()));
+    return RC::Encryption::loadOrCreateKey(directory, "accounts.key", key);
 }
 
 bool encryptCredential(const std::string& plaintext, std::vector<unsigned char>& output) {
     std::array<unsigned char, keySize> key = {};
-    std::array<unsigned char, nonceSize> nonce = {};
-    std::array<unsigned char, tagSize> tag = {};
-    if (!loadStoreKey(key) || RAND_bytes(nonce.data(), static_cast<int>(nonce.size())) != 1) { OPENSSL_cleanse(key.data(), key.size()); return false; }
-    EVP_CIPHER_CTX* context = EVP_CIPHER_CTX_new();
-    if (context == nullptr) { OPENSSL_cleanse(key.data(), key.size()); return false; }
-    std::vector<unsigned char> ciphertext(plaintext.size() + EVP_MAX_BLOCK_LENGTH);
-    int written = 0;
-    int finalWritten = 0;
-    const bool ok = EVP_EncryptInit_ex(context, EVP_aes_256_gcm(), nullptr, nullptr, nullptr) == 1 &&
-        EVP_CIPHER_CTX_ctrl(context, EVP_CTRL_GCM_SET_IVLEN, static_cast<int>(nonce.size()), nullptr) == 1 &&
-        EVP_EncryptInit_ex(context, nullptr, nullptr, key.data(), nonce.data()) == 1 &&
-        EVP_EncryptUpdate(context, ciphertext.data(), &written, reinterpret_cast<const unsigned char*>(plaintext.data()), static_cast<int>(plaintext.size())) == 1 &&
-        EVP_EncryptFinal_ex(context, ciphertext.data() + written, &finalWritten) == 1 &&
-        EVP_CIPHER_CTX_ctrl(context, EVP_CTRL_GCM_GET_TAG, static_cast<int>(tag.size()), tag.data()) == 1;
-    EVP_CIPHER_CTX_free(context);
+    const bool ok = loadStoreKey(key) && RC::Encryption::encrypt(std::vector<unsigned char>(plaintext.begin(), plaintext.end()), key, credentialMagic, output);
     OPENSSL_cleanse(key.data(), key.size());
-    if (!ok) return false;
-    ciphertext.resize(static_cast<std::size_t>(written + finalWritten));
-    output.assign(credentialMagic.begin(), credentialMagic.end());
-    output.insert(output.end(), nonce.begin(), nonce.end());
-    output.insert(output.end(), tag.begin(), tag.end());
-    output.insert(output.end(), ciphertext.begin(), ciphertext.end());
-    return true;
+    return ok;
 }
 
 bool decryptCredential(const std::vector<unsigned char>& input, std::string& plaintext) {
-    if (input.size() < credentialMagic.size() + nonceSize + tagSize || !std::equal(credentialMagic.begin(), credentialMagic.end(), input.begin())) return false;
     std::array<unsigned char, keySize> key = {};
     if (!loadStoreKey(key)) return false;
-    const unsigned char* nonce = input.data() + credentialMagic.size();
-    const unsigned char* tag = nonce + nonceSize;
-    const unsigned char* ciphertext = tag + tagSize;
-    const std::size_t ciphertextSize = input.size() - credentialMagic.size() - nonceSize - tagSize;
-    EVP_CIPHER_CTX* context = EVP_CIPHER_CTX_new();
-    if (context == nullptr) { OPENSSL_cleanse(key.data(), key.size()); return false; }
-    plaintext.resize(ciphertextSize + EVP_MAX_BLOCK_LENGTH);
-    int written = 0;
-    int finalWritten = 0;
-    const bool ok = EVP_DecryptInit_ex(context, EVP_aes_256_gcm(), nullptr, nullptr, nullptr) == 1 &&
-        EVP_CIPHER_CTX_ctrl(context, EVP_CTRL_GCM_SET_IVLEN, nonceSize, nullptr) == 1 &&
-        EVP_DecryptInit_ex(context, nullptr, nullptr, key.data(), nonce) == 1 &&
-        EVP_DecryptUpdate(context, reinterpret_cast<unsigned char*>(plaintext.data()), &written, ciphertext, static_cast<int>(ciphertextSize)) == 1 &&
-        EVP_CIPHER_CTX_ctrl(context, EVP_CTRL_GCM_SET_TAG, tagSize, const_cast<unsigned char*>(tag)) == 1 &&
-        EVP_DecryptFinal_ex(context, reinterpret_cast<unsigned char*>(plaintext.data()) + written, &finalWritten) == 1;
-    EVP_CIPHER_CTX_free(context);
+    std::vector<unsigned char> decrypted;
+    const bool ok = RC::Encryption::decrypt(input, key, credentialMagic, decrypted);
     OPENSSL_cleanse(key.data(), key.size());
-    if (!ok) { OPENSSL_cleanse(plaintext.data(), plaintext.size()); plaintext.clear(); return false; }
-    plaintext.resize(static_cast<std::size_t>(written + finalWritten));
+    if (!ok) return false;
+    plaintext.assign(reinterpret_cast<const char*>(decrypted.data()), decrypted.size());
+    if (!decrypted.empty()) OPENSSL_cleanse(decrypted.data(), decrypted.size());
     return true;
 }
 }
