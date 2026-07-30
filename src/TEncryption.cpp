@@ -4,29 +4,71 @@
 #include <openssl/crypto.h>
 #include <openssl/evp.h>
 #include <openssl/rand.h>
-#ifndef _WIN32
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <fcntl.h>
 #include <sys/stat.h>
+#include <unistd.h>
 #endif
 
 namespace {
     constexpr std::size_t nonceSize = 12;
     constexpr std::size_t tagSize = 16;
+
+    std::filesystem::path temporaryPath(const std::filesystem::path& path) {
+        std::array<unsigned char, 8> random = {};
+        if (RAND_bytes(random.data(), static_cast<int>(random.size())) != 1) return {};
+        static constexpr char hex[] = "0123456789abcdef";
+        std::string suffix = ".tmp.";
+        for (const unsigned char value : random) {
+            suffix.push_back(hex[value >> 4]);
+            suffix.push_back(hex[value & 0x0f]);
+        }
+        return path.parent_path() / (path.filename().string() + suffix);
+    }
 }
 
 namespace RC::Encryption {
     bool writePrivateFile(const std::filesystem::path& path, const std::vector<unsigned char>& data) {
         std::error_code error;
         std::filesystem::create_directories(path.parent_path(), error);
+        if (error) return false;
+        const std::filesystem::path temporary = temporaryPath(path);
+        if (temporary.empty()) return false;
 #ifndef _WIN32
         chmod(path.parent_path().string().c_str(), S_IRWXU);
-#endif
-        std::ofstream stream(path, std::ios::binary | std::ios::trunc);
-        if (!stream || (!data.empty() && !stream.write(reinterpret_cast<const char*>(data.data()), static_cast<std::streamsize>(data.size())))) return false;
+        const int descriptor = open(temporary.string().c_str(), O_WRONLY | O_CREAT | O_EXCL, S_IRUSR | S_IWUSR);
+        if (descriptor < 0) return false;
+        std::size_t offset = 0;
+        while (offset < data.size()) {
+            const ssize_t written = ::write(descriptor, data.data() + offset, data.size() - offset);
+            if (written <= 0) {
+                ::close(descriptor);
+                std::filesystem::remove(temporary, error);
+                return false;
+            }
+            offset += static_cast<std::size_t>(written);
+        }
+        const bool written = ::fsync(descriptor) == 0 && ::close(descriptor) == 0;
+        if (!written || ::rename(temporary.string().c_str(), path.string().c_str()) != 0) {
+            std::filesystem::remove(temporary, error);
+            return false;
+        }
+#else
+        std::ofstream stream(temporary, std::ios::binary | std::ios::trunc);
+        if (!stream || (!data.empty() && !stream.write(reinterpret_cast<const char*>(data.data()), static_cast<std::streamsize>(data.size())))) {
+            stream.close();
+            std::filesystem::remove(temporary, error);
+            return false;
+        }
         stream.close();
-#ifndef _WIN32
-        chmod(path.string().c_str(), S_IRUSR | S_IWUSR);
+        if (!stream || !MoveFileExW(temporary.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+            std::filesystem::remove(temporary, error);
+            return false;
+        }
 #endif
-        return static_cast<bool>(stream);
+        return true;
     }
 
     bool loadOrCreateKey(const std::filesystem::path& directory, const std::string& filename, Key& key) {
