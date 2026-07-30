@@ -39,6 +39,14 @@ int main() {
     assert(restored.modernfilebrowser);
     assert(!restored.filebrowserhoverpreview && !restored.filebrowserthumbnails);
     assert(restored.chatfontfamily == "Tempus Sans ITC Bold Italic" && restored.scriptfontfamily == "Serif Italic");
+    const std::filesystem::path redirected = saved / "xdg";
+    RC::setRCOptionsDirectory(redirected);
+    RC::saveRCOptions(options, saved / "bundle");
+    assert(std::filesystem::is_regular_file(redirected / "control2config.txt"));
+    RC::RCOptions redirectedOptions;
+    RC::loadRCOptions(redirectedOptions, saved / "bundle");
+    assert(redirectedOptions.chatfontfamily == "Tempus Sans ITC Bold Italic");
+    RC::setRCOptionsDirectory({});
     std::filesystem::remove_all(saved);
     return 0;
 }

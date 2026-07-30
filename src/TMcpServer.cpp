@@ -273,7 +273,7 @@ int runMcpServer(const RC::RCOptions& options, const std::filesystem::path&, uns
 }
 
 void startMcpGuiBridge(RC::RCOptions& options, const std::filesystem::path& applicationDirectory, McpGuiActions actions) {
-    bridgeOptions = options; bridgeOptionsReady = true; bridgeDirectory = applicationDirectory; bridgeActions = std::move(actions); bridgeServerName = bridgeActions.serverName; bridgeConnected = bridgeActions.connected; bridgeStopping = false;
+    bridgeOptions = options; bridgeOptionsReady = true; bridgeDirectory = RC::rcOptionsDirectory(applicationDirectory); bridgeActions = std::move(actions); bridgeServerName = bridgeActions.serverName; bridgeConnected = bridgeActions.connected; bridgeStopping = false;
 #ifdef _WIN32
     bridgeThread = std::thread(pipeLoop);
 #endif

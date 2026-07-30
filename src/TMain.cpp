@@ -530,8 +530,21 @@ int main(int argc, char** argv) {
     remoteControlPacketLog = packetLog;
     remoteControlDebugLog("debug logging enabled");
     const std::filesystem::path applicationDirectory = getApplicationDirectory();
-    std::filesystem::current_path(applicationDirectory);
-    setBackupDataDirectory(applicationDirectory);
+#ifdef _WIN32
+    const std::filesystem::path configDirectory = applicationDirectory;
+    const std::filesystem::path dataDirectory = applicationDirectory;
+    const std::filesystem::path cacheDirectory = applicationDirectory / "cache";
+#else
+    const std::filesystem::path configDirectory = std::filesystem::path(g_get_user_config_dir()) / "GScriptRC";
+    const std::filesystem::path dataDirectory = std::filesystem::path(g_get_user_data_dir()) / "GScriptRC";
+    const std::filesystem::path cacheDirectory = std::filesystem::path(g_get_user_cache_dir()) / "GScriptRC";
+#endif
+    std::filesystem::create_directories(configDirectory);
+    std::filesystem::create_directories(dataDirectory);
+    std::filesystem::create_directories(cacheDirectory);
+    RC::setRCOptionsDirectory(configDirectory);
+    std::filesystem::current_path(dataDirectory);
+    setBackupDataDirectory(dataDirectory);
     const std::filesystem::path certificateBundle = applicationDirectory / "certs" / "ca-bundle.crt";
     if (std::filesystem::is_regular_file(certificateBundle)) g_setenv("SSL_CERT_FILE", certificateBundle.string().c_str(), true);
     configureGtkRuntime(applicationDirectory);
@@ -543,7 +556,7 @@ int main(int argc, char** argv) {
     copySyntaxFiles(applicationDirectory);
     RC::loadRCOptions(options, applicationDirectory);
     if (mcpMode) return runMcpServer(options, applicationDirectory, mcpInstance);
-    setGScriptEditorCacheDirectory(applicationDirectory / "cache");
+    setGScriptEditorCacheDirectory(cacheDirectory / "editors");
     setGScriptEditorOptions(options);
     applyRemoteControlTheme(options.theme, options.darkmode, options.roundedcorners);
     setRemoteControlSyntaxTheme(options.syntaxtheme);

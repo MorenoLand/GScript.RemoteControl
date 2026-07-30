@@ -403,7 +403,7 @@ TOptionsWindow::TOptionsWindow(RC::RCOptions& nextOptions, const std::filesystem
         gtk_text_view_set_monospace(GTK_TEXT_VIEW(view), true);
         gtk_container_add(GTK_CONTAINER(scrolled), view);
         gtk_box_pack_start(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), scrolled, true, true, 5);
-        std::ifstream input(optionsWindow->applicationDirectory / "mcp-audit.log", std::ios::binary);
+        std::ifstream input(RC::rcOptionsDirectory(optionsWindow->applicationDirectory) / "mcp-audit.log", std::ios::binary);
         std::string contents((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
         if (contents.empty()) contents = "No MCP requests have been logged.";
         gtk_text_buffer_set_text(gtk_text_view_get_buffer(GTK_TEXT_VIEW(view)), contents.c_str(), static_cast<gint>(contents.size()));
@@ -413,7 +413,7 @@ TOptionsWindow::TOptionsWindow(RC::RCOptions& nextOptions, const std::filesystem
     }), this);
     g_signal_connect(clearMcpAudit, "clicked", G_CALLBACK(+[](GtkButton*, gpointer data) {
         TOptionsWindow* optionsWindow = static_cast<TOptionsWindow*>(data);
-        std::ofstream(optionsWindow->applicationDirectory / "mcp-audit.log", std::ios::binary | std::ios::trunc);
+        std::ofstream(RC::rcOptionsDirectory(optionsWindow->applicationDirectory) / "mcp-audit.log", std::ios::binary | std::ios::trunc);
     }), this);
     g_signal_connect(resetMcpApprovals, "clicked", G_CALLBACK(+[](GtkButton*, gpointer data) {
         TOptionsWindow* optionsWindow = static_cast<TOptionsWindow*>(data);

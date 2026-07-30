@@ -239,7 +239,12 @@ namespace {
     }
 }
 
-TPlayerList::TPlayerList(const std::filesystem::path& nextApplicationDirectory, std::string nextAccountName) : applicationDirectory(nextApplicationDirectory), accountName(std::move(nextAccountName)) {
+TPlayerList::TPlayerList(const std::filesystem::path& nextApplicationDirectory, std::string nextAccountName)
+#ifdef _WIN32
+    : applicationDirectory(nextApplicationDirectory), accountName(std::move(nextAccountName)) {
+#else
+    : applicationDirectory(std::filesystem::path(g_get_user_data_dir()) / "GScriptRC"), accountName(std::move(nextAccountName)) {
+#endif
     window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
     gtk_widget_set_name(window, "PlayerList");
     gtk_window_set_title(GTK_WINDOW(window), "Players");

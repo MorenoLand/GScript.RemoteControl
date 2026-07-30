@@ -53,8 +53,25 @@ void TExternalEditor::open(const std::string& server, const std::string& categor
         g_spawn_command_line_async(invocation.c_str(), nullptr);
     }
 #else
-    const std::string invocation = command.empty() ? "xdg-open \"" + path.string() + "\"" : command + " \"" + path.string() + "\"";
-    g_spawn_command_line_async(invocation.c_str(), nullptr);
+    if (command.empty()) {
+        GFile* launchFile = g_file_new_for_path(path.string().c_str());
+        char* uri = g_file_get_uri(launchFile);
+        g_app_info_launch_default_for_uri(uri, nullptr, nullptr);
+        g_free(uri);
+        g_object_unref(launchFile);
+    } else {
+        std::string invocation = command;
+        char* quoted = g_shell_quote(path.string().c_str());
+        const std::size_t marker = invocation.find("{file}");
+        if (marker == std::string::npos) invocation += " " + std::string(quoted); else invocation.replace(marker, 6, quoted);
+        g_free(quoted);
+        gint argumentCount = 0;
+        gchar** arguments = nullptr;
+        if (g_shell_parse_argv(invocation.c_str(), &argumentCount, &arguments, nullptr)) {
+            g_spawn_async(nullptr, arguments, nullptr, G_SPAWN_SEARCH_PATH, nullptr, nullptr, nullptr, nullptr);
+            g_strfreev(arguments);
+        }
+    }
 #endif
 }
 

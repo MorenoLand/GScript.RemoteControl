@@ -393,7 +393,14 @@ std::filesystem::path TExtensionsManager::statePath() const { return std::filesy
 
 void TExtensionsManager::scan() {
     extensions.clear();
-    const auto manifests = RC::scanExtensionManifests(applicationDirectory / "extensions");
+    auto manifests = RC::scanExtensionManifests(applicationDirectory / "extensions");
+#ifndef _WIN32
+    const auto userManifests = RC::scanExtensionManifests(std::filesystem::path(g_get_user_data_dir()) / "GScriptRC" / "extensions");
+    for (const auto& manifest : userManifests) {
+        const auto existing = std::find_if(manifests.begin(), manifests.end(), [&](const auto& value) { return value.id == manifest.id; });
+        if (existing == manifests.end()) manifests.push_back(manifest); else *existing = manifest;
+    }
+#endif
     std::map<std::string, std::pair<bool, bool>> stateValues;
     std::ifstream state(statePath());
     std::string id;

@@ -102,5 +102,7 @@ namespace RC {
 
     void loadRCOptions(RCOptions& options, const std::filesystem::path& applicationDirectory);
     void saveRCOptions(const RCOptions& options, const std::filesystem::path& applicationDirectory);
+    void setRCOptionsDirectory(const std::filesystem::path& directory);
+    std::filesystem::path rcOptionsDirectory(const std::filesystem::path& applicationDirectory);
 
 }

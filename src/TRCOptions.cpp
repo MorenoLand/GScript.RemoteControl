@@ -8,6 +8,7 @@
 namespace {
 
     const std::array<std::string, 15> buttonImageNames = {"playerlist", "filebrowser", "accounts", "toalls", "options", "serverflags", "folderoptions", "serveroptions", "localnpcs", "classlist", "weaponlist", "npclist", "help", "levellist", "guiscripts"};
+    std::filesystem::path optionsDirectory;
 
     std::string trim(const std::string& value) {
         const auto first = std::find_if_not(value.begin(), value.end(), [](unsigned char character) { return std::isspace(character) != 0; });
@@ -40,8 +41,13 @@ namespace {
 
 namespace RC {
 
+    void setRCOptionsDirectory(const std::filesystem::path& directory) { optionsDirectory = directory; }
+    std::filesystem::path rcOptionsDirectory(const std::filesystem::path& applicationDirectory) { return optionsDirectory.empty() ? applicationDirectory : optionsDirectory; }
+
     void loadRCOptions(RCOptions& options, const std::filesystem::path& applicationDirectory) {
-        const std::filesystem::path configPath = applicationDirectory / "control2config.txt";
+        const std::filesystem::path writablePath = rcOptionsDirectory(applicationDirectory) / "control2config.txt";
+        const std::filesystem::path bundledPath = applicationDirectory / "control2config.txt";
+        const std::filesystem::path configPath = std::filesystem::exists(writablePath) ? writablePath : bundledPath;
         if (!std::filesystem::exists(configPath)) { saveRCOptions(options, applicationDirectory); return; }
         std::ifstream stream(configPath);
         for (std::string line; std::getline(stream, line);) {
@@ -142,11 +148,13 @@ namespace RC {
                 else if (key == "icon" + buttonImageNames[index] + "pressed") options.buttonimagefilespressed[index] = value;
             }
         }
+        if (configPath != writablePath) saveRCOptions(options, applicationDirectory);
     }
 
     void saveRCOptions(const RCOptions& options, const std::filesystem::path& applicationDirectory) {
-        std::filesystem::create_directories(applicationDirectory);
-        std::ofstream stream(applicationDirectory / "control2config.txt", std::ios::trunc);
+        const std::filesystem::path directory = rcOptionsDirectory(applicationDirectory);
+        std::filesystem::create_directories(directory);
+        std::ofstream stream(directory / "control2config.txt", std::ios::trunc);
         writeString(stream, "nickname", options.nickname);
         writeBool(stream, "nomassmessages", options.nomassmessages);
         writeBool(stream, "nomassifclienton", options.nomassifclienton);
