@@ -535,9 +535,14 @@ void TPlayerList::handleBanListData(const char* type, const char* account, const
     GtkWidget* dialog = gtk_dialog_new_with_buttons((std::string(listType == "banhistory" ? "Ban History of " : "Staff Activity of ") + (account == nullptr ? "" : account)).c_str(), GTK_WINDOW(window), GTK_DIALOG_DESTROY_WITH_PARENT, "Close", GTK_RESPONSE_CLOSE, nullptr);
     gtk_window_set_default_size(GTK_WINDOW(dialog), 440, 300);
     GtkWidget* scrolled = gtk_scrolled_window_new(nullptr, nullptr);
-    GtkWidget* field = gtk_text_view_new();
+    GtkSourceBuffer* sourceBuffer = gtk_source_buffer_new(nullptr);
+    applyRemoteControlSourceStyle(sourceBuffer);
+    GtkWidget* field = gtk_source_view_new_with_buffer(sourceBuffer);
+    configureGScriptEditor(field, false);
+    g_object_unref(sourceBuffer);
     gtk_text_view_set_editable(GTK_TEXT_VIEW(field), false);
     gtk_text_view_set_cursor_visible(GTK_TEXT_VIEW(field), false);
+    gtk_text_view_set_monospace(GTK_TEXT_VIEW(field), true);
     GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(field));
     const std::string history = content == nullptr ? "" : content;
     if (history.empty()) {
@@ -570,6 +575,14 @@ void TPlayerList::handleBanListData(const char* type, const char* account, const
     }
     gtk_container_add(GTK_CONTAINER(scrolled), field);
     gtk_box_pack_start(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), scrolled, true, true, 0);
+    GtkWidget* findButton = editorIconButton("Find", "edit-find-symbolic");
+    gtk_widget_set_tooltip_text(findButton, "Find (Ctrl+F) / right-click Replace (Ctrl+H)");
+    gtk_container_add(GTK_CONTAINER(gtk_dialog_get_action_area(GTK_DIALOG(dialog))), findButton);
+    g_signal_connect(findButton, "clicked", G_CALLBACK(editorFind), field);
+    gtk_widget_add_events(findButton, GDK_BUTTON_PRESS_MASK);
+    g_signal_connect(findButton, "button-press-event", G_CALLBACK(editorFindButtonPress), field);
+    addEditorFindShortcut(field);
+    addGScriptEditorLineStatus(GTK_DIALOG(dialog), field);
     g_signal_connect(dialog, "response", G_CALLBACK(+[](GtkDialog* responseDialog, gint, gpointer) { gtk_widget_destroy(GTK_WIDGET(responseDialog)); }), nullptr);
     gtk_widget_show_all(dialog);
 }

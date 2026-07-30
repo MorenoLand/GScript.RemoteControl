@@ -34,6 +34,7 @@ namespace RC {
         std::string syntaxtheme = "language-spec";
         bool syncsyntaxtheme = true;
         bool synccolors = true;
+        bool roundedcorners = true;
         int chatfontsize = 9;
         std::string chatfontfamily = "Sans";
         bool globalpms = true;

@@ -4,7 +4,7 @@
 #include <gtksourceview/gtksource.h>
 #include <string>
 
-void applyRemoteControlTheme(const std::string& theme, bool darkMode);
+void applyRemoteControlTheme(const std::string& theme, bool darkMode, bool roundedCorners);
 
 inline void setRemoteControlSyntaxTheme(const std::string& theme) {
     GtkSettings* settings = gtk_settings_get_default();

@@ -57,6 +57,7 @@ namespace RC {
             else if (key == "syntaxtheme") options.syntaxtheme = value;
             else if (key == "syncsyntaxtheme") options.syncsyntaxtheme = isTrue(value);
             else if (key == "synccolors") options.synccolors = isTrue(value);
+            else if (key == "roundedcorners") options.roundedcorners = isTrue(value);
             else if (key == "nomassmessages") options.nomassmessages = isTrue(value);
             else if (key == "nomassifclienton") options.nomassifclienton = isTrue(value);
             else if (key == "nohtmlinpms") options.nohtmlinpms = isTrue(value);
@@ -172,6 +173,7 @@ namespace RC {
         writeString(stream, "syntaxtheme", options.syntaxtheme);
         writeBool(stream, "syncsyntaxtheme", options.syncsyntaxtheme);
         writeBool(stream, "synccolors", options.synccolors);
+        writeBool(stream, "roundedcorners", options.roundedcorners);
         stream << "chatfontsize=" << options.chatfontsize << '\n';
         writeString(stream, "chatfontfamily", options.chatfontfamily);
         writeBool(stream, "globalpms", options.globalpms);

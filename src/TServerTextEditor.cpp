@@ -38,7 +38,7 @@ TServerTextEditor::TServerTextEditor(Kind nextKind, const char* nextTitle, RC::R
     GtkWidget* spacer = gtk_label_new(nullptr);
     gtk_widget_set_hexpand(spacer, true);
     gtk_box_pack_start(GTK_BOX(bottom), spacer, true, true, 0);
-    GtkWidget* saveButton = editorIconButton("Apply", "emblem-ok-symbolic");
+    GtkWidget* saveButton = editorIconButton("Apply", "document-save-symbolic");
     GtkWidget* goToLineButton = editorIconButton("Go to line", "go-jump-symbolic");
     GtkWidget* formatButton = createEditorFormatButton(text);
     GtkWidget* findButton = editorIconButton("Find", "edit-find-symbolic");

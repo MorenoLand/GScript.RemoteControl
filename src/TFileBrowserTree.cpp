@@ -120,16 +120,11 @@ namespace {
     }
 
     GdkPixbuf* loadImage(const char* name) { return gdk_pixbuf_new_from_file((std::string("images/") + name).c_str(), nullptr); }
-    GdkPixbuf* loadThemeIcon(const char* name, int size, const char* fallback) {
+    GdkPixbuf* loadThemeIcon(const char* name, int size) {
         GError* error = nullptr;
         GdkPixbuf* icon = gtk_icon_theme_load_icon(gtk_icon_theme_get_default(), name, size, GTK_ICON_LOOKUP_FORCE_SIZE, &error);
         if (error != nullptr) g_error_free(error);
-        if (icon != nullptr) return icon;
-        GdkPixbuf* source = loadImage(fallback);
-        if (source == nullptr) return nullptr;
-        GdkPixbuf* scaled = gdk_pixbuf_scale_simple(source, size, size, GDK_INTERP_BILINEAR);
-        g_object_unref(source);
-        return scaled;
+        return icon;
     }
     GdkPixbuf* scaledIcon(GdkPixbuf* pixbuf, int maximumWidth, int maximumHeight) {
         if (pixbuf == nullptr) return nullptr;
@@ -453,10 +448,10 @@ TFileBrowserTree::TFileBrowserTree() {
     gtk_button_set_always_show_image(GTK_BUTTON(closeButton), true);
     gtk_container_add(GTK_CONTAINER(buttons), closeButton);
     gtk_box_pack_start(GTK_BOX(root), buttons, false, true, 0);
-    closedFolderIcon = loadThemeIcon("folder", 16, "rcfiles_folderclosed.png");
-    openFolderIcon = loadThemeIcon("folder-open", 16, "rcfiles_folderopen.png");
-    closedFolderLargeIcon = loadThemeIcon("folder", 48, "rcfiles_folderclosed.png");
-    openFolderLargeIcon = loadThemeIcon("folder-open", 48, "rcfiles_folderopen.png");
+    closedFolderIcon = loadThemeIcon("folder", 16);
+    openFolderIcon = loadThemeIcon("folder-open", 16);
+    closedFolderLargeIcon = loadThemeIcon("folder", 48);
+    openFolderLargeIcon = loadThemeIcon("folder-open", 48);
     textFileIcon = loadImage("rcfiles_text2.png");
     nwFileIcon = loadImage("rcfiles_nw.png");
     scriptFileIcon = loadImage("rcfiles_graal.png");

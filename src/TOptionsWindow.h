@@ -81,6 +81,7 @@ private:
     GtkWidget* syntaxTheme = nullptr;
     GtkWidget* syncSyntaxTheme = nullptr;
     GtkWidget* syncColors = nullptr;
+    GtkWidget* roundedCorners = nullptr;
     GtkWidget* chatbarTextColor = nullptr;
     GtkWidget* chatbarBackgroundColor = nullptr;
     GtkWidget* chatTextColor = nullptr;

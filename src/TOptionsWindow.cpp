@@ -207,7 +207,7 @@ TOptionsWindow::TOptionsWindow(RC::RCOptions& nextOptions, const std::filesystem
     smartHomeEnd = addCheckGrid(GTK_GRID(scriptChecks), "Smart Home/End", options.smarthomeend, 2);
     brackets = addCheckGrid(GTK_GRID(scriptChecks), "Show brackets", options.showbrackets, 3);
     lineNumbers = addCheckGrid(GTK_GRID(scriptChecks), "Show line numbers", options.showlinenumbers, 4);
-    minimap = addCheckGrid(GTK_GRID(scriptChecks), "Show minimap", options.minimap, 5);
+    minimap = addCheckGrid(GTK_GRID(scriptChecks), "Show minimap (WIP)", options.minimap, 5);
     lsp = addCheckGrid(GTK_GRID(scriptChecks), "LSP / autocomplete", options.lsp, 6);
     scriptDiagnostics = addCheckGrid(GTK_GRID(scriptChecks), "Script analysis", options.scriptdiagnostics, 7);
     gtk_box_pack_start(GTK_BOX(script), scriptChecks, false, false, 0);
@@ -303,6 +303,7 @@ TOptionsWindow::TOptionsWindow(RC::RCOptions& nextOptions, const std::filesystem
     gtk_grid_attach(GTK_GRID(customizationGrid), theme, 1, 13, 1, 1);
     gtk_box_pack_start(GTK_BOX(customization), customizationGrid, false, false, 4);
     syncColors = addCheck(GTK_BOX(customization), "Sync colors with theme", options.synccolors);
+    roundedCorners = addCheck(GTK_BOX(customization), "Rounded app corners", options.roundedcorners);
     GtkWidget* mcp = gtk_box_new(GTK_ORIENTATION_VERTICAL, 5);
     gtk_container_set_border_width(GTK_CONTAINER(mcp), 5);
     GtkWidget* mcpChecks = gtk_grid_new();
@@ -529,7 +530,7 @@ void TOptionsWindow::save() {
     options.nickname = gtk_entry_get_text(GTK_ENTRY(nickname)); options.downloadfolder = gtk_entry_get_text(GTK_ENTRY(downloadFolder)); options.externaleditorworkspace = gtk_entry_get_text(GTK_ENTRY(externalEditorWorkspace)); options.externaleditorcommand = gtk_entry_get_text(GTK_ENTRY(externalEditorCommand)); if (const char* externalScope = gtk_combo_box_get_active_id(GTK_COMBO_BOX(externalEditorScope))) options.externaleditorscope = externalScope; options.chatlogfile = gtk_entry_get_text(GTK_ENTRY(logFile)); readFontButton(chatFontFamily, options.chatfontfamily, options.chatfontsize);
     if (const char* selectedTheme = gtk_combo_box_get_active_id(GTK_COMBO_BOX(theme))) options.theme = selectedTheme;
     if (const char* selectedSyntaxTheme = gtk_combo_box_get_active_id(GTK_COMBO_BOX(syntaxTheme))) options.syntaxtheme = selectedSyntaxTheme;
-    options.darkmode = options.theme == "system" ? options.darkmode : options.theme != "light"; options.syncsyntaxtheme = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(syncSyntaxTheme)); options.synccolors = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(syncColors));
+    options.darkmode = options.theme == "system" ? options.darkmode : options.theme != "light"; options.syncsyntaxtheme = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(syncSyntaxTheme)); options.synccolors = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(syncColors)); options.roundedcorners = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(roundedCorners));
     if (options.syncsyntaxtheme) {
         options.syntaxtheme = options.theme == "dark" || options.theme == "system" ? "language-spec" : options.theme;
         gtk_combo_box_set_active_id(GTK_COMBO_BOX(syntaxTheme), options.syntaxtheme.c_str());
@@ -541,7 +542,7 @@ void TOptionsWindow::save() {
     options.coloredit = colorValue(chatbarTextColor); options.coloreditback = colorValue(chatbarBackgroundColor); options.colorchat = colorValue(chatTextColor); options.colorchatbold = colorValue(chatBoldColor); options.colorchatback = colorValue(chatBackgroundColor); options.colorlabel = colorValue(labelColor); options.colorlabelback = colorValue(labelBackgroundColor); options.labelservers = gtk_entry_get_text(GTK_ENTRY(serverLabel)); options.labelplayers = gtk_entry_get_text(GTK_ENTRY(playersLabel)); options.labelnpcserver = gtk_entry_get_text(GTK_ENTRY(npcServerLabel)); options.background = gtk_entry_get_text(GTK_ENTRY(backgroundImage)); options.syncbackgroundtint = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(syncBackgroundTint)); options.backgroundtint = options.syncbackgroundtint ? tintForTheme(options.theme, options) : colorValueWithAlpha(backgroundTint); options.backgroundtintsolid = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(backgroundTintSolid));
     options.mcpenabled = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(mcpEnabled)); options.mcpread = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(mcpRead)); options.mcpwrite = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(mcpWrite)); options.mcpserver = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(mcpServer)); options.mcplogin = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(mcpLogin)); options.mcpwindows = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(mcpWindows)); options.mcpadmin = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(mcpAdmin)); options.mcpfullcontrol = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(mcpFullControl)); options.mcpapprove = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(mcpApprove)); options.mcpaudit = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(mcpAudit)); options.mcpapproveweapon = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(mcpApproveWeapon)); options.mcpapproveclass = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(mcpApproveClass)); options.mcpapprovenpc = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(mcpApproveNpc)); options.mcpfileroots = gtk_entry_get_text(GTK_ENTRY(mcpFileRoots)); options.mcpserverscope = gtk_entry_get_text(GTK_ENTRY(mcpServerScope));
     setGScriptEditorOptions(options);
-    applyRemoteControlTheme(options.theme, options.darkmode);
+    applyRemoteControlTheme(options.theme, options.darkmode, options.roundedcorners);
     setRemoteControlSyntaxTheme(options.syntaxtheme);
     refreshGScriptEditorTheme();
     RC::saveRCOptions(options, applicationDirectory);
@@ -593,7 +594,7 @@ void TOptionsWindow::applyThemeSelection() {
         if (gdk_rgba_parse(&tint, options.backgroundtint.c_str())) gtk_color_chooser_set_rgba(GTK_COLOR_CHOOSER(backgroundTint), &tint);
     }
     setGScriptEditorOptions(options);
-    applyRemoteControlTheme(options.theme, options.darkmode);
+    applyRemoteControlTheme(options.theme, options.darkmode, options.roundedcorners);
     refreshGScriptEditorTheme();
     RC::saveRCOptions(options, applicationDirectory);
     onSaved(previous);

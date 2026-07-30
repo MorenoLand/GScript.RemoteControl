@@ -2139,16 +2139,8 @@ void TSyncManager::showFileRoots(const std::vector<std::string>& roots) {
     GtkWidget* scroll = gtk_scrolled_window_new(nullptr, nullptr);
     gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scroll), GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
     gtk_widget_set_vexpand(scroll, true);
-    if (fileRootFolderIcon == nullptr) {
-        const std::filesystem::path image = applicationDirectory / "images" / "rcfiles_folderclosed.png";
-        fileRootFolderIcon = gdk_pixbuf_new_from_file(image.string().c_str(), nullptr);
-        if (fileRootFolderIcon == nullptr) fileRootFolderIcon = gdk_pixbuf_new_from_file("images/rcfiles_folderclosed.png", nullptr);
-    }
-    if (fileRootOpenFolderIcon == nullptr) {
-        const std::filesystem::path image = applicationDirectory / "images" / "rcfiles_folderopen.png";
-        fileRootOpenFolderIcon = gdk_pixbuf_new_from_file(image.string().c_str(), nullptr);
-        if (fileRootOpenFolderIcon == nullptr) fileRootOpenFolderIcon = gdk_pixbuf_new_from_file("images/rcfiles_folderopen.png", nullptr);
-    }
+    if (fileRootFolderIcon == nullptr) fileRootFolderIcon = gtk_icon_theme_load_icon(gtk_icon_theme_get_default(), "folder", 16, GTK_ICON_LOOKUP_FORCE_SIZE, nullptr);
+    if (fileRootOpenFolderIcon == nullptr) fileRootOpenFolderIcon = gtk_icon_theme_load_icon(gtk_icon_theme_get_default(), "folder-open", 16, GTK_ICON_LOOKUP_FORCE_SIZE, nullptr);
     fileRootsStore = gtk_tree_store_new(FileRootColumnCount, G_TYPE_BOOLEAN, G_TYPE_STRING, G_TYPE_STRING, GDK_TYPE_PIXBUF, G_TYPE_BOOLEAN, G_TYPE_BOOLEAN);
     GtkWidget* tree = gtk_tree_view_new_with_model(GTK_TREE_MODEL(fileRootsStore));
     g_object_unref(fileRootsStore);
