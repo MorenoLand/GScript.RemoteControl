@@ -46,7 +46,7 @@ cmake --build build-linux --parallel
 ctest --test-dir build-linux --output-on-failure
 ```
 
-Linux does not provide the Windows Explorer drag-out, tray/global-hotkey integration, or Windows MCP GUI bridge.
+Linux uses a per-user Unix-domain socket for its MCP GUI bridge. Windows Explorer drag-out is Windows-specific; Linux tray and global-hotkey support depend on the active desktop session.
 
 ## Runtime layout
 

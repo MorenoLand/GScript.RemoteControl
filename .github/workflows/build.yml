@@ -49,20 +49,22 @@ jobs:
           test -n "$grclib"
           cp remotecontrol/bin/RemoteControl "$bundle/"
           cp "$grclib" "$bundle/lib/"
-          cp -a remotecontrol/bin/images remotecontrol/bin/language-specs remotecontrol/bin/sounds "$bundle/"
+          cp -a remotecontrol/bin/fonts remotecontrol/bin/images remotecontrol/bin/language-specs remotecontrol/bin/sounds "$bundle/"
           cp remotecontrol/bin/control2config.txt "$bundle/"
           sourceview="$(pkg-config --variable=libdir gtksourceview-3.0)/libgtksourceview-3.0.so.1"
+          pixbuf="$(pkg-config --variable=libdir gdk-pixbuf-2.0)/gdk-pixbuf-2.0"
           test -f "$sourceview"
-          { lddtree -l remotecontrol/bin/RemoteControl; lddtree -l "$grclib"; lddtree -l "$sourceview"; } | sort -u | while read -r library; do
+          cp -a "$pixbuf" "$bundle/lib/"
+          { lddtree -l remotecontrol/bin/RemoteControl; lddtree -l "$grclib"; lddtree -l "$sourceview"; find "$pixbuf" -type f -name '*.so' -exec lddtree -l {} \;; } | sort -u | while read -r library; do
             [ -f "$library" ] || continue
             case "$(basename "$library")" in
               ld-linux-*|libc.so.*|libm.so.*|libpthread.so.*|libdl.so.*|librt.so.*|libgcc_s.so.*|libstdc++.so.*) continue ;;
             esac
             cp -n "$library" "$bundle/lib/" || true
           done
-          cp -a /usr/lib/x86_64-linux-gnu/gdk-pixbuf-2.0 "$bundle/lib/" || true
           cp -a /usr/share/glib-2.0/schemas "$bundle/share-schemas" || true
-          find "$bundle" -type f \( -name 'RemoteControl' -o -name '*.so*' \) -exec patchelf --set-rpath '$ORIGIN/lib' {} +
+          patchelf --set-rpath '$ORIGIN/lib' "$bundle/RemoteControl"
+          find "$bundle/lib" -type f -name '*.so*' -exec patchelf --set-rpath '$ORIGIN' {} +
           if find "$bundle/lib" -type f -name '*.so*' -exec sh -c 'ldd "$1" | grep -q "not found"' _ {} \; -print -quit | grep -q .; then echo "Bundled Linux dependency is unresolved."; exit 1; fi
           (cd "$bundle" && zip -r "../$bundle.zip" .)
           appDir="${bundle}.AppDir"
