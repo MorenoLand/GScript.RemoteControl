@@ -31,6 +31,10 @@
 #include <mach-o/dyld.h>
 #else
 #include <unistd.h>
+#ifdef RC_HAVE_X11
+#include <gdk/gdkx.h>
+#include <X11/keysym.h>
+#endif
 #endif
 
 void registerBundledFonts(const std::filesystem::path& applicationDirectory) {
@@ -168,6 +172,19 @@ namespace {
         MSG* message = static_cast<MSG*>(event);
         if (message->message == WM_HOTKEY && message->wParam == VisibilityHotkeyId) {
             onTrayOpen(nullptr, nullptr);
+            return GDK_FILTER_REMOVE;
+        }
+        return GDK_FILTER_CONTINUE;
+    }
+#elif defined(RC_HAVE_X11)
+    int visibilityHotkeyKeycode = 0;
+    unsigned int visibilityHotkeyModifiers = 0;
+    bool visibilityHotkeyFilterInstalled = false;
+    void toggleTrayApplication();
+    GdkFilterReturn onX11Message(GdkXEvent* nativeEvent, GdkEvent*, gpointer) {
+        XEvent* event = static_cast<XEvent*>(nativeEvent);
+        if (event->type == KeyPress && event->xkey.keycode == visibilityHotkeyKeycode && (event->xkey.state & (ShiftMask | ControlMask | Mod1Mask | Mod4Mask)) == visibilityHotkeyModifiers) {
+            toggleTrayApplication();
             return GDK_FILTER_REMOVE;
         }
         return GDK_FILTER_CONTINUE;
@@ -481,7 +498,39 @@ void refreshGlobalVisibilityHotkey(const std::string& hotkey) {
     }
     if (key != 0) RegisterHotKey(serverListHotkeyWindow, VisibilityHotkeyId, modifiers, key);
 #else
+#ifdef RC_HAVE_X11
+    GdkDisplay* display = gdk_display_get_default();
+    if (display == nullptr || !GDK_IS_X11_DISPLAY(display)) return;
+    Display* xDisplay = gdk_x11_display_get_xdisplay(display);
+    const Window root = DefaultRootWindow(xDisplay);
+    const std::array<unsigned int, 4> ignoredModifiers = {0U, static_cast<unsigned int>(LockMask), static_cast<unsigned int>(Mod2Mask), static_cast<unsigned int>(LockMask | Mod2Mask)};
+    if (visibilityHotkeyKeycode != 0) for (unsigned int ignored : ignoredModifiers) XUngrabKey(xDisplay, visibilityHotkeyKeycode, visibilityHotkeyModifiers | ignored, root);
+    visibilityHotkeyKeycode = 0;
+    visibilityHotkeyModifiers = 0;
+    if (!visibilityHotkeyFilterInstalled) { gdk_window_add_filter(nullptr, onX11Message, nullptr); visibilityHotkeyFilterInstalled = true; }
+    if (hotkey.empty()) { XSync(xDisplay, False); return; }
+    std::string keyName;
+    std::size_t start = 0;
+    while (start <= hotkey.size()) {
+        const std::size_t separator = hotkey.find('+', start);
+        std::string token = hotkey.substr(start, separator == std::string::npos ? std::string::npos : separator - start);
+        std::transform(token.begin(), token.end(), token.begin(), [](unsigned char value) { return static_cast<char>(std::tolower(value)); });
+        if (token == "ctrl" || token == "control") visibilityHotkeyModifiers |= ControlMask;
+        else if (token == "alt") visibilityHotkeyModifiers |= Mod1Mask;
+        else if (token == "shift") visibilityHotkeyModifiers |= ShiftMask;
+        else if (token == "super" || token == "meta" || token == "win") visibilityHotkeyModifiers |= Mod4Mask;
+        else keyName = token == "escape" ? "Escape" : token == "enter" ? "Return" : token == "page_up" ? "Page_Up" : token == "page_down" ? "Page_Down" : token;
+        if (separator == std::string::npos) break;
+        start = separator + 1;
+    }
+    if (keyName.size() > 1 && keyName[0] == 'f' && std::all_of(keyName.begin() + 1, keyName.end(), [](unsigned char value) { return std::isdigit(value) != 0; })) keyName[0] = 'F';
+    const guint keyValue = keyName.size() == 1 ? gdk_unicode_to_keyval(static_cast<unsigned char>(keyName[0])) : gdk_keyval_from_name(keyName.c_str());
+    visibilityHotkeyKeycode = keyValue == GDK_KEY_VoidSymbol ? 0 : XKeysymToKeycode(xDisplay, keyValue);
+    if (visibilityHotkeyKeycode != 0) for (unsigned int ignored : ignoredModifiers) XGrabKey(xDisplay, visibilityHotkeyKeycode, visibilityHotkeyModifiers | ignored, root, True, GrabModeAsync, GrabModeAsync);
+    XSync(xDisplay, False);
+#else
     (void)hotkey;
+#endif
 #endif
 }
 
@@ -676,6 +725,7 @@ int main(int argc, char** argv) {
     }
 #else
     frame.show();
+    refreshGlobalVisibilityHotkey(options.globalhotkey);
 #endif
     gtk_main();
     stopMcpGuiBridge();
@@ -684,6 +734,10 @@ int main(int argc, char** argv) {
         UnregisterHotKey(serverListHotkeyWindow, VisibilityHotkeyId);
         if (GdkWindow* startWindow = frame.nativeWindow()) gdk_window_remove_filter(startWindow, onWindowsMessage, nullptr);
     }
+#endif
+#if !defined(_WIN32) && defined(RC_HAVE_X11)
+    refreshGlobalVisibilityHotkey("");
+    if (visibilityHotkeyFilterInstalled) { gdk_window_remove_filter(nullptr, onX11Message, nullptr); visibilityHotkeyFilterInstalled = false; }
 #endif
     clearTrayPMAlert();
     if (trayMenu != nullptr) {
