@@ -337,8 +337,6 @@ TRemoteFrame::TRemoteFrame(const RC::RCOptions& nextOptions, const std::filesyst
     gtk_widget_set_name(chatField, "ChatField");
     gtk_text_view_set_editable(GTK_TEXT_VIEW(chatField), false);
     gtk_text_view_set_cursor_visible(GTK_TEXT_VIEW(chatField), false);
-    gtk_text_view_set_left_margin(GTK_TEXT_VIEW(chatField), 5);
-    gtk_text_view_set_right_margin(GTK_TEXT_VIEW(chatField), 5);
     gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(chatField), GTK_WRAP_WORD_CHAR);
     configureChatField(chatField);
     gtk_container_add(GTK_CONTAINER(chatScrolled), chatField);
@@ -1457,6 +1455,8 @@ void TRemoteFrame::setNCChannelVisible(bool visible) {
 }
 
 void TRemoteFrame::configureChatField(GtkWidget* field) {
+    gtk_text_view_set_left_margin(GTK_TEXT_VIEW(field), 5);
+    gtk_text_view_set_right_margin(GTK_TEXT_VIEW(field), 5);
     GdkColor chatBackgroundColor;
     GdkColor chatColor;
     gdk_color_parse(options.colorchatback.c_str(), &chatBackgroundColor);

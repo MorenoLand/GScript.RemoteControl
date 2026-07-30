@@ -1327,7 +1327,7 @@ void TSyncManager::logEvent(const std::string& value) {
 void TSyncManager::createWindow() {
     window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
     g_object_add_weak_pointer(G_OBJECT(window), reinterpret_cast<gpointer*>(&window));
-    gtk_window_set_title(GTK_WINDOW(window), ("Sync & Git Backups - " + serverName).c_str());
+    gtk_window_set_title(GTK_WINDOW(window), ("Sync & Git Backups (Alpha) - " + serverName).c_str());
     gtk_window_set_default_size(GTK_WINDOW(window), 560, 500);
     gtk_window_set_transient_for(GTK_WINDOW(window), GTK_WINDOW(parent));
     gtk_window_set_destroy_with_parent(GTK_WINDOW(window), true);
@@ -1544,7 +1544,7 @@ void TSyncManager::createWindow() {
 void TSyncManager::showWindow() {
     if (window == nullptr) createWindow();
     if (progressUnseen && progressPercent() >= 100) progressUnseen = false;
-    gtk_window_set_title(GTK_WINDOW(window), ("Sync & Git Backups - " + serverName).c_str());
+    gtk_window_set_title(GTK_WINDOW(window), ("Sync & Git Backups (Alpha) - " + serverName).c_str());
     refreshWindow();
     gtk_widget_show_all(window);
     gtk_window_present(GTK_WINDOW(window));
@@ -1555,7 +1555,7 @@ void TSyncManager::refreshWindow() {
     if (progressUnseen && progress >= 100 && window != nullptr && gtk_widget_get_visible(window)) progressUnseen = false;
     if (onProgress) onProgress(progress, progressUnseen);
     if (window == nullptr) return;
-    const std::string title = "Sync & Git Backups - " + serverName + (enabled || oneShotActive ? " (" + std::to_string(progressPercent()) + "%)" : "");
+    const std::string title = "Sync & Git Backups (Alpha) - " + serverName + (enabled || oneShotActive ? " (" + std::to_string(progressPercent()) + "%)" : "");
     gtk_window_set_title(GTK_WINDOW(window), title.c_str());
     gtk_label_set_text(GTK_LABEL(statusLabel), statusText().c_str());
     gtk_label_set_text(GTK_LABEL(phaseLabel), ("Current: " + currentPhaseText()).c_str());
