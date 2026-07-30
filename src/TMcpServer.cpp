@@ -17,6 +17,11 @@
 #ifdef _WIN32
 #include <windows.h>
 #include <tlhelp32.h>
+#else
+#include <sys/socket.h>
+#include <sys/stat.h>
+#include <sys/un.h>
+#include <unistd.h>
 #endif
 
 namespace {
@@ -33,6 +38,12 @@ namespace {
     std::mutex pipeMutex;
     std::vector<HANDLE> activePipes;
     std::vector<std::thread> pipeClients;
+#else
+    std::mutex socketMutex;
+    std::vector<int> activeSockets;
+    std::vector<std::thread> socketClients;
+    int listenerSocket = -1;
+    std::filesystem::path listenerPath;
 #endif
 
     std::string jsonEscape(const std::string& value) { std::string result; for (unsigned char c : value) { if (c == '"') result += "\\\""; else if (c == '\\') result += "\\\\"; else if (c == '\n') result += "\\n"; else if (c == '\r') result += "\\r"; else if (c == '\t') result += "\\t"; else if (c < 0x20) { char text[7]; std::snprintf(text, sizeof(text), "\\u%04x", c); result += text; } else result += static_cast<char>(c); } return result; }
@@ -80,7 +91,7 @@ namespace {
 #ifdef _WIN32
         const unsigned long processId = GetCurrentProcessId();
 #else
-        const unsigned long processId = 0;
+        const unsigned long processId = static_cast<unsigned long>(getpid());
 #endif
         return "{\"processId\":" + std::to_string(processId) + ",\"active\":" + (active ? "true" : "false") + ",\"serverConnected\":" + ((bridgeConnected && bridgeConnected()) ? "true" : "false") + ",\"editorCount\":" + std::to_string(editors.size()) + ",\"server\":" + jsonString(bridgeServerName ? bridgeServerName() : "") + "}";
     }
@@ -134,7 +145,7 @@ namespace {
 #ifdef _WIN32
             GetCurrentProcessId()
 #else
-            0
+            getpid()
 #endif
         ) + ",\"serverConnected\":" + ((bridgeConnected && bridgeConnected()) ? "true" : "false") + ",\"server\":" + jsonString(server) + ",\"serverScope\":" + jsonString(bridgeOptions.mcpserverscope) + "}"; audit(method, tool, "ok"); return response(id, toolResult(text)); }
         if (tool == "rc_list_connections" && canRead) { audit(method, tool, "ok"); return response(id, toolResult(connectionsText())); }
@@ -159,9 +170,9 @@ namespace {
     }
     struct Pending { std::string request; std::string response; std::mutex mutex; std::condition_variable condition; bool done = false; };
     gboolean dispatch(gpointer data) { auto* pending = static_cast<Pending*>(data); const std::string value = processRequest(pending->request); { std::lock_guard<std::mutex> lock(pending->mutex); pending->response = value; pending->done = true; } pending->condition.notify_one(); return G_SOURCE_REMOVE; }
+    std::string dispatchToGui(const std::string& request) { Pending pending; pending.request = request; g_idle_add(dispatch, &pending); std::unique_lock<std::mutex> lock(pending.mutex); pending.condition.wait(lock, [&] { return pending.done; }); return pending.response; }
 #ifdef _WIN32
     std::string pipeName(unsigned long processId) { return PipePrefix + std::to_string(processId); }
-    std::string dispatchToGui(const std::string& request) { Pending pending; pending.request = request; g_idle_add(dispatch, &pending); std::unique_lock<std::mutex> lock(pending.mutex); pending.condition.wait(lock, [&] { return pending.done; }); return pending.response; }
     HANDLE connectBridgePipe(unsigned long processId) {
         const std::string name = pipeName(processId);
         HANDLE pipe = CreateFileA(name.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_EXISTING, 0, nullptr);
@@ -256,6 +267,83 @@ namespace {
             pipeClients.emplace_back(servePipe, pipe);
         }
     }
+#else
+    std::filesystem::path socketDirectory() { return std::filesystem::path(g_get_user_runtime_dir()) / "GScriptRC"; }
+    std::filesystem::path socketPath(unsigned long processId) { return socketDirectory() / ("mcp-" + std::to_string(processId) + ".sock"); }
+    bool sendAll(int socket, const std::string& value) { std::size_t sent = 0; while (sent < value.size()) { const ssize_t count = send(socket, value.data() + sent, value.size() - sent, MSG_NOSIGNAL); if (count <= 0) return false; sent += static_cast<std::size_t>(count); } return true; }
+    bool readLine(int socket, std::string& value) { value.clear(); char character = 0; while (recv(socket, &character, 1, 0) == 1) { if (character == '\n') return true; if (character != '\r') value += character; if (value.size() > 1024 * 1024) return false; } return false; }
+    int connectBridgeSocket(unsigned long processId) {
+        const std::string path = socketPath(processId).string();
+        sockaddr_un address{};
+        if (path.size() >= sizeof(address.sun_path)) return -1;
+        const int socketHandle = socket(AF_UNIX, SOCK_STREAM, 0);
+        if (socketHandle < 0) return -1;
+        address.sun_family = AF_UNIX;
+        std::copy(path.begin(), path.end(), address.sun_path);
+        if (connect(socketHandle, reinterpret_cast<sockaddr*>(&address), sizeof(address)) != 0) { close(socketHandle); return -1; }
+        return socketHandle;
+    }
+    std::vector<unsigned long> bridgeProcessIds(unsigned long requestedInstance) {
+        if (requestedInstance != 0) return {requestedInstance};
+        std::vector<unsigned long> ids;
+        std::error_code error;
+        for (const auto& entry : std::filesystem::directory_iterator(socketDirectory(), error)) {
+            const std::string name = entry.path().filename().string();
+            if (name.rfind("mcp-", 0) != 0 || entry.path().extension() != ".sock") continue;
+            try { ids.push_back(std::stoul(name.substr(4, name.size() - 9))); } catch (...) {}
+        }
+        return ids;
+    }
+    bool socketExchange(int socketHandle, const std::string& request, std::string& value) { return sendAll(socketHandle, request + "\n") && readLine(socketHandle, value); }
+    int selectBridgeSocket(unsigned long requestedInstance) {
+        int best = -1;
+        int bestScore = -1;
+        for (unsigned long candidateId : bridgeProcessIds(requestedInstance)) {
+            int socketHandle = connectBridgeSocket(candidateId);
+            if (socketHandle < 0) continue;
+            std::string probe;
+            if (!socketExchange(socketHandle, "{\"jsonrpc\":\"2.0\",\"id\":-9001,\"method\":\"rc/instance\",\"params\":{}}", probe)) { close(socketHandle); continue; }
+            const unsigned long processId = static_cast<unsigned long>(mcpJsonIntField(probe, "processId", 0));
+            const int editorCount = mcpJsonIntField(probe, "editorCount", 0);
+            const bool active = mcpJsonBoolField(probe, "active", false);
+            const bool connected = mcpJsonBoolField(probe, "serverConnected", false);
+            if (processId != candidateId) { close(socketHandle); continue; }
+            const int score = mcpInstanceScore(active, connected, editorCount);
+            if (score > bestScore) { if (best >= 0) close(best); best = socketHandle; bestScore = score; } else close(socketHandle);
+        }
+        return best;
+    }
+    void serveSocket(int socketHandle) {
+        { std::lock_guard<std::mutex> lock(socketMutex); activeSockets.push_back(socketHandle); }
+        std::string request;
+        while (!bridgeStopping && readLine(socketHandle, request)) {
+            const std::string value = dispatchToGui(request);
+            if (!value.empty() && !sendAll(socketHandle, value + "\n")) break;
+        }
+        { std::lock_guard<std::mutex> lock(socketMutex); activeSockets.erase(std::remove(activeSockets.begin(), activeSockets.end(), socketHandle), activeSockets.end()); }
+        close(socketHandle);
+    }
+    void socketLoop() {
+        std::filesystem::create_directories(socketDirectory());
+        chmod(socketDirectory().c_str(), 0700);
+        listenerPath = socketPath(static_cast<unsigned long>(getpid()));
+        std::filesystem::remove(listenerPath);
+        const std::string path = listenerPath.string();
+        sockaddr_un address{};
+        if (path.size() >= sizeof(address.sun_path)) return;
+        listenerSocket = socket(AF_UNIX, SOCK_STREAM, 0);
+        if (listenerSocket < 0) return;
+        address.sun_family = AF_UNIX;
+        std::copy(path.begin(), path.end(), address.sun_path);
+        if (bind(listenerSocket, reinterpret_cast<sockaddr*>(&address), sizeof(address)) != 0 || listen(listenerSocket, 8) != 0) { close(listenerSocket); listenerSocket = -1; return; }
+        chmod(listenerPath.c_str(), 0600);
+        while (!bridgeStopping) {
+            const int client = accept(listenerSocket, nullptr, nullptr);
+            if (client < 0) { if (bridgeStopping) break; continue; }
+            std::lock_guard<std::mutex> lock(socketMutex);
+            socketClients.emplace_back(serveSocket, client);
+        }
+    }
 #endif
 }
 
@@ -268,7 +356,20 @@ int runMcpServer(const RC::RCOptions& options, const std::filesystem::path&, uns
     while (std::getline(std::cin, request)) { const std::string line = request + "\n"; DWORD written = 0; if (!WriteFile(pipe, line.data(), static_cast<DWORD>(line.size()), &written, nullptr)) break; if (idField(request).empty()) continue; DWORD read = 0; if (!ReadFile(pipe, buffer.data(), static_cast<DWORD>(buffer.size()), &read, nullptr) || read == 0) break; std::cout.write(buffer.data(), read); std::cout.flush(); }
     CloseHandle(pipe); return 0;
 #else
-    std::cerr << "RC MCP GUI bridge is currently available on Windows only.\n"; return 3;
+    if (!options.mcpenabled) { std::cerr << "RC MCP integration is disabled in Options.\n"; return 2; }
+    const int socketHandle = selectBridgeSocket(requestedInstance);
+    if (socketHandle < 0) { std::cerr << "RC MCP bridge unavailable: no running enabled RC GUI client.\n"; return 3; }
+    std::string request;
+    while (std::getline(std::cin, request)) {
+        if (!sendAll(socketHandle, request + "\n")) break;
+        if (idField(request).empty()) continue;
+        std::string value;
+        if (!readLine(socketHandle, value)) break;
+        std::cout << value << '\n';
+        std::cout.flush();
+    }
+    close(socketHandle);
+    return 0;
 #endif
 }
 
@@ -276,6 +377,8 @@ void startMcpGuiBridge(RC::RCOptions& options, const std::filesystem::path& appl
     bridgeOptions = options; bridgeOptionsReady = true; bridgeDirectory = RC::rcOptionsDirectory(applicationDirectory); bridgeActions = std::move(actions); bridgeServerName = bridgeActions.serverName; bridgeConnected = bridgeActions.connected; bridgeStopping = false;
 #ifdef _WIN32
     bridgeThread = std::thread(pipeLoop);
+#else
+    bridgeThread = std::thread(socketLoop);
 #endif
 }
 
@@ -293,6 +396,16 @@ void stopMcpGuiBridge() {
     }
     for (std::thread& client : pipeClients) if (client.joinable()) client.join();
     pipeClients.clear();
+#else
+    if (listenerSocket >= 0) { shutdown(listenerSocket, SHUT_RDWR); close(listenerSocket); listenerSocket = -1; }
+    if (bridgeThread.joinable()) bridgeThread.join();
+    {
+        std::lock_guard<std::mutex> lock(socketMutex);
+        for (int socketHandle : activeSockets) shutdown(socketHandle, SHUT_RDWR);
+    }
+    for (std::thread& client : socketClients) if (client.joinable()) client.join();
+    socketClients.clear();
+    if (!listenerPath.empty()) std::filesystem::remove(listenerPath);
 #endif
     bridgeOptionsReady = false;
 }
