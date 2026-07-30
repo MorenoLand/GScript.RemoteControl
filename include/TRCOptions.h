@@ -19,9 +19,9 @@ namespace RC {
         std::string globalhotkey;
         bool logrcchat = false;
         bool separatefindresults = true;
-        std::string chatlogfile = ".\\logs\\log.txt";
-        std::string downloadfolder = ".\\Downloads\\";
-        std::string externaleditorworkspace = ".\\ExternalEditor\\";
+        std::string chatlogfile = "logs/log.txt";
+        std::string downloadfolder = "Downloads";
+        std::string externaleditorworkspace = "ExternalEditor";
         std::string externaleditorcommand;
         std::string externaleditorscope = "off";
         bool modernfilebrowser = false;

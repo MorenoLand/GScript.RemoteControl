@@ -1,4 +1,4 @@
-foreach(assetDirectory extensions images language-specs sounds)
+foreach(assetDirectory extensions fonts images language-specs sounds)
     if(EXISTS "${REMOTE_CONTROL_RUNTIME_SOURCE_DIRECTORY}/${assetDirectory}")
         execute_process(COMMAND "${CMAKE_COMMAND}" -E copy_directory "${REMOTE_CONTROL_RUNTIME_SOURCE_DIRECTORY}/${assetDirectory}" "${REMOTE_CONTROL_OUTPUT_DIRECTORY}/${assetDirectory}")
     endif()

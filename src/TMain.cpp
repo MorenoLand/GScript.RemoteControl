@@ -502,21 +502,19 @@ void remote_control_set_tray_label(const char* serverName, int playerCount) { se
 int main(int argc, char** argv) {
     const bool mcpMode = std::find_if(argv + 1, argv + argc, [](const char* value) { return std::string(value) == "--mcp"; }) != argv + argc;
     unsigned long mcpInstance = 0;
-    for (int index = 1; index < argc; ++index) {
-        const std::string argument = argv[index];
-        if (argument.rfind("--mcp-instance=", 0) == 0) mcpInstance = std::strtoul(argument.c_str() + 15, nullptr, 10);
-        else if (argument == "--mcp-instance" && index + 1 < argc) mcpInstance = std::strtoul(argv[++index], nullptr, 10);
-    }
-#ifdef _WIN32
     bool debugMode = false;
     bool packetLog = false;
     int argumentCount = 1;
     for (int index = 1; index < argc; ++index) {
-        if (std::string(argv[index]) == "--debug") debugMode = true;
-        else if (std::string(argv[index]) == "--packetlog") { packetLog = true; debugMode = true; }
+        const std::string argument = argv[index];
+        if (argument.rfind("--mcp-instance=", 0) == 0) mcpInstance = std::strtoul(argument.c_str() + 15, nullptr, 10);
+        else if (argument == "--mcp-instance" && index + 1 < argc) mcpInstance = std::strtoul(argv[++index], nullptr, 10);
+        else if (argument == "--debug") debugMode = true;
+        else if (argument == "--packetlog") { packetLog = true; debugMode = true; }
         else argv[argumentCount++] = argv[index];
     }
     argc = argumentCount;
+#ifdef _WIN32
     if (debugMode && AttachConsole(ATTACH_PARENT_PROCESS)) {
 #ifdef _MSC_VER
         FILE* stream = nullptr;
@@ -527,10 +525,10 @@ int main(int argc, char** argv) {
         freopen("CONOUT$", "w", stderr);
 #endif
     }
+#endif
     remoteControlDebug = debugMode;
     remoteControlPacketLog = packetLog;
     remoteControlDebugLog("debug logging enabled");
-#endif
     const std::filesystem::path applicationDirectory = getApplicationDirectory();
     std::filesystem::current_path(applicationDirectory);
     setBackupDataDirectory(applicationDirectory);

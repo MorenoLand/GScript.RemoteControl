@@ -341,7 +341,11 @@ TOptionsWindow::TOptionsWindow(RC::RCOptions& nextOptions, const std::filesystem
     mcpServerScope = addEntry(GTK_GRID(mcpGrid), "Allowed server scope:", options.mcpserverscope, 1);
     gtk_box_pack_start(GTK_BOX(mcp), mcpGrid, false, false, 4);
     GtkWidget* mcpLaunch = gtk_entry_new();
+#ifdef _WIN32
     gtk_entry_set_text(GTK_ENTRY(mcpLaunch), "RemoteControl.exe --mcp");
+#else
+    gtk_entry_set_text(GTK_ENTRY(mcpLaunch), "RemoteControl --mcp");
+#endif
     gtk_editable_set_editable(GTK_EDITABLE(mcpLaunch), false);
     gtk_box_pack_start(GTK_BOX(mcp), gtk_label_new("Stdio client launch command:"), false, false, 0);
     gtk_box_pack_start(GTK_BOX(mcp), mcpLaunch, false, false, 0);
