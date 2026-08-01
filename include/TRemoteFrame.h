@@ -77,6 +77,7 @@ private:
     static void onLocalNPCData(const char* level, const char* content, void* data);
     static gboolean onEditKey(GtkWidget*, GdkEventKey*, gpointer data);
     static void onMentionChanged(GtkEditable*, gpointer data);
+    static gboolean constrainMentionPopup(gpointer data);
     static gboolean onMentionMatch(GtkEntryCompletion*, const gchar*, GtkTreeIter*, gpointer data);
     static gboolean onMentionSelected(GtkEntryCompletion*, GtkTreeModel*, GtkTreeIter*, gpointer data);
     static gboolean onActivityEvent(GtkWidget*, GdkEvent*, gpointer data);

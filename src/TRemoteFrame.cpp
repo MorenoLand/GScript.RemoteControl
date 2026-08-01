@@ -30,6 +30,7 @@
 #include <webp/demux.h>
 
 #include <cctype>
+#include <cstring>
 #include <algorithm>
 #include <cmath>
 #include <ctime>
@@ -43,6 +44,34 @@ extern void remote_control_set_tray_label(const char* serverName, int playerCoun
 
 namespace {
 struct ChannelScrollRequest { GtkWidget* field = nullptr; double previousValue = 0.0; };
+struct CompletionPopupRequest { GtkWidget* entry = nullptr; GtkTreeModel* model = nullptr; GtkEntryCompletion* completion = nullptr; unsigned attempts = 0; };
+void destroyCompletionPopupRequest(gpointer data) {
+    CompletionPopupRequest* request = static_cast<CompletionPopupRequest*>(data);
+    g_object_unref(request->entry);
+    g_object_unref(request->model);
+    g_object_unref(request->completion);
+    delete request;
+}
+bool completionModelWraps(GtkTreeModel* candidate, GtkTreeModel* model) {
+    if (candidate == model) return true;
+    if (GTK_IS_TREE_MODEL_FILTER(candidate)) return completionModelWraps(gtk_tree_model_filter_get_model(GTK_TREE_MODEL_FILTER(candidate)), model);
+    if (GTK_IS_TREE_MODEL_SORT(candidate)) return completionModelWraps(gtk_tree_model_sort_get_model(GTK_TREE_MODEL_SORT(candidate)), model);
+    return false;
+}
+GtkWidget* findCompletionTree(GtkWidget* widget, GtkTreeModel* model) {
+    if (GTK_IS_TREE_VIEW(widget) && completionModelWraps(gtk_tree_view_get_model(GTK_TREE_VIEW(widget)), model)) return widget;
+    if (!GTK_IS_CONTAINER(widget)) return nullptr;
+    GList* children = gtk_container_get_children(GTK_CONTAINER(widget));
+    GtkWidget* result = nullptr;
+    for (GList* child = children; child != nullptr && result == nullptr; child = child->next) result = findCompletionTree(GTK_WIDGET(child->data), model);
+    g_list_free(children);
+    return result;
+}
+const char* commandCompletionCategory(const char* command) {
+    static const char* playerCommands[] = {"/playerinfo", "/open", "/openrights", "/opencomments", "/openaccess", "/openacc", "/openprofile", "/openban", "/disconnect", "/reset", "/staffactivity"};
+    for (const char* playerCommand : playerCommands) if (std::strcmp(command, playerCommand) == 0) return "player";
+    return "command";
+}
 std::string remoteControlTitle(const std::string& server = {}, const std::string& players = {}, int syncProgress = -1) {
     std::string title = server.empty() ? "Remote Control" : server;
     if (!players.empty()) title += " [" + players + "]";
@@ -366,7 +395,7 @@ TRemoteFrame::TRemoteFrame(const RC::RCOptions& nextOptions, const std::filesyst
     }
     gtk_box_pack_start(GTK_BOX(root), editField, false, false, 0);
 
-    mentionStore = gtk_list_store_new(5, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING);
+    mentionStore = gtk_list_store_new(6, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING);
     mentionCompletion = gtk_entry_completion_new();
     gtk_entry_completion_set_model(mentionCompletion, GTK_TREE_MODEL(mentionStore));
     gtk_entry_completion_set_text_column(mentionCompletion, 0);
@@ -862,6 +891,77 @@ void TRemoteFrame::onExtensions(GtkMenuItem*, gpointer data) { TRemoteFrame* fra
 
 void TRemoteFrame::onMentionChanged(GtkEditable*, gpointer data) {
     static_cast<TRemoteFrame*>(data)->refreshMentionCompletion();
+}
+
+gboolean TRemoteFrame::constrainMentionPopup(gpointer data) {
+    CompletionPopupRequest* request = static_cast<CompletionPopupRequest*>(data);
+    const gchar* text = gtk_entry_get_text(GTK_ENTRY(request->entry));
+    gint cursor = gtk_editable_get_position(GTK_EDITABLE(request->entry));
+    gint start = cursor;
+    while (start > 0 && !std::isspace(static_cast<unsigned char>(text[start - 1]))) --start;
+    if (start >= cursor || text[start] != '/') return G_SOURCE_REMOVE;
+    GList* windows = gtk_window_list_toplevels();
+    bool found = false;
+    for (GList* item = windows; item != nullptr; item = item->next) {
+        GtkWidget* tree = findCompletionTree(GTK_WIDGET(item->data), request->model);
+        if (tree == nullptr) continue;
+        found = true;
+        GtkWidget* parent = gtk_widget_get_parent(tree);
+        while (parent != nullptr && !GTK_IS_SCROLLED_WINDOW(parent)) parent = gtk_widget_get_parent(parent);
+        if (parent != nullptr) {
+            gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(parent), GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
+            gtk_scrolled_window_set_propagate_natural_height(GTK_SCROLLED_WINDOW(parent), TRUE);
+            gtk_scrolled_window_set_min_content_height(GTK_SCROLLED_WINDOW(parent), 64);
+            gtk_scrolled_window_set_max_content_height(GTK_SCROLLED_WINDOW(parent), 160);
+            gtk_widget_set_size_request(parent, -1, 160);
+            gtk_widget_queue_resize(parent);
+        }
+        GtkWidget* popup = gtk_widget_get_toplevel(tree);
+        if (g_object_get_data(G_OBJECT(popup), "rc-compact-completion") == nullptr) {
+            GList* columns = gtk_tree_view_get_columns(GTK_TREE_VIEW(tree));
+            for (GList* column = columns; column != nullptr; column = column->next) gtk_tree_view_remove_column(GTK_TREE_VIEW(tree), GTK_TREE_VIEW_COLUMN(column->data));
+            g_list_free(columns);
+            GtkTreeViewColumn* column = gtk_tree_view_column_new();
+            GtkCellRenderer* valueRenderer = gtk_cell_renderer_text_new();
+            GtkCellRenderer* categoryRenderer = gtk_cell_renderer_text_new();
+            g_object_set(categoryRenderer, "xalign", 1.0f, "scale", 0.82, nullptr);
+            gtk_tree_view_column_pack_start(column, valueRenderer, TRUE);
+            gtk_tree_view_column_add_attribute(column, valueRenderer, "text", 0);
+            gtk_tree_view_column_pack_end(column, categoryRenderer, FALSE);
+            gtk_tree_view_column_add_attribute(column, categoryRenderer, "text", 5);
+            gtk_tree_view_append_column(GTK_TREE_VIEW(tree), column);
+            if (parent != nullptr) {
+                GtkWidget* content = gtk_widget_get_parent(parent);
+                if (GTK_IS_BOX(content)) {
+                    GtkWidget* header = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+                    GtkWidget* title = gtk_label_new("Commands");
+                    GtkWidget* hint = gtk_label_new("Tab to complete");
+                    gtk_widget_set_halign(title, GTK_ALIGN_START);
+                    gtk_widget_set_halign(hint, GTK_ALIGN_END);
+                    gtk_widget_set_hexpand(title, TRUE);
+                    gtk_widget_set_margin_start(header, 8);
+                    gtk_widget_set_margin_end(header, 8);
+                    gtk_widget_set_margin_top(header, 4);
+                    gtk_widget_set_margin_bottom(header, 4);
+                    gtk_box_pack_start(GTK_BOX(header), title, TRUE, TRUE, 0);
+                    gtk_box_pack_end(GTK_BOX(header), hint, FALSE, FALSE, 0);
+                    gtk_box_pack_start(GTK_BOX(content), header, FALSE, FALSE, 0);
+                    gtk_box_reorder_child(GTK_BOX(content), header, 0);
+                    gtk_widget_show_all(header);
+                }
+            }
+            g_object_set_data(G_OBJECT(popup), "rc-compact-completion", GINT_TO_POINTER(1));
+        }
+        gtk_entry_completion_complete(request->completion);
+        if (GTK_IS_WINDOW(popup)) {
+            gint width = 0, height = 0;
+            gtk_window_get_size(GTK_WINDOW(popup), &width, &height);
+            if (height > 192) gtk_window_resize(GTK_WINDOW(popup), width, 192);
+        }
+        break;
+    }
+    g_list_free(windows);
+    return found || ++request->attempts >= 20 ? G_SOURCE_REMOVE : G_SOURCE_CONTINUE;
 }
 
 gboolean TRemoteFrame::onMentionMatch(GtkEntryCompletion*, const gchar*, GtkTreeIter* row, gpointer data) {
@@ -1486,13 +1586,17 @@ void TRemoteFrame::configureChatField(GtkWidget* field) {
 void TRemoteFrame::refreshMentionCompletion() {
     if (mentionStore == nullptr) return;
     gtk_list_store_clear(mentionStore);
-    static const char* commands[] = {"/open", "/openacc", "/opencomments", "/openrights", "/openaccess", "/openprofile", "/openban", "/reset", "/rchelp", "/nc", "/reconnect", "/rc", "/find", "/finddef", "/clear"};
+    static const char* commands[] = {"/clear", "/help", "/optionshelp", "/stats", "/playerinfo", "/open", "/openrights", "/opencomments", "/openaccess", "/openacc", "/openprofile", "/openban", "/disconnect", "/reset", "/localbans", "/staffactivity", "/find", "/finddef", "/global", "/updatelevel", "/refreshfilelist", "/clientstats", "/npcstart", "/npckill", "/reloadscriptlibs", "/loadlang", "/savenpcs", "/clearnpcs", "/npc", "/style", "/listscriptlogfunctions", "/functionprofilestart", "/functionprofilestop", "/functionprofileshow", "/scripthelp", "/scriptscan", "/memstats", "/activeobjects", "/showstaticvarlinks", "/countnoclassnpcs", "/clearnoclassnpcs", "/npcshutdown", "/rchelp", "/nc", "/reconnect", "/rc"};
     for (const char* command : commands) {
         GtkTreeIter row;
         gtk_list_store_append(mentionStore, &row);
-        gtk_list_store_set(mentionStore, &row, 0, command, 1, "", 2, "", 3, command, 4, "", -1);
+        gtk_list_store_set(mentionStore, &row, 0, command, 1, "", 2, "", 3, command, 4, "", 5, commandCompletionCategory(command), -1);
     }
-    if (connection == nullptr) { gtk_entry_completion_complete(mentionCompletion); return; }
+    const auto queuePopupConstraint = [this]() {
+        CompletionPopupRequest* request = new CompletionPopupRequest{GTK_WIDGET(g_object_ref(editField)), GTK_TREE_MODEL(g_object_ref(mentionStore)), GTK_ENTRY_COMPLETION(g_object_ref(mentionCompletion)), 0};
+        g_timeout_add_full(G_PRIORITY_DEFAULT, 16, constrainMentionPopup, request, destroyCompletionPopupRequest);
+    };
+    if (connection == nullptr) { gtk_entry_completion_complete(mentionCompletion); queuePopupConstraint(); return; }
     RCPlayer* players = nullptr;
     const int count = rc_get_players(connection, &players);
     std::vector<std::string> accounts;
@@ -1507,9 +1611,10 @@ void TRemoteFrame::refreshMentionCompletion() {
         const std::string display = account + (g_ascii_strcasecmp(account.c_str(), nick.c_str()) == 0 ? "" : " - " + nick);
         GtkTreeIter row;
         gtk_list_store_append(mentionStore, &row);
-        gtk_list_store_set(mentionStore, &row, 0, display.c_str(), 1, account.c_str(), 2, nick.c_str(), 3, account.c_str(), 4, community.c_str(), -1);
+        gtk_list_store_set(mentionStore, &row, 0, display.c_str(), 1, account.c_str(), 2, nick.c_str(), 3, account.c_str(), 4, community.c_str(), 5, "player", -1);
     }
     gtk_entry_completion_complete(mentionCompletion);
+    queuePopupConstraint();
 }
 
 void TRemoteFrame::updateNCUi(bool connected) {
