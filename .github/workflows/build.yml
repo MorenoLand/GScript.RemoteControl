@@ -47,7 +47,10 @@ jobs:
           test -n "$grclib"
           cp remotecontrol/bin/RemoteControl "$bundle/"
           cp "$grclib" "$bundle/lib/"
-          cp -a remotecontrol/bin/fonts remotecontrol/bin/images remotecontrol/bin/language-specs remotecontrol/bin/sounds "$bundle/"
+          cp -a remotecontrol/assets/runtime/fonts remotecontrol/assets/runtime/images remotecontrol/assets/runtime/language-specs remotecontrol/assets/runtime/sounds "$bundle/"
+          for asset in rcicon_channelopen.png rcicon_channelclosed.png plisticononline.png rcicon_gold.png rcicon_silver.png rcicon_bronze.png rcicon_uc.png; do
+            test -f "$bundle/images/$asset"
+          done
           cp remotecontrol/bin/control2config.txt "$bundle/"
           sourceview="$(pkg-config --variable=libdir gtksourceview-3.0)/libgtksourceview-3.0.so.1"
           pixbuf="$(pkg-config --variable=libdir gdk-pixbuf-2.0)/gdk-pixbuf-2.0"
@@ -83,7 +86,7 @@ jobs:
           grclib="$(find grclib/bin -type f -name 'grclib*.dylib' -print -quit)"
           test -n "$grclib"
           cp remotecontrol/bin/RemoteControl "$bundle/"
-          cp -a remotecontrol/bin/images remotecontrol/bin/language-specs remotecontrol/bin/sounds "$bundle/"
+          cp -a remotecontrol/assets/runtime/images remotecontrol/assets/runtime/language-specs remotecontrol/assets/runtime/sounds "$bundle/"
           cp remotecontrol/bin/control2config.txt "$bundle/"
           dylibbundler -cd -b -x "$bundle/RemoteControl" -d "$bundle/lib" -p @executable_path/lib -of -s "$(dirname "$grclib")"
           (cd "$bundle" && zip -r "../$bundle.zip" .)
