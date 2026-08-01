@@ -64,7 +64,9 @@ namespace {
 
 }
 
-TServerList::TServerList(std::function<void()> onClose, std::function<void(TServerList*, void*, int, const std::string&, const std::string&, const std::string&, bool)> onConnected, std::function<void()> onServerSelected, bool nextDarkMode, const std::string& nextTheme, std::function<void(bool, const std::string&)> onThemeChanged, std::function<std::vector<RC::RCAccount>()> accountChoices, std::function<std::vector<RC::RCAccount>(const std::string&)> accountChoicesForListServer, std::function<void()> onOpenAnother) : onCloseCallback(std::move(onClose)), onConnectedCallback(std::move(onConnected)), onServerSelectedCallback(std::move(onServerSelected)), onThemeChangedCallback(std::move(onThemeChanged)), accountChoicesCallback(std::move(accountChoices)), accountChoicesForListServerCallback(std::move(accountChoicesForListServer)), onOpenAnotherCallback(std::move(onOpenAnother)), darkMode(nextDarkMode), theme(nextTheme) {
+TServerList::TServerList(std::function<void()> onClose, std::function<void(TServerList*, void*, int, const std::string&, const std::string&, const std::string&, bool)> onConnected, std::function<void()> onServerSelected, bool nextDarkMode, const std::string& nextTheme, std::function<void(bool, const std::string&)> onThemeChanged, std::function<std::vector<RC::RCAccount>()> accountChoices, std::function<std::vector<RC::RCAccount>(const std::string&)> accountChoicesForListServer, std::function<void()> onOpenAnother) : TServerList(std::filesystem::current_path(), std::move(onClose), std::move(onConnected), std::move(onServerSelected), nextDarkMode, nextTheme, std::move(onThemeChanged), std::move(accountChoices), std::move(accountChoicesForListServer), std::move(onOpenAnother)) {}
+
+TServerList::TServerList(const std::filesystem::path& nextApplicationDirectory, std::function<void()> onClose, std::function<void(TServerList*, void*, int, const std::string&, const std::string&, const std::string&, bool)> onConnected, std::function<void()> onServerSelected, bool nextDarkMode, const std::string& nextTheme, std::function<void(bool, const std::string&)> onThemeChanged, std::function<std::vector<RC::RCAccount>()> accountChoices, std::function<std::vector<RC::RCAccount>(const std::string&)> accountChoicesForListServer, std::function<void()> onOpenAnother) : onCloseCallback(std::move(onClose)), onConnectedCallback(std::move(onConnected)), onServerSelectedCallback(std::move(onServerSelected)), onThemeChangedCallback(std::move(onThemeChanged)), accountChoicesCallback(std::move(accountChoices)), accountChoicesForListServerCallback(std::move(accountChoicesForListServer)), onOpenAnotherCallback(std::move(onOpenAnother)), applicationDirectory(nextApplicationDirectory), darkMode(nextDarkMode), theme(nextTheme) {
     listserverHost = defaultListserverHost;
     listserverEndpoints = RC::loadListServerProfiles(listserverSettingsPath(), defaultListserverHost, listserverPort);
     listserverName = listserverEndpoints.front().name;
@@ -94,16 +96,16 @@ TServerList::TServerList(std::function<void()> onClose, std::function<void(TServ
     gtk_paned_pack1(GTK_PANED(pane), scrolled, true, true);
 
     GError* error = nullptr;
-    serverIcons[0] = gdk_pixbuf_new_from_file("images/rcicon_gold.png", &error);
+    serverIcons[0] = gdk_pixbuf_new_from_file((applicationDirectory / "images" / "rcicon_gold.png").string().c_str(), &error);
     if (error != nullptr) g_error_free(error);
     error = nullptr;
-    serverIcons[1] = gdk_pixbuf_new_from_file("images/rcicon_uc.png", &error);
+    serverIcons[1] = gdk_pixbuf_new_from_file((applicationDirectory / "images" / "rcicon_uc.png").string().c_str(), &error);
     if (error != nullptr) g_error_free(error);
     error = nullptr;
-    serverIcons[2] = gdk_pixbuf_new_from_file("images/rcicon_bronze.png", &error);
+    serverIcons[2] = gdk_pixbuf_new_from_file((applicationDirectory / "images" / "rcicon_bronze.png").string().c_str(), &error);
     if (error != nullptr) g_error_free(error);
     error = nullptr;
-    serverIcons[3] = gdk_pixbuf_new_from_file("images/rcicon_silver.png", &error);
+    serverIcons[3] = gdk_pixbuf_new_from_file((applicationDirectory / "images" / "rcicon_silver.png").string().c_str(), &error);
     if (error != nullptr) g_error_free(error);
 
     store = gtk_list_store_new(5, GDK_TYPE_PIXBUF, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_INT, G_TYPE_INT);
@@ -544,7 +546,7 @@ void TServerList::openListServerSettings() {
 }
 
 void TServerList::openAnotherListServer(const RC::RCAccount* selectedAccount, const std::string& selectedListServer) {
-    additionalLists.push_back(std::make_unique<TServerList>([] {}, onConnectedCallback, onServerSelectedCallback, darkMode, theme, onThemeChangedCallback, accountChoicesCallback, accountChoicesForListServerCallback, [this] { openAnotherListServer(); }));
+    additionalLists.push_back(std::make_unique<TServerList>(applicationDirectory, [] {}, onConnectedCallback, onServerSelectedCallback, darkMode, theme, onThemeChangedCallback, accountChoicesCallback, accountChoicesForListServerCallback, [this] { openAnotherListServer(); }));
     TServerList* list = additionalLists.back().get();
     list->defaultAdditionalConnection = true;
     list->setLoginParent(loginParent);

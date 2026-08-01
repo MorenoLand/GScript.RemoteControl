@@ -330,11 +330,7 @@ namespace {
 }
 
 TPlayerList::TPlayerList(const std::filesystem::path& nextApplicationDirectory, std::string nextAccountName)
-#ifdef _WIN32
     : applicationDirectory(nextApplicationDirectory), accountName(std::move(nextAccountName)) {
-#else
-    : applicationDirectory(std::filesystem::path(g_get_user_data_dir()) / "GScriptRC"), accountName(std::move(nextAccountName)) {
-#endif
     window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
     gtk_widget_set_name(window, "PlayerList");
     gtk_window_set_title(GTK_WINDOW(window), "Players");
@@ -356,13 +352,13 @@ TPlayerList::TPlayerList(const std::filesystem::path& nextApplicationDirectory, 
     g_signal_connect(tree, "row-collapsed", G_CALLBACK(onGroupCollapsed), this);
     gtk_tree_selection_set_mode(gtk_tree_view_get_selection(GTK_TREE_VIEW(tree)), GTK_SELECTION_SINGLE);
     g_signal_connect(tree, "button-press-event", G_CALLBACK(onButtonPress), this);
-    onlineIcon = gdk_pixbuf_new_from_file("images/plisticononline.png", nullptr);
-    channelIcon = gdk_pixbuf_new_from_file("images/rcicon_channelopen.png", nullptr);
-    channelClosedIcon = gdk_pixbuf_new_from_file("images/rcicon_channelclosed.png", nullptr);
-    pmNormalIcon = gdk_pixbuf_new_from_file("images/pmicon_normal.png", nullptr);
-    pmGuildIcon = gdk_pixbuf_new_from_file("images/pmicon_guild.png", nullptr);
-    pmAdminIcon = gdk_pixbuf_new_from_file("images/pmicon_admin.png", nullptr);
-    pmMassIcon = gdk_pixbuf_new_from_file("images/pmicon_mass.png", nullptr);
+    onlineIcon = gdk_pixbuf_new_from_file((applicationDirectory / "images" / "plisticononline.png").string().c_str(), nullptr);
+    channelIcon = gdk_pixbuf_new_from_file((applicationDirectory / "images" / "rcicon_channelopen.png").string().c_str(), nullptr);
+    channelClosedIcon = gdk_pixbuf_new_from_file((applicationDirectory / "images" / "rcicon_channelclosed.png").string().c_str(), nullptr);
+    pmNormalIcon = gdk_pixbuf_new_from_file((applicationDirectory / "images" / "pmicon_normal.png").string().c_str(), nullptr);
+    pmGuildIcon = gdk_pixbuf_new_from_file((applicationDirectory / "images" / "pmicon_guild.png").string().c_str(), nullptr);
+    pmAdminIcon = gdk_pixbuf_new_from_file((applicationDirectory / "images" / "pmicon_admin.png").string().c_str(), nullptr);
+    pmMassIcon = gdk_pixbuf_new_from_file((applicationDirectory / "images" / "pmicon_mass.png").string().c_str(), nullptr);
     loadStatusIcons();
     GtkCellRenderer* imageRenderer = gtk_cell_renderer_pixbuf_new();
     GtkTreeViewColumn* imageColumn = gtk_tree_view_column_new_with_attributes("", imageRenderer, "pixbuf", PlayerIconColumn, nullptr);
@@ -615,14 +611,14 @@ void TPlayerList::onDisconnectPlayer(GtkMenuItem*, gpointer data) { static_cast<
 void TPlayerList::onResetPlayer(GtkMenuItem*, gpointer data) { static_cast<TPlayerList*>(data)->resetSelectedPlayer(); }
 void TPlayerList::handleBanData(const char* account, const char* computerId, const char* details) {
     if (account == nullptr || *account == '\0') return;
-    if (localBanWindow == nullptr) localBanWindow = new TLocalBanWindow();
+    if (localBanWindow == nullptr) localBanWindow = new TLocalBanWindow(applicationDirectory);
     localBanWindow->open(connection, account, computerId == nullptr ? "" : computerId, details == nullptr ? "" : details);
 }
 void TPlayerList::handleBanListData(const char* type, const char* account, const char* content) {
     if (type == nullptr) return;
     const std::string listType(type);
     if (listType == "bantypes") {
-        if (localBanWindow == nullptr) localBanWindow = new TLocalBanWindow();
+        if (localBanWindow == nullptr) localBanWindow = new TLocalBanWindow(applicationDirectory);
         localBanWindow->setBanTypes(content);
         return;
     }
@@ -1338,7 +1334,7 @@ void TPlayerList::loadStatusIcons() {
         if (fileName == "rping") fileName = "role-playing";
         else if (fileName == "eating") fileName = "eating";
         else if (fileName == "no pms") fileName = "no pms";
-        const std::filesystem::path path = std::filesystem::path("images") / ("plisticon" + fileName + ".png");
+        const std::filesystem::path path = applicationDirectory / "images" / ("plisticon" + fileName + ".png");
         statusIcons.push_back(std::filesystem::exists(path) ? gdk_pixbuf_new_from_file(path.string().c_str(), nullptr) : nullptr);
     }
 }
