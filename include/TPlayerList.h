@@ -28,7 +28,9 @@ public:
     std::optional<bool> localAccountConnected() const;
     std::string notePrivateMessage(int playerId, const char* account, const char* nick, const char* message, const char* type);
     bool openLatestPrivateMessage();
+    bool hasOpenPrivateMessage(int playerId) const;
     void clearPrivateMessageAlert();
+    void pmWindowClosed(int playerId, void* data);
 private:
     static void onRefresh(GtkButton*, gpointer data);
     static void onMassPM(GtkButton*, gpointer data);
@@ -103,7 +105,8 @@ private:
     std::map<std::string, std::vector<std::string>> serverPlayers;
     std::map<int, std::string> pmTypes;
     std::map<int, std::pair<std::string, std::string>> pmPlayers;
-    std::map<int, std::string> pmMessages;
+    std::map<int, std::vector<std::string>> pmMessages;
+    std::map<int, void*> pmWindows;
     std::map<int, TServerPlayer> serverPlayersById;
     int latestPMPlayerId = 0;
     guint pmBlinkSource = 0;

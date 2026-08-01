@@ -1497,11 +1497,13 @@ void TRemoteFrame::onPrivateMessage(int playerId, const char* account, const cha
     if (messageType == "mass" && frame->options.nomassmessages) return;
     if (frame->playerList == nullptr) frame->playerList = new TPlayerList(frame->applicationDirectory, frame->accountName);
     frame->playerList->setServerName(frame->serverName);
+    const bool conversationOpen = frame->playerList->hasOpenPrivateMessage(playerId);
     const std::string display = frame->playerList->notePrivateMessage(playerId, account, nick, message, type);
-    if (frame->options.newpmalerts) {
-        frame->appendChat("#ALERT New PM from " + display, true);
+    if (conversationOpen) { frame->playerList->clearPrivateMessageAlert(); remote_control_clear_pm_tray_alert(); }
+    else {
+        if (frame->options.newpmalerts) frame->appendChat("#ALERT New PM from " + display, true);
+        remote_control_begin_pm_tray_alert();
     }
-    remote_control_begin_pm_tray_alert();
 }
 
 void TRemoteFrame::onPlayerPropertiesChanged(int playerId, const char* properties, void* data) {
