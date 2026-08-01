@@ -115,7 +115,7 @@ jobs:
           install: >-
             mingw-w64-x86_64-gcc mingw-w64-x86_64-cmake mingw-w64-x86_64-ninja
             mingw-w64-x86_64-gtk3 mingw-w64-x86_64-gtksourceview3
-            mingw-w64-x86_64-openssl zip
+            mingw-w64-x86_64-openssl git zip
       - name: Configure, build, and test
         shell: msys2 {0}
         run: |
