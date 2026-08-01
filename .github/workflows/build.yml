@@ -82,22 +82,43 @@ jobs:
         if: runner.os == 'macOS'
         run: |
           bundle="${{ matrix.bundle }}"
-          mkdir -p "$bundle/lib"
+          app="$bundle/RemoteControl.app"
+          mkdir -p "$app/Contents/MacOS/lib"
           grclib="$(find grclib/bin -type f -name 'grclib*.dylib' -print -quit)"
           test -n "$grclib"
-          cp remotecontrol/bin/RemoteControl "$bundle/"
-          cp -a remotecontrol/assets/runtime/images remotecontrol/assets/runtime/language-specs remotecontrol/assets/runtime/sounds "$bundle/"
-          cp remotecontrol/bin/control2config.txt "$bundle/"
-          dylibbundler -cd -b -x "$bundle/RemoteControl" -d "$bundle/lib" -p @executable_path/lib -of -s "$(dirname "$grclib")"
-          (cd "$bundle" && zip -r "../$bundle.zip" .)
+          cp remotecontrol/bin/RemoteControl "$app/Contents/MacOS/"
+          cp -a remotecontrol/assets/runtime/images remotecontrol/assets/runtime/language-specs remotecontrol/assets/runtime/sounds "$app/Contents/MacOS/"
+          cp remotecontrol/bin/control2config.txt "$app/Contents/MacOS/"
+          dylibbundler -cd -b -x "$app/Contents/MacOS/RemoteControl" -d "$app/Contents/MacOS/lib" -p @executable_path/lib -of -s "$(dirname "$grclib")"
+          cat > "$app/Contents/Info.plist" <<'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>CFBundleDisplayName</key><string>Remote Control</string>
+              <key>CFBundleExecutable</key><string>RemoteControl</string>
+              <key>CFBundleIdentifier</key><string>land.moreno.gscript.remotecontrol</string>
+              <key>CFBundleName</key><string>Remote Control</string>
+              <key>CFBundlePackageType</key><string>APPL</string>
+              <key>CFBundleVersion</key><string>1</string>
+              <key>CFBundleShortVersionString</key><string>1.0</string>
+          </dict>
+          </plist>
+          EOF
           hdiutil create -volname "Remote Control" -srcfolder "$bundle" -ov -format UDZO "${bundle}.dmg"
       - uses: actions/upload-artifact@v4
+        if: runner.os == 'Linux'
         with:
           name: ${{ matrix.bundle }}
           path: |
             ${{ matrix.bundle }}.zip
             ${{ matrix.bundle }}.AppImage
-            ${{ matrix.bundle }}.dmg
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: runner.os == 'macOS'
+        with:
+          name: ${{ matrix.bundle }}
+          path: ${{ matrix.bundle }}.dmg
           if-no-files-found: error
 
   windows:
