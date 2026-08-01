@@ -48,6 +48,14 @@ ctest --test-dir build-linux --output-on-failure
 
 Linux uses a per-user Unix-domain socket for its MCP GUI bridge. Windows Explorer drag-out is Windows-specific; Linux tray and global-hotkey support depend on the active desktop session.
 
+#### Linux runtime dependencies
+
+Users running a staged build do not need development packages. Install the runtime libraries with:
+
+```sh
+sudo apt install libgtksourceview-3.0-1 libgtk-3-0t64 libwebp7 libwebpdemux2 libfontconfig1 libssl3t64
+```
+
 ## Runtime layout
 
 `bin/` is the staged runtime directory. Build output and generated build directories are intentionally untracked. Extension packages belong under `bin/extensions/` and are discovered by their manifests.
