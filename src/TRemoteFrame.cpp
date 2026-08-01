@@ -887,7 +887,7 @@ void TRemoteFrame::onBanListData(const char* type, const char* account, const ch
 void TRemoteFrame::onFileBrowser(GtkMenuItem*, gpointer data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
     if (frame->connection == nullptr || (frame->syncManager != nullptr && frame->syncManager->isFileSyncActive())) return;
-    if (frame->fileBrowser == nullptr) frame->fileBrowser = new TFileBrowserTree();
+    if (frame->fileBrowser == nullptr) frame->fileBrowser = new TFileBrowserTree(frame->applicationDirectory);
     frame->fileBrowser->setServerName(frame->serverName);
     frame->fileBrowser->setDownloadFolder(frame->options.downloadfolder);
     frame->fileBrowser->setDownloadServer(frame->serverName);
@@ -2156,7 +2156,7 @@ gboolean TRemoteFrame::onFindResultClick(GtkWidget* widget, GdkEventButton* even
     if (folder == nullptr) return false;
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
     if (frame->connection == nullptr) return true;
-    if (frame->fileBrowser == nullptr) frame->fileBrowser = new TFileBrowserTree();
+    if (frame->fileBrowser == nullptr) frame->fileBrowser = new TFileBrowserTree(frame->applicationDirectory);
     frame->fileBrowser->setServerName(frame->serverName);
     frame->fileBrowser->setDownloadFolder(frame->options.downloadfolder);
     frame->fileBrowser->setDownloadServer(frame->serverName);
