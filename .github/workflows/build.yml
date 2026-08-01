@@ -113,6 +113,7 @@ jobs:
           </dict>
           </plist>
           EOF
+          codesign --force --deep --sign - "$app"
           hdiutil create -volname "Remote Control" -srcfolder "$bundle" -ov -format UDZO "${bundle}.dmg"
       - uses: actions/upload-artifact@v4
         if: runner.os == 'Linux'
