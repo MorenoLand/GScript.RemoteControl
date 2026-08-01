@@ -89,7 +89,15 @@ jobs:
           cp remotecontrol/bin/RemoteControl "$app/Contents/MacOS/"
           cp -a remotecontrol/assets/runtime/images remotecontrol/assets/runtime/language-specs remotecontrol/assets/runtime/sounds "$app/Contents/MacOS/"
           cp remotecontrol/bin/control2config.txt "$app/Contents/MacOS/"
+          remove_bundle_rpath() {
+            target="$1"
+            while otool -l "$target" | grep -A2 'cmd LC_RPATH' | grep -Fq 'path @executable_path/lib/'; do
+              install_name_tool -delete_rpath '@executable_path/lib/' "$target" || break
+            done
+          }
+          remove_bundle_rpath "$app/Contents/MacOS/RemoteControl"
           dylibbundler -cd -b -x "$app/Contents/MacOS/RemoteControl" -d "$app/Contents/MacOS/lib" -p @executable_path/lib -of -s "$(dirname "$grclib")"
+          remove_bundle_rpath "$app/Contents/MacOS/RemoteControl"
           cat > "$app/Contents/Info.plist" <<'EOF'
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
