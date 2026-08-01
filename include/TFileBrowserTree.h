@@ -2,6 +2,8 @@
 
 #include <gtk/gtk.h>
 
+#include <filesystem>
+
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -24,7 +26,7 @@ struct ModernPendingItem {
 
 class TFileBrowserTree {
 public:
-    TFileBrowserTree();
+    explicit TFileBrowserTree(const std::filesystem::path& applicationDirectory);
     ~TFileBrowserTree();
     void open(void* connection);
     void openFolder(void* connection, const std::string& folder);
@@ -101,6 +103,7 @@ private:
     void previewWorkerLoop();
     static gboolean onPreviewDecoded(gpointer);
     GtkWidget* window = nullptr;
+    std::filesystem::path applicationDirectory;
     GtkWidget* folderPath = nullptr;
     GtkWidget* pathStack = nullptr;
     GtkWidget* addressEntry = nullptr;

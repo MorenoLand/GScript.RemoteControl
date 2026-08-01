@@ -1,4 +1,5 @@
 #include "TFileBrowserTree.h"
+#include "TAssetPaths.h"
 #include "TEditorFind.h"
 #include "TGScriptEditor.h"
 #include "TMng.h"
@@ -119,7 +120,7 @@ namespace {
         std::filesystem::last_write_time(path, fileTime, error);
     }
 
-    GdkPixbuf* loadImage(const char* name) { return gdk_pixbuf_new_from_file((std::string("images/") + name).c_str(), nullptr); }
+    GdkPixbuf* loadImage(const std::filesystem::path& applicationDirectory, const char* name) { return gdk_pixbuf_new_from_file(resolveRuntimeImage(applicationDirectory, name).string().c_str(), nullptr); }
     GdkPixbuf* loadThemeIcon(const char* name, int size) {
         GError* error = nullptr;
         GdkPixbuf* icon = gtk_icon_theme_load_icon(gtk_icon_theme_get_default(), name, size, GTK_ICON_LOOKUP_FORCE_SIZE, &error);
@@ -316,7 +317,7 @@ bool TFileBrowserTree::isPreviewTransferMessage(const char* message) const {
     });
 }
 
-TFileBrowserTree::TFileBrowserTree() {
+TFileBrowserTree::TFileBrowserTree(const std::filesystem::path& nextApplicationDirectory) : applicationDirectory(nextApplicationDirectory) {
     previewAsyncState = std::make_shared<PreviewAsyncState>();
     previewAsyncState->browser = this;
     previewWorkerThread = std::thread(&TFileBrowserTree::previewWorkerLoop, this);
@@ -452,15 +453,15 @@ TFileBrowserTree::TFileBrowserTree() {
     openFolderIcon = loadThemeIcon("folder-open", 16);
     closedFolderLargeIcon = loadThemeIcon("folder", 48);
     openFolderLargeIcon = loadThemeIcon("folder-open", 48);
-    textFileIcon = loadImage("rcfiles_text2.png");
-    nwFileIcon = loadImage("rcfiles_nw.png");
-    scriptFileIcon = loadImage("rcfiles_graal.png");
-    gmapFileIcon = loadImage("rcfiles_gmap.png");
-    binaryFileIcon = loadImage("rcfiles_binary.png");
-    fontFileIcon = loadImage("rcfiles_ttf.png");
-    archiveFileIcon = loadImage("rcfiles_archive.png");
-    configFileIcon = loadImage("rcfiles_conf.png");
-    unknownFileIcon = loadImage("rcfiles_unknown.png");
+    textFileIcon = loadImage(applicationDirectory, "rcfiles_text2.png");
+    nwFileIcon = loadImage(applicationDirectory, "rcfiles_nw.png");
+    scriptFileIcon = loadImage(applicationDirectory, "rcfiles_graal.png");
+    gmapFileIcon = loadImage(applicationDirectory, "rcfiles_gmap.png");
+    binaryFileIcon = loadImage(applicationDirectory, "rcfiles_binary.png");
+    fontFileIcon = loadImage(applicationDirectory, "rcfiles_ttf.png");
+    archiveFileIcon = loadImage(applicationDirectory, "rcfiles_archive.png");
+    configFileIcon = loadImage(applicationDirectory, "rcfiles_conf.png");
+    unknownFileIcon = loadImage(applicationDirectory, "rcfiles_unknown.png");
     g_signal_connect(gtk_tree_view_get_selection(GTK_TREE_VIEW(folderView)), "changed", G_CALLBACK(onFolderSelected), this);
     g_signal_connect(folderView, "row-expanded", G_CALLBACK(onFolderStateChanged), this);
     g_signal_connect(folderView, "row-collapsed", G_CALLBACK(onFolderStateChanged), this);
