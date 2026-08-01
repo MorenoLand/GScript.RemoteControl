@@ -129,22 +129,22 @@ const char* commandCompletionDescription(const char* command) {
 }
 const char* commandCompletionUsage(const char* command) {
     static const std::pair<const char*, const char*> usages[] = {
-        {"/playerinfo", "/playerinfo <accountname>"},
-        {"/open", "/open <accountname>"},
-        {"/openrights", "/openrights <accountname>"},
-        {"/opencomments", "/opencomments <accountname>"},
-        {"/openaccess", "/openaccess <accountname>"},
-        {"/openacc", "/openacc <accountname>"},
-        {"/openprofile", "/openprofile <accountname>"},
+        {"/playerinfo", "/playerinfo <account>"},
+        {"/open", "/open <account>"},
+        {"/openrights", "/openrights <account>"},
+        {"/opencomments", "/opencomments <account>"},
+        {"/openaccess", "/openaccess <account>"},
+        {"/openacc", "/openacc <account>"},
+        {"/openprofile", "/openprofile <account>"},
         {"/openban", "/openban <account>"},
-        {"/disconnect", "/disconnect <accountname> <reason>"},
-        {"/reset", "/reset <accountname>"},
-        {"/staffactivity", "/staffactivity <accountname>"},
+        {"/disconnect", "/disconnect <account> <reason>"},
+        {"/reset", "/reset <account>"},
+        {"/staffactivity", "/staffactivity <account>"},
         {"/find", "/find <filepattern>"},
         {"/finddef", "/finddef <filepattern>"},
         {"/global", "/global <text>"},
         {"/updatelevel", "/updatelevel <level[,level]>"},
-        {"/clientstats", "/clientstats <accountname>"},
+        {"/clientstats", "/clientstats <account>"},
         {"/clearnpcs", "/clearnpcs <levelname>"},
         {"/npc", "/npc <command>"},
         {"/style", "/style <weapon|npc|class> <name>"},
@@ -163,7 +163,7 @@ const char* commandCompletionName(const char* command) {
 }
 const char* commandCompletionParameters(const char* command) {
     static const std::pair<const char*, const char*> parameters[] = {
-        {"/playerinfo", "accountname"}, {"/open", "accountname"}, {"/openrights", "accountname"}, {"/opencomments", "accountname"}, {"/openaccess", "accountname"}, {"/openacc", "accountname"}, {"/openprofile", "accountname"}, {"/openban", "account"}, {"/disconnect", "accountname reason"}, {"/reset", "accountname"}, {"/staffactivity", "accountname"}, {"/find", "filepattern"}, {"/finddef", "filepattern"}, {"/global", "text"}, {"/updatelevel", "level[,level]"}, {"/clientstats", "accountname"}, {"/clearnpcs", "levelname"}, {"/npc", "command"}, {"/style", "weapon|npc|class name"}, {"/functionprofileshow", "weapon|npc|class name"}, {"/scripthelp", "text"}, {"/scriptscan", "npcs/weapons/classes/scripts/levels/all text"}, {"/memstats", "[full|malloc] [level/npc]"}, {"/nc", "connect|disconnect|rc"}, {"/nc connect", "connect"}, {"/nc disconnect", "disconnect"}, {"/nc rc", "rc"}
+        {"/playerinfo", "account"}, {"/open", "account"}, {"/openrights", "account"}, {"/opencomments", "account"}, {"/openaccess", "account"}, {"/openacc", "account"}, {"/openprofile", "account"}, {"/openban", "account"}, {"/disconnect", "account reason"}, {"/reset", "account"}, {"/staffactivity", "account"}, {"/find", "filepattern"}, {"/finddef", "filepattern"}, {"/global", "text"}, {"/updatelevel", "level[,level]"}, {"/clientstats", "account"}, {"/clearnpcs", "levelname"}, {"/npc", "command"}, {"/style", "weapon|npc|class name"}, {"/functionprofileshow", "weapon|npc|class name"}, {"/scripthelp", "text"}, {"/scriptscan", "npcs/weapons/classes/scripts/levels/all text"}, {"/memstats", "[full|malloc] [level/npc]"}, {"/nc", "connect|disconnect|rc"}, {"/nc connect", "connect"}, {"/nc disconnect", "disconnect"}, {"/nc rc", "rc"}
     };
     for (const auto& parameters : parameters) if (std::strcmp(command, parameters.first) == 0) return parameters.second;
     return "";
@@ -176,10 +176,11 @@ std::string completionMarkupEscape(const char* value) {
 }
 std::string commandCompletionMarkup(const char* command) {
     const std::string name = completionMarkupEscape(commandCompletionName(command));
-    const std::string parameters = completionMarkupEscape(commandCompletionParameters(command));
     const std::string description = completionMarkupEscape(commandCompletionDescription(command));
     std::string markup = "<span weight=\"bold\">" + name + "</span>";
-    if (!parameters.empty()) markup += " <span background=\"#3b315c\" foreground=\"#f0eaff\"> " + parameters + " </span>";
+    std::istringstream parameterStream(commandCompletionParameters(command));
+    std::string parameter;
+    while (parameterStream >> parameter) markup += " <span background=\"#3b315c\" foreground=\"#f0eaff\"> " + completionMarkupEscape(parameter.c_str()) + " </span>";
     if (!description.empty()) markup += " <span foreground=\"#aaa5bb\">" + description + "</span>";
     return markup;
 }
