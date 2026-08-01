@@ -72,6 +72,183 @@ const char* commandCompletionCategory(const char* command) {
     for (const char* playerCommand : playerCommands) if (std::strcmp(command, playerCommand) == 0) return "player";
     return "command";
 }
+const char* commandCompletionDescription(const char* command) {
+    static const std::pair<const char*, const char*> descriptions[] = {
+        {"/clear", "clears the current chat"},
+        {"/help", "shows server and RC help"},
+        {"/optionshelp", "displays available server options"},
+        {"/stats", "displays server info"},
+        {"/playerinfo", "displays info about an online player"},
+        {"/open", "opens player attributes"},
+        {"/openrights", "opens player rights"},
+        {"/opencomments", "opens player comments"},
+        {"/openaccess", "opens player ban info"},
+        {"/openacc", "opens the account"},
+        {"/openprofile", "opens the profile"},
+        {"/openban", "opens account ban history"},
+        {"/disconnect", "disconnects a player"},
+        {"/reset", "resets a player"},
+        {"/localbans", "lists local bans"},
+        {"/staffactivity", "lists staff actions"},
+        {"/find", "searches game files"},
+        {"/finddef", "searches default game files"},
+        {"/global", "sends a global command"},
+        {"/updatelevel", "reloads levels from disk"},
+        {"/refreshfilelist", "rescans the server folders"},
+        {"/clientstats", "shows client stats"},
+        {"/npcstart", "starts the NPC server"},
+        {"/npckill", "stops the NPC server"},
+        {"/reloadscriptlibs", "reloads script libraries"},
+        {"/loadlang", "reloads translations"},
+        {"/savenpcs", "saves database NPCs"},
+        {"/clearnpcs", "deletes local database NPCs"},
+        {"/npc", "sends a control-NPC command"},
+        {"/style", "formats a script"},
+        {"/listscriptlogfunctions", "lists loggable functions"},
+        {"/functionprofilestart", "starts the function profiler"},
+        {"/functionprofilestop", "stops the function profiler"},
+        {"/functionprofileshow", "shows function statistics"},
+        {"/scripthelp", "prints script function help"},
+        {"/scriptscan", "scans npcs/weapons/classes/scripts/levels/all for text"},
+        {"/memstats", "shows memory usage"},
+        {"/activeobjects", "shows active objects"},
+        {"/showstaticvarlinks", "shows static variable links"},
+        {"/countnoclassnpcs", "counts unclassed NPCs"},
+        {"/clearnoclassnpcs", "deletes unclassed NPCs"},
+        {"/npcshutdown", "closes the server"},
+        {"/rchelp", "shows RC commands"},
+        {"/nc", "controls the NPC connection"},
+        {"/nc connect", "connects to the NPC server"},
+        {"/nc disconnect", "disconnects the NPC server"},
+        {"/nc rc", "reconnects the NPC server"},
+        {"/reconnect", "reconnects the RC server"},
+        {"/rc", "reconnects the RC server"}
+    };
+    for (const auto& description : descriptions) if (std::strcmp(command, description.first) == 0) return description.second;
+    return "";
+}
+const char* commandCompletionUsage(const char* command) {
+    static const std::pair<const char*, const char*> usages[] = {
+        {"/playerinfo", "/playerinfo <accountname>"},
+        {"/open", "/open <accountname>"},
+        {"/openrights", "/openrights <accountname>"},
+        {"/opencomments", "/opencomments <accountname>"},
+        {"/openaccess", "/openaccess <accountname>"},
+        {"/openacc", "/openacc <accountname>"},
+        {"/openprofile", "/openprofile <accountname>"},
+        {"/openban", "/openban <account>"},
+        {"/disconnect", "/disconnect <accountname> <reason>"},
+        {"/reset", "/reset <accountname>"},
+        {"/staffactivity", "/staffactivity <accountname>"},
+        {"/find", "/find <filepattern>"},
+        {"/finddef", "/finddef <filepattern>"},
+        {"/global", "/global <text>"},
+        {"/updatelevel", "/updatelevel <level[,level]>"},
+        {"/clientstats", "/clientstats <accountname>"},
+        {"/clearnpcs", "/clearnpcs <levelname>"},
+        {"/npc", "/npc <command>"},
+        {"/style", "/style <weapon|npc|class> <name>"},
+        {"/functionprofileshow", "/functionprofileshow <weapon|npc|class> <name>"},
+        {"/scripthelp", "/scripthelp <text>"},
+        {"/scriptscan", "/scriptscan <scope> <text>"},
+        {"/memstats", "/memstats [full|malloc] [level/npc]"},
+        {"/nc", "/nc <connect|disconnect|rc>"}
+    };
+    for (const auto& usage : usages) if (std::strcmp(command, usage.first) == 0) return usage.second;
+    return command;
+}
+const char* commandCompletionName(const char* command) {
+    if (std::strncmp(command, "/nc ", 4) == 0) return "/nc";
+    return command;
+}
+const char* commandCompletionParameters(const char* command) {
+    static const std::pair<const char*, const char*> parameters[] = {
+        {"/playerinfo", "accountname"}, {"/open", "accountname"}, {"/openrights", "accountname"}, {"/opencomments", "accountname"}, {"/openaccess", "accountname"}, {"/openacc", "accountname"}, {"/openprofile", "accountname"}, {"/openban", "account"}, {"/disconnect", "accountname reason"}, {"/reset", "accountname"}, {"/staffactivity", "accountname"}, {"/find", "filepattern"}, {"/finddef", "filepattern"}, {"/global", "text"}, {"/updatelevel", "level[,level]"}, {"/clientstats", "accountname"}, {"/clearnpcs", "levelname"}, {"/npc", "command"}, {"/style", "weapon|npc|class name"}, {"/functionprofileshow", "weapon|npc|class name"}, {"/scripthelp", "text"}, {"/scriptscan", "npcs/weapons/classes/scripts/levels/all text"}, {"/memstats", "[full|malloc] [level/npc]"}, {"/nc", "connect|disconnect|rc"}, {"/nc connect", "connect"}, {"/nc disconnect", "disconnect"}, {"/nc rc", "rc"}
+    };
+    for (const auto& parameters : parameters) if (std::strcmp(command, parameters.first) == 0) return parameters.second;
+    return "";
+}
+std::string completionMarkupEscape(const char* value) {
+    gchar* escaped = g_markup_escape_text(value == nullptr ? "" : value, -1);
+    std::string result = escaped == nullptr ? "" : escaped;
+    g_free(escaped);
+    return result;
+}
+std::string commandCompletionMarkup(const char* command) {
+    const std::string name = completionMarkupEscape(commandCompletionName(command));
+    const std::string parameters = completionMarkupEscape(commandCompletionParameters(command));
+    const std::string description = completionMarkupEscape(commandCompletionDescription(command));
+    std::string markup = "<span weight=\"bold\">" + name + "</span>";
+    if (!parameters.empty()) markup += " <span background=\"#3b315c\" foreground=\"#f0eaff\"> " + parameters + " </span>";
+    if (!description.empty()) markup += " <span foreground=\"#aaa5bb\">" + description + "</span>";
+    return markup;
+}
+GdkPixbuf* commandCompletionIcon(const char* command) {
+    const char* iconName = "system-run-symbolic";
+    if (std::strcmp(command, "/openrights") == 0 || std::strcmp(command, "/openaccess") == 0) iconName = "security-high-symbolic";
+    else if (std::strcmp(command, "/opencomments") == 0) iconName = "mail-message-new-symbolic";
+    else if (std::strcmp(command, "/openprofile") == 0) iconName = "contact-new-symbolic";
+    else if (std::strcmp(command, "/openacc") == 0 || std::strcmp(command, "/open") == 0 || std::strcmp(command, "/playerinfo") == 0) iconName = "avatar-default-symbolic";
+    else if (std::strcmp(command, "/find") == 0 || std::strcmp(command, "/finddef") == 0) iconName = "edit-find-symbolic";
+    else if (std::strcmp(command, "/refreshfilelist") == 0 || std::strcmp(command, "/updatelevel") == 0) iconName = "view-refresh-symbolic";
+    else if (std::strcmp(command, "/disconnect") == 0 || std::strcmp(command, "/nc disconnect") == 0) iconName = "network-offline-symbolic";
+    else if (std::strcmp(command, "/nc connect") == 0) iconName = "network-wired-symbolic";
+    else if (std::strcmp(command, "/nc rc") == 0 || std::strcmp(command, "/reconnect") == 0 || std::strcmp(command, "/reset") == 0) iconName = "system-reboot-symbolic";
+    else if (std::strncmp(command, "/nc", 3) == 0) iconName = "network-wired-symbolic";
+    else if (std::strcmp(command, "/global") == 0) iconName = "mail-send-symbolic";
+    else if (std::strcmp(command, "/style") == 0 || std::strcmp(command, "/scripthelp") == 0 || std::strcmp(command, "/scriptscan") == 0) iconName = "accessories-text-editor-symbolic";
+    else if (std::strcmp(command, "/stats") == 0 || std::strcmp(command, "/clientstats") == 0 || std::strcmp(command, "/memstats") == 0) iconName = "dialog-information-symbolic";
+    else if (std::strcmp(command, "/help") == 0 || std::strcmp(command, "/rchelp") == 0) iconName = "help-browser-symbolic";
+    GtkIconTheme* theme = gtk_icon_theme_get_default();
+    GdkPixbuf* icon = nullptr;
+    GtkIconInfo* iconInfo = gtk_icon_theme_lookup_icon(theme, iconName, 14, GTK_ICON_LOOKUP_USE_BUILTIN);
+    if (iconInfo != nullptr) {
+        GdkRGBA foreground{1.0, 1.0, 1.0, 1.0};
+        icon = gtk_icon_info_load_symbolic(iconInfo, &foreground, nullptr, nullptr, nullptr, nullptr, nullptr);
+        g_object_unref(iconInfo);
+    }
+    if (icon == nullptr) icon = gtk_icon_theme_load_icon(theme, iconName, 14, GTK_ICON_LOOKUP_USE_BUILTIN, nullptr);
+    GdkPixbuf* result = gdk_pixbuf_new(GDK_COLORSPACE_RGB, TRUE, 8, 24, 24);
+    if (result == nullptr) { if (icon != nullptr) g_object_unref(icon); return nullptr; }
+    gdk_pixbuf_fill(result, 0x00000000);
+    cairo_surface_t* surface = cairo_image_surface_create_for_data(gdk_pixbuf_get_pixels(result), CAIRO_FORMAT_ARGB32, 24, 24, gdk_pixbuf_get_rowstride(result));
+    cairo_t* cr = cairo_create(surface);
+    const bool player = std::strcmp(commandCompletionCategory(command), "player") == 0;
+    const std::string activeTheme = remoteControlTheme();
+    const char* playerAccent = "#4c78a8";
+    const char* securityAccent = "#b94e63";
+    const char* textAccent = "#8f6bb3";
+    const char* infoAccent = "#d08a52";
+    const char* networkAccent = "#4c9bb5";
+    const char* dangerAccent = "#c45b5b";
+    if (activeTheme == "nord") {
+        playerAccent = "#5e81ac"; securityAccent = "#bf616a"; textAccent = "#b48ead"; infoAccent = "#d08770"; networkAccent = "#88c0d0"; dangerAccent = "#bf616a";
+    } else if (activeTheme == "dracula") {
+        playerAccent = "#6272a4"; securityAccent = "#ff5555"; textAccent = "#bd93f9"; infoAccent = "#ffb86c"; networkAccent = "#8be9fd"; dangerAccent = "#ff5555";
+    } else if (activeTheme == "gruvbox") {
+        playerAccent = "#458588"; securityAccent = "#cc241d"; textAccent = "#b16286"; infoAccent = "#d79921"; networkAccent = "#689d6a"; dangerAccent = "#fb4934";
+    } else if (activeTheme == "catppuccin") {
+        playerAccent = "#89b4fa"; securityAccent = "#f38ba8"; textAccent = "#cba6f7"; infoAccent = "#fab387"; networkAccent = "#89dceb"; dangerAccent = "#eba0ac";
+    } else if (activeTheme == "solarized") {
+        playerAccent = "#268bd2"; securityAccent = "#dc322f"; textAccent = "#6c71c4"; infoAccent = "#cb4b16"; networkAccent = "#2aa198"; dangerAccent = "#dc322f";
+    }
+    const char* circle = player ? playerAccent : infoAccent;
+    if (std::strcmp(command, "/openrights") == 0 || std::strcmp(command, "/openaccess") == 0 || std::strcmp(command, "/security") == 0) circle = securityAccent;
+    else if (std::strcmp(command, "/opencomments") == 0 || std::strcmp(command, "/style") == 0 || std::strcmp(command, "/scripthelp") == 0 || std::strcmp(command, "/scriptscan") == 0) circle = textAccent;
+    else if (std::strcmp(command, "/find") == 0 || std::strcmp(command, "/finddef") == 0 || std::strcmp(command, "/refreshfilelist") == 0 || std::strcmp(command, "/updatelevel") == 0) circle = networkAccent;
+    else if (std::strcmp(command, "/disconnect") == 0 || std::strcmp(command, "/nc disconnect") == 0 || std::strcmp(command, "/reset") == 0) circle = dangerAccent;
+    else if (std::strncmp(command, "/nc", 3) == 0 || std::strcmp(command, "/reconnect") == 0) circle = networkAccent;
+    GdkRGBA circleColor{0.19, 0.17, 0.27, 1.0};
+    gdk_rgba_parse(&circleColor, circle);
+    if (player) { circleColor.red *= 0.9; circleColor.green *= 0.9; circleColor.blue *= 0.9; }
+    cairo_set_source_rgba(cr, circleColor.red, circleColor.green, circleColor.blue, circleColor.alpha);
+    cairo_arc(cr, 12.0, 12.0, 10.0, 0.0, 2.0 * G_PI);
+    cairo_fill(cr);
+    if (icon != nullptr) { gdk_cairo_set_source_pixbuf(cr, icon, 5.0, 5.0); cairo_paint(cr); g_object_unref(icon); }
+    cairo_destroy(cr);
+    cairo_surface_destroy(surface);
+    return result;
+}
 std::string remoteControlTitle(const std::string& server = {}, const std::string& players = {}, int syncProgress = -1) {
     std::string title = server.empty() ? "Remote Control" : server;
     if (!players.empty()) title += " [" + players + "]";
@@ -395,7 +572,7 @@ TRemoteFrame::TRemoteFrame(const RC::RCOptions& nextOptions, const std::filesyst
     }
     gtk_box_pack_start(GTK_BOX(root), editField, false, false, 0);
 
-    mentionStore = gtk_list_store_new(6, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING);
+    mentionStore = gtk_list_store_new(10, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING, GDK_TYPE_PIXBUF, G_TYPE_STRING);
     mentionCompletion = gtk_entry_completion_new();
     gtk_entry_completion_set_model(mentionCompletion, GTK_TREE_MODEL(mentionStore));
     gtk_entry_completion_set_text_column(mentionCompletion, 0);
@@ -899,7 +1076,13 @@ gboolean TRemoteFrame::constrainMentionPopup(gpointer data) {
     gint cursor = gtk_editable_get_position(GTK_EDITABLE(request->entry));
     gint start = cursor;
     while (start > 0 && !std::isspace(static_cast<unsigned char>(text[start - 1]))) --start;
-    if (start >= cursor || text[start] != '/') return G_SOURCE_REMOVE;
+    gint commandEnd = start - 1;
+    while (commandEnd >= 0 && std::isspace(static_cast<unsigned char>(text[commandEnd]))) --commandEnd;
+    gint commandStart = commandEnd;
+    while (commandStart >= 0 && !std::isspace(static_cast<unsigned char>(text[commandStart]))) --commandStart;
+    ++commandStart;
+    const bool commandContext = (start < cursor && text[start] == '/') || (commandStart <= commandEnd && text[commandStart] == '/');
+    if (!commandContext) return G_SOURCE_REMOVE;
     GList* windows = gtk_window_list_toplevels();
     bool found = false;
     for (GList* item = windows; item != nullptr; item = item->next) {
@@ -911,48 +1094,50 @@ gboolean TRemoteFrame::constrainMentionPopup(gpointer data) {
         if (parent != nullptr) {
             gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(parent), GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
             gtk_scrolled_window_set_propagate_natural_height(GTK_SCROLLED_WINDOW(parent), TRUE);
-            gtk_scrolled_window_set_min_content_height(GTK_SCROLLED_WINDOW(parent), 64);
+            gtk_scrolled_window_set_min_content_height(GTK_SCROLLED_WINDOW(parent), 1);
             gtk_scrolled_window_set_max_content_height(GTK_SCROLLED_WINDOW(parent), 160);
-            gtk_widget_set_size_request(parent, -1, 160);
-            gtk_widget_queue_resize(parent);
         }
         GtkWidget* popup = gtk_widget_get_toplevel(tree);
         if (g_object_get_data(G_OBJECT(popup), "rc-compact-completion") == nullptr) {
+            gtk_widget_set_name(popup, "RemoteCompletionPopup");
+            GtkCssProvider* popupProvider = gtk_css_provider_new();
+            const std::string activeTheme = remoteControlTheme();
+            const char* popupBorder = remoteControlDarkMode() ? "#454052" : "#68748a";
+            if (activeTheme == "nord") popupBorder = "#4c566a";
+            else if (activeTheme == "dracula") popupBorder = "#6272a4";
+            else if (activeTheme == "gruvbox") popupBorder = "#665c54";
+            else if (activeTheme == "catppuccin") popupBorder = "#585b70";
+            else if (activeTheme == "solarized") popupBorder = "#586e75";
+            const std::string popupCss = std::string("#RemoteCompletionPopup, #RemoteCompletionPopup frame, #RemoteCompletionPopup scrolledwindow { border: 1px solid ") + popupBorder + "; border-radius: 5px; box-shadow: none; outline: none; background-image: none; } #RemoteCompletionPopup viewport { border: none; outline: none; }";
+            gtk_css_provider_load_from_data(popupProvider, popupCss.c_str(), -1, nullptr);
+            gtk_style_context_add_provider(gtk_widget_get_style_context(popup), GTK_STYLE_PROVIDER(popupProvider), GTK_STYLE_PROVIDER_PRIORITY_USER);
+            g_object_set_data_full(G_OBJECT(popup), "rc-completion-border-provider", popupProvider, g_object_unref);
             GList* columns = gtk_tree_view_get_columns(GTK_TREE_VIEW(tree));
             for (GList* column = columns; column != nullptr; column = column->next) gtk_tree_view_remove_column(GTK_TREE_VIEW(tree), GTK_TREE_VIEW_COLUMN(column->data));
             g_list_free(columns);
             GtkTreeViewColumn* column = gtk_tree_view_column_new();
+            GtkCellRenderer* iconRenderer = gtk_cell_renderer_pixbuf_new();
             GtkCellRenderer* valueRenderer = gtk_cell_renderer_text_new();
-            GtkCellRenderer* categoryRenderer = gtk_cell_renderer_text_new();
-            g_object_set(categoryRenderer, "xalign", 1.0f, "scale", 0.82, nullptr);
-            gtk_tree_view_column_pack_start(column, valueRenderer, TRUE);
-            gtk_tree_view_column_add_attribute(column, valueRenderer, "text", 0);
-            gtk_tree_view_column_pack_end(column, categoryRenderer, FALSE);
-            gtk_tree_view_column_add_attribute(column, categoryRenderer, "text", 5);
+            g_object_set(valueRenderer, "scale", 0.9, "xpad", 4, "ypad", 3, "ellipsize", PANGO_ELLIPSIZE_END, nullptr);
+            gtk_tree_view_column_pack_start(column, iconRenderer, FALSE);
+            gtk_tree_view_column_add_attribute(column, iconRenderer, "pixbuf", 8);
+            gtk_tree_view_column_pack_start(column, valueRenderer, FALSE);
+            gtk_tree_view_column_add_attribute(column, valueRenderer, "markup", 9);
             gtk_tree_view_append_column(GTK_TREE_VIEW(tree), column);
-            if (parent != nullptr) {
-                GtkWidget* content = gtk_widget_get_parent(parent);
-                if (GTK_IS_BOX(content)) {
-                    GtkWidget* header = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
-                    GtkWidget* title = gtk_label_new("Commands");
-                    GtkWidget* hint = gtk_label_new("Tab to complete");
-                    gtk_widget_set_halign(title, GTK_ALIGN_START);
-                    gtk_widget_set_halign(hint, GTK_ALIGN_END);
-                    gtk_widget_set_hexpand(title, TRUE);
-                    gtk_widget_set_margin_start(header, 8);
-                    gtk_widget_set_margin_end(header, 8);
-                    gtk_widget_set_margin_top(header, 4);
-                    gtk_widget_set_margin_bottom(header, 4);
-                    gtk_box_pack_start(GTK_BOX(header), title, TRUE, TRUE, 0);
-                    gtk_box_pack_end(GTK_BOX(header), hint, FALSE, FALSE, 0);
-                    gtk_box_pack_start(GTK_BOX(content), header, FALSE, FALSE, 0);
-                    gtk_box_reorder_child(GTK_BOX(content), header, 0);
-                    gtk_widget_show_all(header);
-                }
-            }
+            gtk_tree_view_set_headers_visible(GTK_TREE_VIEW(tree), FALSE);
+            gtk_tree_view_set_enable_search(GTK_TREE_VIEW(tree), FALSE);
+            gtk_tree_view_set_level_indentation(GTK_TREE_VIEW(tree), 0);
             g_object_set_data(G_OBJECT(popup), "rc-compact-completion", GINT_TO_POINTER(1));
         }
         gtk_entry_completion_complete(request->completion);
+        if (parent != nullptr) {
+            gint minimumHeight = 0, naturalHeight = 0;
+            gtk_widget_get_preferred_height(tree, &minimumHeight, &naturalHeight);
+            const gint desiredHeight = std::max(1, std::min(160, naturalHeight > 0 ? naturalHeight : minimumHeight));
+            gtk_scrolled_window_set_min_content_height(GTK_SCROLLED_WINDOW(parent), desiredHeight);
+            gtk_widget_set_size_request(parent, -1, desiredHeight);
+            gtk_widget_queue_resize(parent);
+        }
         if (GTK_IS_WINDOW(popup)) {
             gint width = 0, height = 0;
             gtk_window_get_size(GTK_WINDOW(popup), &width, &height);
@@ -1586,11 +1771,14 @@ void TRemoteFrame::configureChatField(GtkWidget* field) {
 void TRemoteFrame::refreshMentionCompletion() {
     if (mentionStore == nullptr) return;
     gtk_list_store_clear(mentionStore);
-    static const char* commands[] = {"/clear", "/help", "/optionshelp", "/stats", "/playerinfo", "/open", "/openrights", "/opencomments", "/openaccess", "/openacc", "/openprofile", "/openban", "/disconnect", "/reset", "/localbans", "/staffactivity", "/find", "/finddef", "/global", "/updatelevel", "/refreshfilelist", "/clientstats", "/npcstart", "/npckill", "/reloadscriptlibs", "/loadlang", "/savenpcs", "/clearnpcs", "/npc", "/style", "/listscriptlogfunctions", "/functionprofilestart", "/functionprofilestop", "/functionprofileshow", "/scripthelp", "/scriptscan", "/memstats", "/activeobjects", "/showstaticvarlinks", "/countnoclassnpcs", "/clearnoclassnpcs", "/npcshutdown", "/rchelp", "/nc", "/reconnect", "/rc"};
+    static const char* commands[] = {"/clear", "/help", "/optionshelp", "/stats", "/playerinfo", "/open", "/openrights", "/opencomments", "/openaccess", "/openacc", "/openprofile", "/openban", "/disconnect", "/reset", "/localbans", "/staffactivity", "/find", "/finddef", "/global", "/updatelevel", "/refreshfilelist", "/clientstats", "/npcstart", "/npckill", "/reloadscriptlibs", "/loadlang", "/savenpcs", "/clearnpcs", "/npc", "/style", "/listscriptlogfunctions", "/functionprofilestart", "/functionprofilestop", "/functionprofileshow", "/scripthelp", "/scriptscan", "/memstats", "/activeobjects", "/showstaticvarlinks", "/countnoclassnpcs", "/clearnoclassnpcs", "/npcshutdown", "/rchelp", "/nc", "/nc connect", "/nc disconnect", "/nc rc", "/reconnect", "/rc"};
     for (const char* command : commands) {
         GtkTreeIter row;
         gtk_list_store_append(mentionStore, &row);
-        gtk_list_store_set(mentionStore, &row, 0, command, 1, "", 2, "", 3, command, 4, "", 5, commandCompletionCategory(command), -1);
+        GdkPixbuf* icon = commandCompletionIcon(command);
+        const std::string markup = commandCompletionMarkup(command);
+        gtk_list_store_set(mentionStore, &row, 0, commandCompletionName(command), 1, "", 2, "", 3, command, 4, "", 5, commandCompletionCategory(command), 6, commandCompletionDescription(command), 7, commandCompletionParameters(command), 8, icon, 9, markup.c_str(), -1);
+        if (icon != nullptr) g_object_unref(icon);
     }
     const auto queuePopupConstraint = [this]() {
         CompletionPopupRequest* request = new CompletionPopupRequest{GTK_WIDGET(g_object_ref(editField)), GTK_TREE_MODEL(g_object_ref(mentionStore)), GTK_ENTRY_COMPLETION(g_object_ref(mentionCompletion)), 0};
@@ -1611,7 +1799,10 @@ void TRemoteFrame::refreshMentionCompletion() {
         const std::string display = account + (g_ascii_strcasecmp(account.c_str(), nick.c_str()) == 0 ? "" : " - " + nick);
         GtkTreeIter row;
         gtk_list_store_append(mentionStore, &row);
-        gtk_list_store_set(mentionStore, &row, 0, display.c_str(), 1, account.c_str(), 2, nick.c_str(), 3, account.c_str(), 4, community.c_str(), 5, "player", -1);
+        GdkPixbuf* icon = commandCompletionIcon("/playerinfo");
+        const std::string markup = "<span weight=\"bold\">" + completionMarkupEscape(account.c_str()) + "</span>" + (g_ascii_strcasecmp(account.c_str(), nick.c_str()) == 0 ? "" : " <span foreground=\"#aaa5bb\">" + completionMarkupEscape(nick.c_str()) + "</span>");
+        gtk_list_store_set(mentionStore, &row, 0, display.c_str(), 1, account.c_str(), 2, nick.c_str(), 3, account.c_str(), 4, community.c_str(), 5, "player", 6, "", 7, "", 8, icon, 9, markup.c_str(), -1);
+        if (icon != nullptr) g_object_unref(icon);
     }
     gtk_entry_completion_complete(mentionCompletion);
     queuePopupConstraint();
