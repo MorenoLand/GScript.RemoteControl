@@ -26,7 +26,7 @@ namespace {
     }
 }
 
-TLocalBanWindow::TLocalBanWindow() {
+TLocalBanWindow::TLocalBanWindow(const std::filesystem::path& nextApplicationDirectory) : applicationDirectory(nextApplicationDirectory) {
     window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
     gtk_widget_set_name(window, "BanWindow");
     gtk_window_set_title(GTK_WINDOW(window), "Edit Access");
@@ -75,7 +75,7 @@ TLocalBanWindow::TLocalBanWindow() {
         g_signal_connect(apply, "clicked", G_CALLBACK(onApply), this);
         GtkWidget* tab = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 3);
         scopes[index].tab = tab;
-        scopes[index].tabIcon = gtk_image_new_from_file("images/rcicon_unbanned.png");
+        scopes[index].tabIcon = gtk_image_new_from_file((applicationDirectory / "images" / "rcicon_unbanned.png").string().c_str());
         gtk_box_pack_start(GTK_BOX(tab), scopes[index].tabIcon, false, false, 0);
         gtk_box_pack_start(GTK_BOX(tab), gtk_label_new(titles[index]), false, false, 0);
         gtk_notebook_append_page(GTK_NOTEBOOK(notebook), page, tab);
@@ -127,7 +127,8 @@ void TLocalBanWindow::updateTimeLeft(int scope) {
 }
 
 void TLocalBanWindow::updateTabIcon(int scope) {
-    gtk_image_set_from_file(GTK_IMAGE(scopes[scope].tabIcon), gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(scopes[scope].banned)) ? "images/rcicon_banned.png" : "images/rcicon_unbanned.png");
+    const std::filesystem::path icon = applicationDirectory / "images" / (gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(scopes[scope].banned)) ? "rcicon_banned.png" : "rcicon_unbanned.png");
+    gtk_image_set_from_file(GTK_IMAGE(scopes[scope].tabIcon), icon.string().c_str());
 }
 
 void TLocalBanWindow::open(void* nextConnection, const std::string& nextAccount, const std::string& nextComputerId, const std::string& details) {

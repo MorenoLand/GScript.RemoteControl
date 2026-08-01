@@ -1,12 +1,13 @@
 #pragma once
 
 #include <gtk/gtk.h>
+#include <filesystem>
 #include <string>
 #include <vector>
 
 class TLocalBanWindow {
 public:
-    TLocalBanWindow();
+    explicit TLocalBanWindow(const std::filesystem::path& applicationDirectory);
     ~TLocalBanWindow();
     void open(void* connection, const std::string& account, const std::string& computerId, const std::string& details);
     void setBanTypes(const char* types);
@@ -19,6 +20,7 @@ private:
     static void onStaffActivity(GtkButton*, gpointer data);
     static gboolean onDelete(GtkWidget*, GdkEvent*, gpointer data);
     GtkWidget* window = nullptr;
+    std::filesystem::path applicationDirectory;
     struct Scope { GtkWidget* page = nullptr; GtkWidget* tab = nullptr; GtkWidget* tabIcon = nullptr; GtkWidget* banned = nullptr; GtkWidget* reset = nullptr; GtkWidget* type = nullptr; GtkWidget* timeLeft = nullptr; GtkWidget* reason = nullptr; std::string target; std::string releaseTime; };
     Scope scopes[4];
     void* connection = nullptr;

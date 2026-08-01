@@ -27,6 +27,7 @@ bool saveListServerProfiles(const std::filesystem::path& path, const std::vector
 class TServerList {
 public:
     TServerList(std::function<void()> onClose, std::function<void(TServerList*, void*, int, const std::string&, const std::string&, const std::string&, bool)> onConnected, std::function<void()> onServerSelected, bool darkMode, const std::string& theme, std::function<void(bool, const std::string&)> onThemeChanged, std::function<std::vector<RC::RCAccount>()> accountChoices = {}, std::function<std::vector<RC::RCAccount>(const std::string&)> accountChoicesForListServer = {}, std::function<void()> onOpenAnother = {});
+    TServerList(const std::filesystem::path& applicationDirectory, std::function<void()> onClose, std::function<void(TServerList*, void*, int, const std::string&, const std::string&, const std::string&, bool)> onConnected, std::function<void()> onServerSelected, bool darkMode, const std::string& theme, std::function<void(bool, const std::string&)> onThemeChanged, std::function<std::vector<RC::RCAccount>()> accountChoices = {}, std::function<std::vector<RC::RCAccount>(const std::string&)> accountChoicesForListServer = {}, std::function<void()> onOpenAnother = {});
     ~TServerList();
 
     void open(std::uint64_t accountId, const std::string& account, const std::string& password, const std::string& nickname, const std::string& listServer);
@@ -81,6 +82,7 @@ private:
     std::function<void()> onOpenAnotherCallback;
     std::vector<std::unique_ptr<TServerList>> additionalLists;
     GtkWidget* window = nullptr;
+    std::filesystem::path applicationDirectory;
     GtkWindow* loginParent = nullptr;
     GtkListStore* store = nullptr;
     GtkWidget* tree = nullptr;
