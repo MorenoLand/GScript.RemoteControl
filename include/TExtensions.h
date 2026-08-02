@@ -4,6 +4,7 @@
 #include <gtk/gtk.h>
 #include <functional>
 #include <memory>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -21,8 +22,14 @@ namespace RC {
         std::string id;
         std::string name;
         std::string version;
+        std::string publisher;
         std::string entry;
         std::string runtime;
+        std::vector<std::string> requestedCapabilities;
+        std::vector<std::string> uiContributions;
+        std::vector<std::string> themes;
+        std::vector<std::string> commands;
+        std::vector<std::string> readOnlyViews;
         bool autoDiscover = false;
         int api = 1;
         std::string error;
@@ -49,6 +56,8 @@ private:
     static void onEnable(GtkToggleButton*, gpointer);
     static void onOpen(GtkButton*, gpointer);
     static void onLog(GtkButton*, gpointer);
+    static void onDetails(GtkButton*, gpointer);
+    static void onRemove(GtkButton*, gpointer);
     static void onOutputTab(GtkButton*, gpointer);
     static gboolean onLaunchComplete(gpointer);
 #ifdef _WIN32
@@ -68,6 +77,8 @@ private:
     void sendRequest(std::size_t index, const std::string& request);
     void handleProtocolLine(std::size_t index, const std::string& line);
     void showLog(std::size_t index);
+    void showDetails(std::size_t index);
+    void removeExtension(std::size_t index);
     std::filesystem::path statePath() const;
 
     GtkWindow* parent = nullptr;

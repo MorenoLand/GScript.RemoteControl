@@ -4,13 +4,18 @@ GScript.RemoteControl is a C++20/GTK3 Remote Control client using [GRClib](https
 
 The original RemoteControl was created by Stefan Knorr. This project is independent and unaffiliated.
 
-## Highlights
+## Distinctive features
 
 - Multiple simultaneous server sessions with saved encrypted accounts and named list-server profiles.
 - GraalScript editor with formatting, diagnostics, autocomplete, find/replace, minimap, and MCP editor tools.
 - Script, class, server-options, server-flags, and folder-config editing; optionally launch those text files in a configured external editor and upload saved changes.
-- File browser, levels, player management, backup/sync tools, clickable chat links, and dynamic output tabs.
-- Manifest-based extensions with enable/disable state, captured output, and optional output tabs.
+- Offline GS2 analysis combines API/LSP signatures, live underlines, parameter checks, and case-insensitive engine lookup without pretending to be server validation.
+- Modern file-browser mode uses a lazy, bounded preview cache, serialized transfers, drag-out/upload support, and server-relative sync paths without blocking the GTK loop.
+- File and server synchronization tracks folder trees, configuration files, progress/ETA, protected timestamps, exclusions, direction, and explicit deletion permission.
+- Manifest-based extensions with enable/disable/remove state, captured output, bounded logs, status/error details, and optional output tabs.
+- Extension packages can declare publisher, runtime/API revision, automatic discovery, requested capabilities, and approved UI slots; the Extensions window exposes that metadata and manifest failures.
+- Hidden local stdio runtimes use asynchronous JSON-lines transport, generic human-readable display fields, lifecycle control, and per-extension output routing without exposing RC memory or GTK widgets.
+- Extension state is persisted per user, output tabs are opt-in and closable, and disabled packages are not launched on later sessions.
 
 ## Build
 
@@ -71,13 +76,21 @@ JSON manifests require `id`, `name`, `version`, `runtime`, and either `entry` or
   "id": "example.extension",
   "name": "Example Extension",
   "version": "1.0.0",
+  "publisher": "Example Publisher",
   "runtime": "your-extension-host",
   "entry": "main.gs2",
+  "capabilities": ["script-read", "file-read"],
+  "ui": ["output-tab"],
+  "themes": ["theme.dark"],
+  "commands": ["example.run"],
+  "readOnlyViews": ["example.status"],
   "api": 1
 }
 ```
 
 For a package whose runtime discovers files itself, omit `entry` and use `"mode": "auto"` (or `"autoDiscover": true`). RC launches the runtime from the package directory, captures its stdout/stderr, and can route readable output to a tab named from `name`. The Extensions window persists each package's enabled and output-tab state; disabling an extension requests shutdown and closes its output tab.
+
+Requested capabilities, themes, commands/shortcuts, read-only views, and UI slots are declarative: they are shown in the extension Details view and only explicitly approved capability names are persisted for that package. Output tabs are currently the supported live view contribution; the other contribution types are safely discovered and retained for future host-owned wiring. Unknown slots are never silently wired to unrestricted RC or GTK access. Removing a package stops its runtime, closes its output tab, and deletes only that package directory after confirmation.
 
 Use line-oriented JSON for host control messages. Human-facing output should include a non-empty `display`, `text`, or `message` field; RC suppresses protocol-only status envelopes instead of showing raw transport data.
 

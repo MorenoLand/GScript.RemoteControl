@@ -2,6 +2,7 @@
 
 #include <gtk/gtk.h>
 #include <algorithm>
+#include <cctype>
 #include <cstdint>
 #include <fstream>
 #include <map>
@@ -30,6 +31,47 @@ namespace {
     std::string getValue(const std::map<std::string, std::string>& values, const char* key) {
         const auto found = values.find(key);
         return found == values.end() ? std::string() : found->second;
+    }
+
+    std::vector<std::string> splitList(const std::string& value) {
+        std::vector<std::string> result;
+        std::size_t start = 0;
+        while (start <= value.size()) { const std::size_t end = value.find(',', start); const std::string item = trim(value.substr(start, end == std::string::npos ? std::string::npos : end - start)); if (!item.empty()) result.push_back(item); if (end == std::string::npos) break; start = end + 1; }
+        return result;
+    }
+
+    std::vector<std::string> splitStateList(const std::string& value) {
+        std::vector<std::string> result;
+        std::string item;
+        for (const char character : value) {
+            if (character == ',' || std::isspace(static_cast<unsigned char>(character))) { if (!item.empty()) { result.push_back(item); item.clear(); } }
+            else item += character;
+        }
+        if (!item.empty()) result.push_back(item);
+        return result;
+    }
+
+    std::vector<std::string> jsonStringArray(const std::string& json, const std::string& key) {
+        std::vector<std::string> result;
+        const std::string field = "\"" + key + "\"";
+        std::size_t position = json.find(field);
+        if (position == std::string::npos) return result;
+        position = json.find('[', position + field.size());
+        if (position == std::string::npos) return result;
+        const std::size_t end = json.find(']', position + 1);
+        if (end == std::string::npos) return result;
+        for (++position; position < end;) {
+            while (position < end && (json[position] == ' ' || json[position] == '\t' || json[position] == '\r' || json[position] == '\n' || json[position] == ',')) ++position;
+            if (position >= end) break;
+            if (json[position] != '"') { while (position < end && json[position] != ',') ++position; continue; }
+            std::size_t cursor = position;
+            std::string value;
+            ++cursor;
+            for (; cursor < end; ++cursor) { if (json[cursor] == '"') break; if (json[cursor] == '\\' && cursor + 1 < end) { value += json[++cursor]; } else value += json[cursor]; }
+            if (!value.empty()) result.push_back(value);
+            position = cursor < end ? cursor + 1 : end;
+        }
+        return result;
     }
 
     bool jsonBooleanValue(const std::string& json, const std::string& key, bool fallback) {
@@ -105,7 +147,7 @@ namespace {
         jsonStringValue(json, "type", type);
         const auto objectStart = json.find('{');
         if (objectStart == std::string::npos) return trim(json);
-        if (type == "ready" || type == "status" || type == "response" || type == "error" || type == "log") return {};
+        if (type == "ready" || type == "status" || type == "response") return {};
         std::function<std::string(std::size_t&, int)> parseValue;
         std::function<std::string(std::size_t&, int)> parseObject;
         auto parseString = [&json](std::size_t& position) {
@@ -201,8 +243,16 @@ bool loadExtensionManifest(const std::filesystem::path& path, ExtensionManifest&
         jsonStringValue(json, "id", manifest.id);
         jsonStringValue(json, "name", manifest.name);
         jsonStringValue(json, "version", manifest.version);
+        jsonStringValue(json, "publisher", manifest.publisher);
         jsonStringValue(json, "entry", manifest.entry);
         jsonStringValue(json, "runtime", manifest.runtime);
+        manifest.requestedCapabilities = jsonStringArray(json, "capabilities");
+        if (manifest.requestedCapabilities.empty()) manifest.requestedCapabilities = jsonStringArray(json, "requestedCapabilities");
+        manifest.uiContributions = jsonStringArray(json, "ui");
+        if (manifest.uiContributions.empty()) manifest.uiContributions = jsonStringArray(json, "uiContributions");
+        manifest.themes = jsonStringArray(json, "themes");
+        manifest.commands = jsonStringArray(json, "commands");
+        manifest.readOnlyViews = jsonStringArray(json, "readOnlyViews");
         std::string mode;
         jsonStringValue(json, "mode", mode);
         if (mode.empty()) jsonStringValue(json, "entryMode", mode);
@@ -223,8 +273,16 @@ bool loadExtensionManifest(const std::filesystem::path& path, ExtensionManifest&
     manifest.id = getValue(values, "id");
     manifest.name = getValue(values, "name");
     manifest.version = getValue(values, "version");
+    manifest.publisher = getValue(values, "publisher");
     manifest.entry = getValue(values, "entry");
     manifest.runtime = getValue(values, "runtime");
+    manifest.requestedCapabilities = splitList(getValue(values, "capabilities"));
+    if (manifest.requestedCapabilities.empty()) manifest.requestedCapabilities = splitList(getValue(values, "requestedCapabilities"));
+    manifest.uiContributions = splitList(getValue(values, "ui"));
+    if (manifest.uiContributions.empty()) manifest.uiContributions = splitList(getValue(values, "uiContributions"));
+    manifest.themes = splitList(getValue(values, "themes"));
+    manifest.commands = splitList(getValue(values, "commands"));
+    manifest.readOnlyViews = splitList(getValue(values, "readOnlyViews"));
     const std::string mode = getValue(values, "mode").empty() ? getValue(values, "entryMode") : getValue(values, "mode");
     const std::string autoDiscover = getValue(values, "autoDiscover");
     manifest.autoDiscover = mode == "auto" || mode == "discover" || autoDiscover == "1" || autoDiscover == "true";
@@ -356,6 +414,8 @@ struct TExtensionsManager::ExtensionState {
     bool startSent = false;
     bool launching = false;
     bool outputToTab = false;
+    std::set<std::string> approvedCapabilities;
+    std::string runtimeError;
     std::string log;
 };
 
@@ -394,20 +454,19 @@ std::filesystem::path TExtensionsManager::statePath() const { return std::filesy
 void TExtensionsManager::scan() {
     extensions.clear();
     auto manifests = RC::scanExtensionManifests(applicationDirectory / "extensions");
-#ifndef _WIN32
     const auto userManifests = RC::scanExtensionManifests(std::filesystem::path(g_get_user_data_dir()) / "GScriptRC" / "extensions");
     for (const auto& manifest : userManifests) {
         const auto existing = std::find_if(manifests.begin(), manifests.end(), [&](const auto& value) { return value.id == manifest.id; });
         if (existing == manifests.end()) manifests.push_back(manifest); else *existing = manifest;
     }
-#endif
     std::map<std::string, std::pair<bool, bool>> stateValues;
+    std::map<std::string, std::string> capabilityValues;
     std::ifstream state(statePath());
     std::string id;
     int value = 0;
     int output = 0;
-    while (state >> id >> value) { state >> output; stateValues[id] = {value != 0, output != 0}; }
-    for (const auto& manifest : manifests) { ExtensionState current; current.manifest = manifest; const auto found = stateValues.find(manifest.id); if (found != stateValues.end()) { current.enabled = found->second.first; current.outputToTab = found->second.second; } extensions.push_back(std::move(current)); }
+    while (state >> id >> value) { state >> output; std::string capabilities; std::getline(state, capabilities); stateValues[id] = {value != 0, output != 0}; capabilityValues[id] = trim(capabilities); }
+    for (const auto& manifest : manifests) { ExtensionState current; current.manifest = manifest; const auto found = stateValues.find(manifest.id); if (found != stateValues.end()) { current.enabled = found->second.first; current.outputToTab = found->second.second; const auto grants = capabilityValues.find(manifest.id); if (grants != capabilityValues.end()) for (const auto& capability : splitStateList(grants->second)) current.approvedCapabilities.insert(capability); } extensions.push_back(std::move(current)); }
     for (std::size_t index = 0; index < extensions.size(); ++index) if (extensions[index].enabled && extensions[index].manifest.error.empty()) launch(index);
     for (std::size_t index = 0; index < extensions.size(); ++index) if (extensions[index].outputToTab && extensions[index].manifest.error.empty() && outputCallback) outputCallback(extensions[index].manifest.name, {});
 }
@@ -419,37 +478,59 @@ void TExtensionsManager::refresh() {
     g_list_free(children);
     for (std::size_t index = 0; index < extensions.size(); ++index) {
         auto& extension = extensions[index];
-        GtkWidget* row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
-        const std::string labelText = extension.manifest.name + " " + extension.manifest.version + (extension.pid != 0 ? " (running)" : "") + (extension.manifest.error.empty() ? "" : " — " + extension.manifest.error);
+        GtkWidget* row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
+        const std::string status = !extension.manifest.error.empty() || !extension.runtimeError.empty() ? " (failed)" : extension.launching ? " (starting)" : extension.pid != 0 ? " (running)" : extension.enabled ? " (stopped)" : " (disabled)";
+        const std::string error = extension.manifest.error.empty() ? extension.runtimeError : extension.manifest.error;
+        const std::string labelText = extension.manifest.name + " " + extension.manifest.version + status + (error.empty() ? "" : " - " + error);
         GtkWidget* label = gtk_label_new(labelText.c_str());
         gtk_label_set_xalign(GTK_LABEL(label), 0.0f);
+        gtk_label_set_ellipsize(GTK_LABEL(label), PANGO_ELLIPSIZE_END);
+        gtk_label_set_max_width_chars(GTK_LABEL(label), 32);
         gtk_widget_set_hexpand(label, true);
         GtkWidget* enabled = gtk_check_button_new_with_label("Enabled");
+        gtk_widget_set_tooltip_text(enabled, "Enable or disable this extension");
         gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(enabled), extension.enabled);
         g_object_set_data(G_OBJECT(enabled), "extension-index", GSIZE_TO_POINTER(index));
         g_signal_connect(enabled, "toggled", G_CALLBACK(onEnable), this);
-        GtkWidget* open = gtk_button_new_with_label("Open");
-        GtkWidget* log = gtk_button_new_with_label(extension.log.empty() ? "View Log" : "View Log •");
-        GtkWidget* outputTab = gtk_button_new_with_label("Output Tab");
+        auto makeAction = [](const char* icon, const char* tooltip) {
+            GtkWidget* button = gtk_button_new_from_icon_name(icon, GTK_ICON_SIZE_MENU);
+            gtk_button_set_relief(GTK_BUTTON(button), GTK_RELIEF_NONE);
+            gtk_widget_set_size_request(button, 30, 28);
+            gtk_widget_set_tooltip_text(button, tooltip);
+            return button;
+        };
+        GtkWidget* open = makeAction("document-open-symbolic", "Open extension folder or entry");
+        GtkWidget* log = makeAction("view-list-symbolic", extension.log.empty() ? "View extension log" : "View extension log (unread output)");
+        GtkWidget* outputTab = makeAction("tab-new-symbolic", extension.outputToTab ? "Disable extension output tab" : "Enable extension output tab");
+        GtkWidget* details = makeAction("dialog-information-symbolic", "View extension details");
+        GtkWidget* remove = makeAction("user-trash-symbolic", "Remove extension");
         GtkStyleContext* outputContext = gtk_widget_get_style_context(outputTab);
-        if (extension.outputToTab) gtk_style_context_add_class(outputContext, "suggested-action");
+        if (extension.outputToTab) gtk_style_context_add_class(outputContext, "extension-output-active");
+        GtkStyleContext* logContext = gtk_widget_get_style_context(log);
+        if (!extension.log.empty()) gtk_style_context_add_class(logContext, "suggested-action");
         g_object_set_data(G_OBJECT(open), "extension-index", GSIZE_TO_POINTER(index));
         g_object_set_data(G_OBJECT(log), "extension-index", GSIZE_TO_POINTER(index));
         g_object_set_data(G_OBJECT(outputTab), "extension-index", GSIZE_TO_POINTER(index));
+        g_object_set_data(G_OBJECT(details), "extension-index", GSIZE_TO_POINTER(index));
+        g_object_set_data(G_OBJECT(remove), "extension-index", GSIZE_TO_POINTER(index));
         g_signal_connect(open, "clicked", G_CALLBACK(onOpen), this);
         g_signal_connect(log, "clicked", G_CALLBACK(onLog), this);
         g_signal_connect(outputTab, "clicked", G_CALLBACK(onOutputTab), this);
+        g_signal_connect(details, "clicked", G_CALLBACK(onDetails), this);
+        g_signal_connect(remove, "clicked", G_CALLBACK(onRemove), this);
         gtk_box_pack_start(GTK_BOX(row), enabled, false, false, 0);
         gtk_box_pack_start(GTK_BOX(row), label, true, true, 0);
         gtk_box_pack_start(GTK_BOX(row), open, false, false, 0);
         gtk_box_pack_start(GTK_BOX(row), log, false, false, 0);
         gtk_box_pack_start(GTK_BOX(row), outputTab, false, false, 0);
+        gtk_box_pack_start(GTK_BOX(row), details, false, false, 0);
+        gtk_box_pack_start(GTK_BOX(row), remove, false, false, 0);
         gtk_widget_set_sensitive(open, extension.manifest.error.empty());
         gtk_widget_set_sensitive(enabled, extension.manifest.error.empty());
         gtk_widget_add_events(row, GDK_BUTTON_PRESS_MASK);
         g_object_set_data(G_OBJECT(row), "extension-index", GSIZE_TO_POINTER(index));
         g_signal_connect(row, "button-press-event", G_CALLBACK(+[](GtkWidget* widget, GdkEventButton* event, gpointer data) -> gboolean { if (event->button != 3) return false; auto* manager = static_cast<TExtensionsManager*>(data); const std::size_t index = GPOINTER_TO_SIZE(g_object_get_data(G_OBJECT(widget), "extension-index")); GtkWidget* menu = gtk_menu_new(); GtkWidget* toggle = gtk_menu_item_new_with_label(index < manager->extensions.size() && manager->extensions[index].enabled ? "Disable" : "Enable"); g_object_set_data(G_OBJECT(toggle), "extension-index", GSIZE_TO_POINTER(index)); g_signal_connect(toggle, "activate", G_CALLBACK(+[](GtkMenuItem* item, gpointer value) { auto* manager = static_cast<TExtensionsManager*>(value); const std::size_t index = GPOINTER_TO_SIZE(g_object_get_data(G_OBJECT(item), "extension-index")); if (index < manager->extensions.size()) manager->setEnabled(index, !manager->extensions[index].enabled); }), manager); gtk_menu_shell_append(GTK_MENU_SHELL(menu), toggle); GtkWidget* send = gtk_menu_item_new_with_label(index < manager->extensions.size() && manager->extensions[index].outputToTab ? "Stop sending output to tab" : "Send output to tab"); g_object_set_data(G_OBJECT(send), "extension-index", GSIZE_TO_POINTER(index)); g_signal_connect(send, "activate", G_CALLBACK(+[](GtkMenuItem* item, gpointer value) { auto* manager = static_cast<TExtensionsManager*>(value); const std::size_t index = GPOINTER_TO_SIZE(g_object_get_data(G_OBJECT(item), "extension-index")); if (index < manager->extensions.size()) manager->setOutputTab(index, !manager->extensions[index].outputToTab); }), manager); gtk_menu_shell_append(GTK_MENU_SHELL(menu), send); gtk_widget_show_all(menu); gtk_menu_popup_at_pointer(GTK_MENU(menu), reinterpret_cast<GdkEvent*>(event)); return true; }), this);
-        gtk_box_pack_start(GTK_BOX(list), row, false, false, 4);
+        gtk_box_pack_start(GTK_BOX(list), row, false, false, 2);
         gtk_widget_show_all(row);
     }
 }
@@ -457,11 +538,16 @@ void TExtensionsManager::refresh() {
 void TExtensionsManager::showWindow() {
     if (window == nullptr) {
         window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
+        gtk_widget_set_name(window, "ExtensionsWindow");
         gtk_window_set_title(GTK_WINDOW(window), "Extensions");
-        gtk_window_set_default_size(GTK_WINDOW(window), 520, 320);
+        gtk_window_set_default_size(GTK_WINDOW(window), 520, 180);
         gtk_window_set_transient_for(GTK_WINDOW(window), parent);
         gtk_window_set_position(GTK_WINDOW(window), GTK_WIN_POS_CENTER_ON_PARENT);
         g_signal_connect(window, "delete-event", G_CALLBACK(+[](GtkWidget* widget, GdkEvent*, gpointer) -> gboolean { gtk_widget_hide(widget); return true; }), nullptr);
+        GtkCssProvider* extensionsCss = gtk_css_provider_new();
+        gtk_css_provider_load_from_data(extensionsCss, "#ExtensionsWindow button.extension-output-active, #ExtensionsWindow button.extension-output-active:hover, #ExtensionsWindow button.extension-output-active:active, #ExtensionsWindow button.extension-output-active:focus { background-image: none; background-color: @theme_selected_bg_color; color: @theme_selected_fg_color; border-color: @theme_selected_bg_color; }", -1, nullptr);
+        gtk_style_context_add_provider_for_screen(gdk_screen_get_default(), GTK_STYLE_PROVIDER(extensionsCss), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION + 2);
+        g_object_unref(extensionsCss);
         GtkWidget* root = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
         gtk_container_set_border_width(GTK_CONTAINER(root), 8);
         gtk_container_add(GTK_CONTAINER(window), root);
@@ -469,8 +555,8 @@ void TExtensionsManager::showWindow() {
         gtk_box_pack_start(GTK_BOX(root), frame, true, true, 0);
         GtkWidget* scroll = gtk_scrolled_window_new(nullptr, nullptr);
         gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scroll), GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
-        list = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
-        gtk_container_set_border_width(GTK_CONTAINER(list), 6);
+        list = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
+        gtk_container_set_border_width(GTK_CONTAINER(list), 4);
         gtk_container_add(GTK_CONTAINER(scroll), list);
         gtk_container_add(GTK_CONTAINER(frame), scroll);
         GtkWidget* close = gtk_button_new_with_label("Close");
@@ -478,7 +564,12 @@ void TExtensionsManager::showWindow() {
         g_signal_connect_swapped(close, "clicked", G_CALLBACK(gtk_widget_hide), window);
         gtk_box_pack_start(GTK_BOX(root), close, false, false, 0);
     }
+    const bool compactInitialSize = gtk_widget_get_visible(window) == false;
     refresh();
+    if (compactInitialSize) {
+        const int height = std::min(300, std::max(150, 112 + static_cast<int>(extensions.size()) * 36));
+        gtk_window_resize(GTK_WINDOW(window), 520, height);
+    }
     gtk_widget_show_all(window);
     gtk_window_present(GTK_WINDOW(window));
 }
@@ -487,10 +578,13 @@ void TExtensionsManager::onEnable(GtkToggleButton* button, gpointer data) { auto
 void TExtensionsManager::onOpen(GtkButton* button, gpointer data) { auto* manager = static_cast<TExtensionsManager*>(data); const std::size_t index = GPOINTER_TO_SIZE(g_object_get_data(G_OBJECT(button), "extension-index")); if (index >= manager->extensions.size()) return; const auto& manifest = manager->extensions[index].manifest; const auto path = manifest.autoDiscover || manifest.entry.empty() ? manifest.directory : manifest.directory / manifest.entry; gchar* uri = g_filename_to_uri(path.string().c_str(), nullptr, nullptr); if (uri != nullptr) { gtk_show_uri_on_window(manager->window == nullptr ? nullptr : GTK_WINDOW(manager->window), uri, GDK_CURRENT_TIME, nullptr); g_free(uri); } }
 void TExtensionsManager::onLog(GtkButton* button, gpointer data) { auto* manager = static_cast<TExtensionsManager*>(data); const std::size_t index = GPOINTER_TO_SIZE(g_object_get_data(G_OBJECT(button), "extension-index")); manager->showLog(index); }
 void TExtensionsManager::onOutputTab(GtkButton* button, gpointer data) { auto* manager = static_cast<TExtensionsManager*>(data); const std::size_t index = GPOINTER_TO_SIZE(g_object_get_data(G_OBJECT(button), "extension-index")); if (index < manager->extensions.size()) manager->setOutputTab(index, !manager->extensions[index].outputToTab); }
+void TExtensionsManager::onDetails(GtkButton* button, gpointer data) { auto* manager = static_cast<TExtensionsManager*>(data); const std::size_t index = GPOINTER_TO_SIZE(g_object_get_data(G_OBJECT(button), "extension-index")); manager->showDetails(index); }
+void TExtensionsManager::onRemove(GtkButton* button, gpointer data) { auto* manager = static_cast<TExtensionsManager*>(data); const std::size_t index = GPOINTER_TO_SIZE(g_object_get_data(G_OBJECT(button), "extension-index")); manager->removeExtension(index); }
 
 void TExtensionsManager::setEnabled(std::size_t index, bool enabled) {
     if (index >= extensions.size()) return;
     extensions[index].enabled = enabled;
+    if (!enabled) extensions[index].runtimeError.clear();
     saveState();
     if (enabled) launch(index); else stop(index);
     refresh();
@@ -499,7 +593,7 @@ void TExtensionsManager::setEnabled(std::size_t index, bool enabled) {
 void TExtensionsManager::saveState() {
     std::filesystem::create_directories(statePath().parent_path());
     std::ofstream state(statePath(), std::ios::trunc);
-    for (const auto& extension : extensions) state << extension.manifest.id << ' ' << (extension.enabled ? 1 : 0) << ' ' << (extension.outputToTab ? 1 : 0) << '\n';
+    for (const auto& extension : extensions) { state << extension.manifest.id << ' ' << (extension.enabled ? 1 : 0) << ' ' << (extension.outputToTab ? 1 : 0); for (const auto& capability : extension.approvedCapabilities) state << ' ' << capability; state << '\n'; }
 }
 
 void TExtensionsManager::routeLog(std::size_t index) {
@@ -518,12 +612,35 @@ void TExtensionsManager::setOutputTab(std::size_t index, bool enabled) {
     refresh();
 }
 
+void TExtensionsManager::removeExtension(std::size_t index) {
+    if (index >= extensions.size()) return;
+    auto& extension = extensions[index];
+    GtkWidget* dialog = gtk_message_dialog_new(window == nullptr ? parent : GTK_WINDOW(window), GTK_DIALOG_MODAL, GTK_MESSAGE_WARNING, GTK_BUTTONS_NONE, "Remove extension '%s'?", extension.manifest.name.c_str());
+    gtk_message_dialog_format_secondary_text(GTK_MESSAGE_DIALOG(dialog), "This removes the installed package directory and stops its runtime.");
+    gtk_dialog_add_buttons(GTK_DIALOG(dialog), "Close", GTK_RESPONSE_CANCEL, "Remove", GTK_RESPONSE_ACCEPT, nullptr);
+    const gint response = gtk_dialog_run(GTK_DIALOG(dialog));
+    gtk_widget_destroy(dialog);
+    if (response != GTK_RESPONSE_ACCEPT) return;
+    if (extension.launching) { RC::appendExtensionLog(extension.log, "Remove deferred while the extension is starting; disable it and try again."); extension.enabled = false; saveState(); refresh(); return; }
+    const std::string name = extension.manifest.name;
+    const auto directory = extension.manifest.directory;
+    stop(index);
+    if (closeCallback) closeCallback(name);
+    std::error_code error;
+    std::filesystem::remove_all(directory, error);
+    if (error) { RC::appendExtensionLog(extension.log, "Remove failed: " + error.message()); refresh(); return; }
+    extensions.erase(extensions.begin() + static_cast<std::ptrdiff_t>(index));
+    saveState();
+    refresh();
+}
+
 void TExtensionsManager::launch(std::size_t index) {
     if (index >= extensions.size() || extensions[index].pid != 0 || extensions[index].launching) return;
     const auto& manifest = extensions[index].manifest;
-    if (manifest.runtime == "gs2engine-stdio" && manifest.api != 1) { RC::appendExtensionLog(extensions[index].log, "Unsupported GS2 extension API: " + std::to_string(manifest.api)); return; }
+    extensions[index].runtimeError.clear();
+    if (manifest.runtime == "gs2engine-stdio" && manifest.api != 1) { extensions[index].runtimeError = "Unsupported GS2 extension API: " + std::to_string(manifest.api); RC::appendExtensionLog(extensions[index].log, extensions[index].runtimeError); refresh(); return; }
     const auto entry = manifest.entry.empty() ? std::filesystem::path() : manifest.directory / manifest.entry;
-    if (!manifest.autoDiscover && !std::filesystem::exists(entry)) { RC::appendExtensionLog(extensions[index].log, "Entry not found: " + entry.string()); return; }
+    if (!manifest.autoDiscover && !std::filesystem::exists(entry)) { extensions[index].runtimeError = "Entry not found: " + entry.string(); RC::appendExtensionLog(extensions[index].log, extensions[index].runtimeError); refresh(); return; }
     std::vector<std::string> arguments;
     if (manifest.runtime == "gs2engine-stdio") {
 #ifdef _WIN32
@@ -531,7 +648,7 @@ void TExtensionsManager::launch(std::size_t index) {
 #else
         const auto host = manifest.directory / "GS2Engine";
 #endif
-        if (!std::filesystem::exists(host)) { RC::appendExtensionLog(extensions[index].log, "GS2Engine host not found: " + host.string()); return; }
+        if (!std::filesystem::exists(host)) { extensions[index].runtimeError = "GS2Engine host not found: " + host.string(); RC::appendExtensionLog(extensions[index].log, extensions[index].runtimeError); refresh(); return; }
         arguments.push_back(host.string());
         arguments.push_back("--extension-stdio");
     } else {
@@ -576,7 +693,8 @@ gboolean TExtensionsManager::onLaunchComplete(gpointer data) {
 void TExtensionsManager::finishLaunch(std::size_t index, RC::ExtensionProcess process, const std::string& error) {
     if (index >= extensions.size()) return;
     extensions[index].launching = false;
-    if (!error.empty()) { RC::appendExtensionLog(extensions[index].log, error); refresh(); return; }
+    if (!error.empty()) { extensions[index].runtimeError = error; RC::appendExtensionLog(extensions[index].log, error); refresh(); return; }
+    extensions[index].runtimeError.clear();
     if (!extensions[index].enabled || extensions[index].pid != 0) {
 #ifdef _WIN32
         TerminateProcess(reinterpret_cast<HANDLE>(process.pid), 0);
@@ -726,7 +844,7 @@ gboolean TExtensionsManager::onOutput(GIOChannel* channel, GIOCondition conditio
     return G_SOURCE_REMOVE;
 }
 
-void TExtensionsManager::onChildExit(GPid pid, gint, gpointer data) { auto* manager = static_cast<TExtensionsManager*>(data); for (auto& extension : manager->extensions) if (extension.pid == pid) { extension.pid = 0; extension.childWatch = 0; if (extension.outputWatch != 0) { g_source_remove(extension.outputWatch); extension.outputWatch = 0; } if (extension.errorWatch != 0) { g_source_remove(extension.errorWatch); extension.errorWatch = 0; } if (extension.input != nullptr) { g_io_channel_unref(extension.input); extension.input = nullptr; } if (extension.output != nullptr) { g_io_channel_unref(extension.output); extension.output = nullptr; } if (extension.errorOutput != nullptr) { g_io_channel_unref(extension.errorOutput); extension.errorOutput = nullptr; }
+void TExtensionsManager::onChildExit(GPid pid, gint, gpointer data) { auto* manager = static_cast<TExtensionsManager*>(data); for (auto& extension : manager->extensions) if (extension.pid == pid) { extension.pid = 0; extension.childWatch = 0; if (extension.enabled && !extension.launching) { extension.runtimeError = "Runtime exited unexpectedly"; RC::appendExtensionLog(extension.log, extension.runtimeError); } if (extension.outputWatch != 0) { g_source_remove(extension.outputWatch); extension.outputWatch = 0; } if (extension.errorWatch != 0) { g_source_remove(extension.errorWatch); extension.errorWatch = 0; } if (extension.input != nullptr) { g_io_channel_unref(extension.input); extension.input = nullptr; } if (extension.output != nullptr) { g_io_channel_unref(extension.output); extension.output = nullptr; } if (extension.errorOutput != nullptr) { g_io_channel_unref(extension.errorOutput); extension.errorOutput = nullptr; }
 #ifdef _WIN32
         const auto stopReader = [](auto& reader) { if (reader == nullptr) return; reader->stop.store(true); if (reader->fd >= 0) { _close(reader->fd); reader->fd = -1; } if (reader->worker.joinable()) reader->worker.join(); reader.reset(); };
         stopReader(extension.outputReader);
@@ -745,5 +863,45 @@ void TExtensionsManager::showLog(std::size_t index) {
     gtk_text_buffer_set_text(gtk_text_view_get_buffer(GTK_TEXT_VIEW(view)), extensions[index].log.c_str(), -1);
     gtk_widget_show_all(dialog);
     gtk_dialog_run(GTK_DIALOG(dialog));
+    gtk_widget_destroy(dialog);
+}
+
+void TExtensionsManager::showDetails(std::size_t index) {
+    if (index >= extensions.size()) return;
+    auto& extension = extensions[index];
+    const auto& manifest = extension.manifest;
+    GtkWidget* dialog = gtk_dialog_new_with_buttons(manifest.name.c_str(), window == nullptr ? nullptr : GTK_WINDOW(window), GTK_DIALOG_MODAL, "Close", GTK_RESPONSE_CLOSE, nullptr);
+    gtk_window_set_default_size(GTK_WINDOW(dialog), 460, 320);
+    GtkWidget* content = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
+    const std::string status = !manifest.error.empty() || !extension.runtimeError.empty() ? "failed" : extension.launching ? "starting" : extension.pid != 0 ? "running" : extension.enabled ? "stopped" : "disabled";
+    std::string summary = "ID: " + manifest.id + "\nVersion: " + manifest.version + "\nStatus: " + status + "\nRuntime: " + manifest.runtime + "\nEntry: " + (manifest.entry.empty() ? (manifest.autoDiscover ? "automatic discovery" : "none") : manifest.entry);
+    if (!manifest.publisher.empty()) summary += "\nPublisher: " + manifest.publisher;
+    GtkWidget* label = gtk_label_new(summary.c_str());
+    gtk_label_set_xalign(GTK_LABEL(label), 0.0f);
+    gtk_box_pack_start(GTK_BOX(content), label, false, false, 6);
+    GtkWidget* capabilitiesFrame = gtk_frame_new("Requested capabilities");
+    GtkWidget* capabilities = gtk_box_new(GTK_ORIENTATION_VERTICAL, 3);
+    gtk_container_set_border_width(GTK_CONTAINER(capabilities), 6);
+    gtk_container_add(GTK_CONTAINER(capabilitiesFrame), capabilities);
+    std::vector<std::pair<std::string, GtkWidget*>> capabilityButtons;
+    for (const auto& capability : manifest.requestedCapabilities) { GtkWidget* button = gtk_check_button_new_with_label(capability.c_str()); gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(button), extension.approvedCapabilities.count(capability) != 0); gtk_box_pack_start(GTK_BOX(capabilities), button, false, false, 0); capabilityButtons.emplace_back(capability, button); }
+    if (manifest.requestedCapabilities.empty()) gtk_box_pack_start(GTK_BOX(capabilities), gtk_label_new("None declared"), false, false, 0);
+    gtk_box_pack_start(GTK_BOX(content), capabilitiesFrame, false, false, 6);
+    std::string slots = "UI slots: ";
+    for (const auto& slot : manifest.uiContributions) { if (slots.size() > 10) slots += ", "; slots += slot; }
+    if (manifest.uiContributions.empty()) slots += "none";
+    GtkWidget* slotsLabel = gtk_label_new(slots.c_str());
+    gtk_label_set_xalign(GTK_LABEL(slotsLabel), 0.0f);
+    gtk_box_pack_start(GTK_BOX(content), slotsLabel, false, false, 6);
+    const auto joinList = [](const std::vector<std::string>& values) { std::string result; for (const auto& value : values) { if (!result.empty()) result += ", "; result += value; } return result.empty() ? std::string("none") : result; };
+    GtkWidget* contributions = gtk_label_new(("Themes: " + joinList(manifest.themes) + "\nCommands/shortcuts: " + joinList(manifest.commands) + "\nRead-only views: " + joinList(manifest.readOnlyViews)).c_str());
+    gtk_label_set_xalign(GTK_LABEL(contributions), 0.0f);
+    gtk_box_pack_start(GTK_BOX(content), contributions, false, false, 6);
+    if (!manifest.error.empty() || !extension.runtimeError.empty()) { const std::string errorText = !manifest.error.empty() ? "Manifest error: " + manifest.error : "Runtime error: " + extension.runtimeError; GtkWidget* error = gtk_label_new(errorText.c_str()); gtk_label_set_xalign(GTK_LABEL(error), 0.0f); gtk_box_pack_start(GTK_BOX(content), error, false, false, 6); }
+    gtk_widget_show_all(dialog);
+    gtk_dialog_run(GTK_DIALOG(dialog));
+    extension.approvedCapabilities.clear();
+    for (const auto& item : capabilityButtons) if (gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(item.second))) extension.approvedCapabilities.insert(item.first);
+    saveState();
     gtk_widget_destroy(dialog);
 }
