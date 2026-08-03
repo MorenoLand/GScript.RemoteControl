@@ -45,6 +45,13 @@ extern void remote_control_set_tray_label(const char* serverName, int playerCoun
 namespace {
 struct ChannelScrollRequest { GtkWidget* field = nullptr; double previousValue = 0.0; };
 struct CompletionPopupRequest { GtkWidget* entry = nullptr; GtkTreeModel* model = nullptr; GtkEntryCompletion* completion = nullptr; unsigned attempts = 0; };
+bool isInternalProtocolText(const std::string& value) {
+    if (value.rfind("GraalEngine", 0) == 0 || value.rfind("raalEngine", 0) == 0) return true;
+    const std::size_t separator = value.find_first_of("\x01\n");
+    if (separator == std::string::npos) return false;
+    const std::string namespaceName = value.substr(0, separator);
+    return namespaceName == "GraalEngine" || namespaceName == "raalEngine";
+}
 void destroyCompletionPopupRequest(gpointer data) {
     CompletionPopupRequest* request = static_cast<CompletionPopupRequest*>(data);
     g_object_unref(request->entry);
@@ -1444,6 +1451,7 @@ void TRemoteFrame::onDisconnected(const char* reason, void* data) {
 void TRemoteFrame::onMessage(const char* message, void* data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
     const std::string value = message == nullptr ? "" : message;
+    if (isInternalProtocolText(value)) return;
     if (frame->options.separatefindresults && frame->appendFindResult(value)) return;
     frame->appendChat(value);
 }
@@ -1538,7 +1546,7 @@ void TRemoteFrame::onServerData(const char* type, const char* content, void* dat
         frame->playerList->setStatusList(value.c_str());
     }
     else if (type != nullptr && std::string(type) == "toall" && frame->toallsWindow != nullptr) frame->toallsWindow->append(value.c_str());
-    else if (type != nullptr && std::string(type) == "server_text") frame->appendChat(value);
+    else if (type != nullptr && std::string(type) == "server_text" && !isInternalProtocolText(value)) frame->appendChat(value);
     else if (type != nullptr && std::string(type) == "nc_message") {
         if (frame->options.separatenc) frame->appendChannelMessage("NC", value);
         else frame->appendChat(value);
@@ -1587,6 +1595,7 @@ void TRemoteFrame::graphicalAction(int index) {
 }
 
 void TRemoteFrame::appendChat(const std::string& message, bool suppressUrgency, bool suppressEmotes) {
+    if (isInternalProtocolText(message)) return;
     const bool colorAlert = message.rfind("#ALERT", 0) == 0;
     std::string display = message;
     const bool alert = applyAlertTag(display, !suppressUrgency);
