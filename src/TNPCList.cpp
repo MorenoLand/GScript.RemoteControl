@@ -14,7 +14,7 @@
 #include <set>
 #include <string>
 
-TNPCList::TNPCList(std::string accountName) : accountName(std::move(accountName)) {
+TNPCList::TNPCList(std::string accountName, RC::RCOptions* nextOptions) : accountName(std::move(accountName)), options(nextOptions) {
     window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
     gtk_window_set_title(GTK_WINDOW(window), "NPCs");
     gtk_window_set_default_size(GTK_WINDOW(window), 520, 360);
@@ -69,6 +69,7 @@ TNPCList::~TNPCList() { if (window != nullptr) gtk_widget_destroy(window); if (s
 void TNPCList::setServerName(const std::string& server) { serverName = server; gtk_window_set_title(GTK_WINDOW(window), serverName.empty() ? "NPCs" : ("NPCs - " + serverName).c_str()); }
 void TNPCList::hide() { if (window != nullptr) gtk_widget_hide(window); }
 void TNPCList::open(void* nextConnection) { connection = nextConnection; rc_on_npc_added(connection, onNPCChanged, this); rc_on_npc_deleted(connection, [](int, void* data) { static_cast<TNPCList*>(data)->refresh(); }, this); refresh(); gtk_widget_show_all(window); gtk_window_present(GTK_WINDOW(window)); }
+void TNPCList::setConnection(void* nextConnection) { connection = nextConnection; }
 void TNPCList::onRefresh(GtkButton*, gpointer data) { static_cast<TNPCList*>(data)->refresh(); }
 void TNPCList::onAdd(GtkButton*, gpointer data) {
     TNPCList* list = static_cast<TNPCList*>(data);
@@ -238,8 +239,23 @@ void TNPCList::onDeleteNPC(GtkMenuItem*, gpointer data) {
     if (response == GTK_RESPONSE_OK) rc_delete_npc(list->connection, list->selectedNPCId);
 }
 void TNPCList::showScriptEditor(const char* name, int id, const char* script) {
+    if (options != nullptr && (options->externaleditorscope == "scripts" || options->externaleditorscope == "text")) {
+        if (externalEditor == nullptr || externalWorkspace != options->externaleditorworkspace || externalCommand != options->externaleditorcommand) {
+            externalWorkspace = options->externaleditorworkspace;
+            externalCommand = options->externaleditorcommand;
+            externalEditor = std::make_unique<TExternalEditor>(externalWorkspace, externalCommand);
+        }
+        const std::string scriptName = name == nullptr || *name == '\0' ? std::to_string(id) : std::string(name);
+        const std::string backupName = "npc" + scriptName;
+        externalEditor->open(serverName, "npcs", std::to_string(id) + "_" + scriptName, script == nullptr ? "" : script, [this, id, backupName](const std::string& updated) {
+            backupEditorText("npcscript", backupName, updated, true);
+            if (connection != nullptr) rc_update_npc(connection, id, updated.c_str());
+        });
+        return;
+    }
     struct EditorState { void* connection; int id; std::string backupName; GtkWidget* editor; };
-    const std::string editorTitle = serverName.empty() ? std::string(name) : std::string(name) + " - " + serverName;
+    const std::string scriptName = name == nullptr ? "" : name;
+    const std::string editorTitle = "Npcscript: " + scriptName + (serverName.empty() ? "" : " (" + serverName + ")");
     GtkWidget* dialog = gtk_dialog_new_with_buttons(editorTitle.c_str(), GTK_WINDOW(window), static_cast<GtkDialogFlags>(0), "Apply", GTK_RESPONSE_ACCEPT, "Close", GTK_RESPONSE_CANCEL, nullptr);
     gtk_window_set_destroy_with_parent(GTK_WINDOW(dialog), false);
     gtk_window_set_transient_for(GTK_WINDOW(dialog), nullptr);
@@ -255,7 +271,7 @@ void TNPCList::showScriptEditor(const char* name, int id, const char* script) {
     addEditorFindButton(dialog, editor);
     gtk_text_view_set_monospace(GTK_TEXT_VIEW(editor), true);
     setGScriptEditorContent(GTK_TEXT_BUFFER(sourceBuffer), script);
-    trackScriptEditor(dialog, GTK_TEXT_BUFFER(sourceBuffer), "NPC: " + std::string(name), script);
+    trackScriptEditor(dialog, GTK_TEXT_BUFFER(sourceBuffer), editorTitle, script, connection);
     const std::string backupName = name != nullptr && *name != '\0' ? "npc" + std::string(name) : std::to_string(id);
     backupEditorText("npcscript", backupName, script, false);
     g_object_unref(sourceBuffer);
@@ -285,7 +301,8 @@ void TNPCList::showScriptEditor(const char* name, int id, const char* script) {
             gtk_text_buffer_get_bounds(buffer, &start, &end);
             gchar* updated = gtk_text_buffer_get_text(buffer, &start, &end, false);
             backupEditorText("npcscript", editorState->backupName, updated == nullptr ? "" : updated, true);
-            rc_update_npc(editorState->connection, editorState->id, updated);
+            void* currentConnection = scriptEditorConnection(buffer);
+            if (currentConnection != nullptr) rc_update_npc(currentConnection, editorState->id, updated);
             g_free(updated);
             markScriptEditorSaved(buffer);
         } else gtk_widget_destroy(GTK_WIDGET(responseDialog));
@@ -294,6 +311,19 @@ void TNPCList::showScriptEditor(const char* name, int id, const char* script) {
     gtk_widget_show_all(dialog);
 }
 void TNPCList::showFlagsEditor(int id, const char* flags) {
+    if (options != nullptr && options->externaleditorscope == "text") {
+        if (externalEditor == nullptr || externalWorkspace != options->externaleditorworkspace || externalCommand != options->externaleditorcommand) {
+            externalWorkspace = options->externaleditorworkspace;
+            externalCommand = options->externaleditorcommand;
+            externalEditor = std::make_unique<TExternalEditor>(externalWorkspace, externalCommand);
+        }
+        const std::string fileName = "npc_" + std::to_string(id) + "_flags.txt";
+        externalEditor->open(serverName, "npcflags", fileName, flags == nullptr ? "" : flags, [this, id](const std::string& updated) {
+            backupEditorText("npcflags", std::to_string(id), updated, true);
+            if (connection != nullptr) rc_set_npc_flags(connection, id, updated.c_str());
+        });
+        return;
+    }
     struct FlagState { void* connection; int id; GtkWidget* text; };
     const std::string editorTitle = serverName.empty() ? "Edit Flags" : "Edit Flags - " + serverName;
     GtkWidget* dialog = gtk_dialog_new_with_buttons(editorTitle.c_str(), GTK_WINDOW(window), static_cast<GtkDialogFlags>(0), "Apply", GTK_RESPONSE_ACCEPT, "Close", GTK_RESPONSE_CANCEL, nullptr);

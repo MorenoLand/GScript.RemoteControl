@@ -1,4 +1,5 @@
 #include "TScriptList.h"
+#include "TExtensions.h"
 #include "TButtonIcons.h"
 #include "TBackup.h"
 #include "TEditorFind.h"
@@ -14,9 +15,48 @@
 namespace {
     TScriptList* classList = nullptr;
     TScriptList* weaponList = nullptr;
+
+    struct EditorExtensionActionState {
+        TExtensionsManager* manager;
+        RC::ExtensionWindowActionBinding action;
+        GtkWidget* editor;
+        std::string windowId;
+        std::string kind;
+        std::string scriptType;
+        std::string scriptName;
+        std::string title;
+    };
+
+    void onEditorExtensionAction(GtkButton*, gpointer data) {
+        auto* state = static_cast<EditorExtensionActionState*>(data);
+        if (state == nullptr || state->manager == nullptr || state->editor == nullptr) return;
+        GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(state->editor));
+        GtkTextIter start;
+        GtkTextIter end;
+        gtk_text_buffer_get_bounds(buffer, &start, &end);
+        gchar* text = gtk_text_buffer_get_text(buffer, &start, &end, false);
+        GtkTextIter selectionStart;
+        GtkTextIter selectionEnd;
+        std::string selection;
+        if (gtk_text_buffer_get_selection_bounds(buffer, &selectionStart, &selectionEnd)) {
+            gchar* selected = gtk_text_buffer_get_text(buffer, &selectionStart, &selectionEnd, false);
+            if (selected != nullptr) { selection = selected; g_free(selected); }
+        }
+        RC::ExtensionWindowContext context;
+        context.windowId = state->windowId;
+        context.kind = state->kind;
+        context.title = state->title;
+        context.scriptType = state->scriptType;
+        context.scriptName = state->scriptName;
+        context.text = text == nullptr ? "" : text;
+        context.selection = selection;
+        std::string error;
+        if (!state->manager->invokeWindowAction(state->action, context, error) && !error.empty()) g_printerr("Extension window action failed: %s\n", error.c_str());
+        g_free(text);
+    }
 }
 
-TScriptList::TScriptList(std::string nextType, RC::RCOptions* nextOptions) : type(std::move(nextType)), options(nextOptions) {
+TScriptList::TScriptList(std::string nextType, RC::RCOptions* nextOptions, TExtensionsManager* nextExtensions) : type(std::move(nextType)), options(nextOptions), extensionsManager(nextExtensions) {
     window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
     gtk_window_set_title(GTK_WINDOW(window), (type == "classes" ? "Classes" : "Weapon/GUI-Script List"));
     gtk_window_set_default_size(GTK_WINDOW(window), 540, 460);
@@ -81,6 +121,7 @@ void TScriptList::open(void* nextConnection) {
     rc_on_weapon_list_received(connection, onWeaponListReceived, this);
     rc_request_weapon_list(connection);
 }
+void TScriptList::setConnection(void* nextConnection) { connection = nextConnection; }
 void TScriptList::restoreScriptReceiver(void* connection) { rc_on_script_received(connection, onScript, nullptr); }
 
 void TScriptList::onWeaponListReceived(int, void* data) {
@@ -104,7 +145,7 @@ void TScriptList::onAdd(GtkButton*, gpointer data) {
     GtkWidget* image = gtk_entry_new();
     gtk_grid_attach(GTK_GRID(grid), gtk_label_new("Name:"), 0, 0, 1, 1);
     gtk_grid_attach(GTK_GRID(grid), name, 1, 0, 1, 1);
-    gtk_grid_attach(GTK_GRID(grid), gtk_label_new("Image:"), 0, 1, 1, 1);
+    gtk_grid_attach(GTK_GRID(grid), gtk_label_new("Icon:"), 0, 1, 1, 1);
     gtk_grid_attach(GTK_GRID(grid), image, 1, 1, 1, 1);
     gtk_box_pack_start(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), grid, true, true, 0);
     auto* state = new AddState{list, name, image};
@@ -175,21 +216,27 @@ void TScriptList::onScript(const char* scriptType, const char* name, int, const 
 }
 
 void TScriptList::showEditor(const char* name, const char* script) {
+    const std::string scriptName = name == nullptr ? "" : name;
+    std::string weaponIcon;
+    if (type == "weapons" && connection != nullptr) {
+        RCWeapon* entries = nullptr;
+        const int count = rc_get_weapons(connection, &entries);
+        for (int index = 0; index < count; ++index) if (entries[index].name != nullptr && scriptName == entries[index].name) { if (entries[index].image != nullptr) weaponIcon = entries[index].image; break; }
+    }
     if (options != nullptr && (options->externaleditorscope == "scripts" || options->externaleditorscope == "text")) {
         if (externalEditor == nullptr || externalWorkspace != options->externaleditorworkspace || externalCommand != options->externaleditorcommand) {
             externalWorkspace = options->externaleditorworkspace;
             externalCommand = options->externaleditorcommand;
             externalEditor = std::make_unique<TExternalEditor>(externalWorkspace, externalCommand);
         }
-        const std::string scriptName = name == nullptr ? "" : name;
-        externalEditor->open(serverName, type, scriptName, script == nullptr ? "" : script, [this, scriptName](const std::string& updated) {
+        externalEditor->open(serverName, type, scriptName, script == nullptr ? "" : script, [this, scriptName, weaponIcon](const std::string& updated) {
             backupEditorText(type == "weapons" ? "weapon" : "class", scriptName, updated, true);
-            if (type == "weapons") rc_update_weapon(connection, scriptName.c_str(), "", updated.c_str()); else rc_update_class(connection, scriptName.c_str(), updated.c_str());
+            if (type == "weapons") rc_update_weapon(connection, scriptName.c_str(), weaponIcon.c_str(), updated.c_str()); else rc_update_class(connection, scriptName.c_str(), updated.c_str());
         });
         return;
     }
-    struct EditorState { void* connection; bool weapon; std::string name; GtkWidget* editor; };
-    const std::string editorTitle = serverName.empty() ? std::string(name) : std::string(name) + " - " + serverName;
+    struct EditorState { void* connection; bool weapon; std::string name; GtkWidget* editor; GtkWidget* icon; };
+    const std::string editorTitle = (type == "weapons" ? "Weapon: " : "Class: ") + scriptName + (serverName.empty() ? "" : " (" + serverName + ")");
     GtkWidget* dialog = gtk_dialog_new_with_buttons(editorTitle.c_str(), GTK_WINDOW(window), static_cast<GtkDialogFlags>(0), "Apply", GTK_RESPONSE_ACCEPT, "Close", GTK_RESPONSE_CANCEL, nullptr);
     gtk_window_set_destroy_with_parent(GTK_WINDOW(dialog), false);
     gtk_window_set_transient_for(GTK_WINDOW(dialog), nullptr);
@@ -205,14 +252,38 @@ void TScriptList::showEditor(const char* name, const char* script) {
     addEditorFindButton(dialog, editor);
     gtk_text_view_set_monospace(GTK_TEXT_VIEW(editor), true);
     setGScriptEditorContent(GTK_TEXT_BUFFER(sourceBuffer), script);
-    trackScriptEditor(dialog, GTK_TEXT_BUFFER(sourceBuffer), (type == "weapons" ? "Weapon/GUI Script: " : "Class: ") + std::string(name), script);
-    backupEditorText(type == "weapons" ? "weapon" : "class", name, script, false);
+    trackScriptEditor(dialog, GTK_TEXT_BUFFER(sourceBuffer), editorTitle, script, connection);
+    backupEditorText(type == "weapons" ? "weapon" : "class", scriptName.c_str(), script, false);
     g_object_unref(sourceBuffer);
     GtkWidget* scrolled = gtk_scrolled_window_new(nullptr, nullptr);
     gtk_container_add(GTK_CONTAINER(scrolled), editor);
     GtkWidget* content = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
     gtk_container_set_border_width(GTK_CONTAINER(content), 0);
     gtk_box_set_spacing(GTK_BOX(content), 0);
+    const auto actions = extensionsManager == nullptr ? std::vector<RC::ExtensionWindowActionBinding>() : extensionsManager->windowActions("script-editor");
+    if (!actions.empty()) {
+        GtkWidget* actionBar = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
+        gtk_container_set_border_width(GTK_CONTAINER(actionBar), 4);
+        for (const auto& action : actions) {
+            auto* actionState = new EditorExtensionActionState{extensionsManager, action, editor, type + ":" + scriptName, "script-editor", type, scriptName, editorTitle};
+            GtkWidget* actionButton = gtk_button_new_with_label(action.action.label.c_str());
+            gtk_widget_set_tooltip_text(actionButton, ("Run " + action.action.label + " from " + action.extensionName).c_str());
+            g_signal_connect_data(actionButton, "clicked", G_CALLBACK(onEditorExtensionAction), actionState, [](gpointer data, GClosure*) { delete static_cast<EditorExtensionActionState*>(data); }, static_cast<GConnectFlags>(0));
+            gtk_box_pack_start(GTK_BOX(actionBar), actionButton, false, false, 0);
+        }
+        gtk_box_pack_start(GTK_BOX(content), actionBar, false, false, 0);
+    }
+    GtkWidget* icon = nullptr;
+    if (type == "weapons") {
+        GtkWidget* iconRow = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 5);
+        gtk_container_set_border_width(GTK_CONTAINER(iconRow), 5);
+        gtk_box_pack_start(GTK_BOX(iconRow), gtk_label_new("Icon:"), false, false, 0);
+        icon = gtk_entry_new();
+        gtk_entry_set_text(GTK_ENTRY(icon), weaponIcon.c_str());
+        gtk_widget_set_hexpand(icon, true);
+        gtk_box_pack_start(GTK_BOX(iconRow), icon, true, true, 0);
+        gtk_box_pack_start(GTK_BOX(content), iconRow, false, false, 0);
+    }
     gtk_widget_set_margin_top(scrolled, 0);
     gtk_box_pack_start(GTK_BOX(content), wrapGScriptEditor(editor, scrolled), true, true, 0);
     addGScriptEditorLineStatus(GTK_DIALOG(dialog), editor);
@@ -224,7 +295,7 @@ void TScriptList::showEditor(const char* name, const char* script) {
         return static_cast<gboolean>(FALSE);
     }), dialog);
     g_signal_connect(editor, "key-release-event", G_CALLBACK(releaseEditorCtrlS), nullptr);
-    auto* state = new EditorState{connection, type == "weapons", name, editor};
+    auto* state = new EditorState{connection, type == "weapons", scriptName, editor, icon};
     g_signal_connect(dialog, "response", G_CALLBACK(+[](GtkDialog* responseDialog, gint response, gpointer data) {
         auto* editorState = static_cast<EditorState*>(data);
         if (response == GTK_RESPONSE_ACCEPT) {
@@ -234,12 +305,20 @@ void TScriptList::showEditor(const char* name, const char* script) {
             gtk_text_buffer_get_bounds(editorBuffer, &start, &end);
             gchar* updated = gtk_text_buffer_get_text(editorBuffer, &start, &end, false);
             backupEditorText(editorState->weapon ? "weapon" : "class", editorState->name, updated == nullptr ? "" : updated, true);
-            if (editorState->weapon) rc_update_weapon(editorState->connection, editorState->name.c_str(), "", updated);
-            else rc_update_class(editorState->connection, editorState->name.c_str(), updated);
+            void* currentConnection = scriptEditorConnection(editorBuffer);
+            if (currentConnection != nullptr) {
+                if (editorState->weapon) rc_update_weapon(currentConnection, editorState->name.c_str(), editorState->icon == nullptr ? "" : gtk_entry_get_text(GTK_ENTRY(editorState->icon)), updated);
+                else rc_update_class(currentConnection, editorState->name.c_str(), updated);
+            }
             g_free(updated);
             markScriptEditorSaved(editorBuffer);
         } else gtk_widget_destroy(GTK_WIDGET(responseDialog));
     }), state);
     g_signal_connect(dialog, "destroy", G_CALLBACK(+[](GtkWidget*, gpointer data) { delete static_cast<EditorState*>(data); }), state);
     gtk_widget_show_all(dialog);
+    if (icon != nullptr) {
+        gtk_editable_select_region(GTK_EDITABLE(icon), 0, 0);
+        gtk_editable_set_position(GTK_EDITABLE(icon), -1);
+    }
+    gtk_widget_grab_focus(editor);
 }

@@ -137,6 +137,64 @@ namespace {
         return false;
     }
 
+    std::vector<std::string> jsonObjectArray(const std::string& json, const std::string& key) {
+        std::vector<std::string> result;
+        const std::string field = "\"" + key + "\"";
+        std::size_t position = json.find(field);
+        if (position == std::string::npos) return result;
+        position = json.find('[', position + field.size());
+        if (position == std::string::npos) return result;
+        const std::size_t arrayEnd = json.find(']', position + 1);
+        if (arrayEnd == std::string::npos) return result;
+        ++position;
+        while (position < arrayEnd) {
+            while (position < arrayEnd && (std::isspace(static_cast<unsigned char>(json[position])) || json[position] == ',')) ++position;
+            if (position >= arrayEnd) break;
+            if (json[position] != '{') { while (position < arrayEnd && json[position] != ',') ++position; continue; }
+            const std::size_t start = position;
+            int depth = 0;
+            bool quoted = false;
+            bool escaped = false;
+            for (; position < arrayEnd; ++position) {
+                const char character = json[position];
+                if (quoted) { if (escaped) escaped = false; else if (character == '\\') escaped = true; else if (character == '"') quoted = false; continue; }
+                if (character == '"') quoted = true;
+                else if (character == '{') ++depth;
+                else if (character == '}' && --depth == 0) { ++position; break; }
+            }
+            if (depth == 0) result.push_back(json.substr(start, position - start));
+        }
+        return result;
+    }
+
+    std::vector<RC::ExtensionWindowAction> jsonWindowActions(const std::string& json) {
+        std::vector<RC::ExtensionWindowAction> result;
+        for (const auto& object : jsonObjectArray(json, "windowActions")) {
+            RC::ExtensionWindowAction action;
+            jsonStringValue(object, "kind", action.kind);
+            jsonStringValue(object, "id", action.id);
+            jsonStringValue(object, "label", action.label);
+            if (action.kind.empty()) action.kind = "script-editor";
+            if (action.label.empty()) action.label = action.id;
+            if (!action.id.empty() && !action.label.empty()) result.push_back(std::move(action));
+        }
+        return result;
+    }
+
+    std::vector<RC::ExtensionWindowAction> iniWindowActions(const std::string& value) {
+        std::vector<RC::ExtensionWindowAction> result;
+        for (const auto& token : splitList(value)) {
+            const std::size_t first = token.find(':');
+            const std::size_t second = first == std::string::npos ? std::string::npos : token.find(':', first + 1);
+            RC::ExtensionWindowAction action;
+            action.kind = first == std::string::npos ? "script-editor" : trim(token.substr(0, first));
+            action.id = first == std::string::npos ? trim(token) : trim(token.substr(first + 1, second == std::string::npos ? std::string::npos : second - first - 1));
+            action.label = second == std::string::npos ? action.id : trim(token.substr(second + 1));
+            if (!action.id.empty()) result.push_back(std::move(action));
+        }
+        return result;
+    }
+
     std::string extensionDisplayLine(const std::string& json) {
         std::string display;
         if (jsonStringValue(json, "display", display) && !display.empty()) return display;
@@ -253,6 +311,7 @@ bool loadExtensionManifest(const std::filesystem::path& path, ExtensionManifest&
         manifest.themes = jsonStringArray(json, "themes");
         manifest.commands = jsonStringArray(json, "commands");
         manifest.readOnlyViews = jsonStringArray(json, "readOnlyViews");
+        manifest.windowActions = jsonWindowActions(json);
         std::string mode;
         jsonStringValue(json, "mode", mode);
         if (mode.empty()) jsonStringValue(json, "entryMode", mode);
@@ -283,6 +342,7 @@ bool loadExtensionManifest(const std::filesystem::path& path, ExtensionManifest&
     manifest.themes = splitList(getValue(values, "themes"));
     manifest.commands = splitList(getValue(values, "commands"));
     manifest.readOnlyViews = splitList(getValue(values, "readOnlyViews"));
+    manifest.windowActions = iniWindowActions(getValue(values, "windowActions"));
     const std::string mode = getValue(values, "mode").empty() ? getValue(values, "entryMode") : getValue(values, "mode");
     const std::string autoDiscover = getValue(values, "autoDiscover");
     manifest.autoDiscover = mode == "auto" || mode == "discover" || autoDiscover == "1" || autoDiscover == "true";
@@ -572,6 +632,30 @@ void TExtensionsManager::showWindow() {
     }
     gtk_widget_show_all(window);
     gtk_window_present(GTK_WINDOW(window));
+}
+
+std::vector<RC::ExtensionWindowActionBinding> TExtensionsManager::windowActions(const std::string& kind) const {
+    std::vector<RC::ExtensionWindowActionBinding> result;
+    for (const auto& extension : extensions) {
+        if (!extension.enabled || !extension.manifest.error.empty()) continue;
+        for (const auto& action : extension.manifest.windowActions) if (action.kind == kind) result.push_back({extension.manifest.id, extension.manifest.name, action});
+    }
+    return result;
+}
+
+bool TExtensionsManager::invokeWindowAction(const RC::ExtensionWindowActionBinding& binding, const RC::ExtensionWindowContext& context, std::string& error) {
+    const auto found = std::find_if(extensions.begin(), extensions.end(), [&](const ExtensionState& extension) { return extension.manifest.id == binding.extensionId; });
+    if (found == extensions.end()) { error = "Extension is no longer installed"; return false; }
+    if (!found->enabled || !found->manifest.error.empty()) { error = "Extension is disabled or has an invalid manifest"; return false; }
+    if (found->pid == 0 || found->input == nullptr) { error = "Extension runtime is not running"; return false; }
+    const auto declared = std::find_if(found->manifest.windowActions.begin(), found->manifest.windowActions.end(), [&](const RC::ExtensionWindowAction& action) { return action.kind == binding.action.kind && action.id == binding.action.id; });
+    if (declared == found->manifest.windowActions.end()) { error = "Window action is not declared by the extension"; return false; }
+    static std::atomic<unsigned long long> requestId = 0;
+    const std::string id = "window-action-" + std::to_string(++requestId);
+    const std::string request = "{\"id\":\"" + jsonEscape(id) + "\",\"method\":\"window/action\",\"params\":{\"action\":\"" + jsonEscape(binding.action.id) + "\",\"context\":{\"windowId\":\"" + jsonEscape(context.windowId) + "\",\"kind\":\"" + jsonEscape(context.kind) + "\",\"title\":\"" + jsonEscape(context.title) + "\",\"scriptType\":\"" + jsonEscape(context.scriptType) + "\",\"scriptName\":\"" + jsonEscape(context.scriptName) + "\",\"text\":\"" + jsonEscape(context.text) + "\",\"selection\":\"" + jsonEscape(context.selection) + "}}}";
+    const std::size_t index = static_cast<std::size_t>(std::distance(extensions.begin(), found));
+    sendRequest(index, request);
+    return true;
 }
 
 void TExtensionsManager::onEnable(GtkToggleButton* button, gpointer data) { auto* manager = static_cast<TExtensionsManager*>(data); const std::size_t index = GPOINTER_TO_SIZE(g_object_get_data(G_OBJECT(button), "extension-index")); manager->setEnabled(index, gtk_toggle_button_get_active(button)); }

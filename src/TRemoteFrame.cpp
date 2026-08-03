@@ -259,11 +259,26 @@ GdkPixbuf* commandCompletionIcon(const char* command) {
     cairo_surface_destroy(surface);
     return result;
 }
+std::string remoteControlBuildDate() {
+    std::istringstream stream(REMOTE_CONTROL_BUILD_DATE);
+    std::string month;
+    int day = 0;
+    int year = 0;
+    stream >> month >> day >> year;
+    static const char* months[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
+    int monthNumber = 0;
+    for (int index = 0; index < 12; ++index) if (month == months[index]) { monthNumber = index + 1; break; }
+    if (monthNumber == 0 || day <= 0 || year <= 0) return REMOTE_CONTROL_BUILD_DATE;
+    std::ostringstream formatted;
+    formatted << year << '/' << std::setfill('0') << std::setw(2) << monthNumber << '/' << std::setw(2) << day;
+    return formatted.str();
+}
+
 std::string remoteControlTitle(const std::string& server = {}, const std::string& players = {}, int syncProgress = -1) {
     std::string title = server.empty() ? "Remote Control" : server;
     if (!players.empty()) title += " [" + players + "]";
     if (syncProgress >= 0) title += " [Sync: " + std::to_string(syncProgress) + "%]";
-    return title + " - " + REMOTE_CONTROL_BUILD_DATE;
+    return title + " - " + remoteControlBuildDate();
 }
 
 }
@@ -720,6 +735,15 @@ TRemoteFrame::~TRemoteFrame() {
 
 void TRemoteFrame::open(void* nextConnection, int serverIndex, const std::string& serverName, const std::string& nickname, const std::string& accountName) {
     connection = nextConnection;
+    rebindScriptEditorConnection(nullptr, connection);
+    rebindGScriptEditorConnections(nullptr, connection);
+    if (classList != nullptr) classList->setConnection(connection);
+    if (weaponList != nullptr) weaponList->setConnection(connection);
+    if (npcList != nullptr) npcList->setConnection(connection);
+    if (fileBrowser != nullptr) fileBrowser->setConnection(connection);
+    if (serverOptionsEditor != nullptr) serverOptionsEditor->setConnection(connection);
+    if (serverFlagsEditor != nullptr) serverFlagsEditor->setConnection(connection);
+    if (folderConfigEditor != nullptr) folderConfigEditor->setConnection(connection);
     currentServerIndex = serverIndex;
     this->serverName = serverName;
     syncManager->setConnection(nextConnection, serverName);
@@ -758,6 +782,21 @@ void TRemoteFrame::open(void* nextConnection, int serverIndex, const std::string
     if (eventSource == 0) eventSource = g_timeout_add(50, processEvents, this);
     refreshMentionCompletion();
     gtk_widget_show_all(window);
+    const int chatPage = chatScrolled == nullptr ? -1 : gtk_notebook_page_num(GTK_NOTEBOOK(notebook), chatScrolled);
+    if (chatPage >= 0) gtk_notebook_set_current_page(GTK_NOTEBOOK(notebook), chatPage);
+    struct ChatSelection { GtkWidget* notebook; GtkWidget* chat; };
+    if (notebook != nullptr && chatScrolled != nullptr) {
+        auto* selection = new ChatSelection{GTK_WIDGET(g_object_ref(notebook)), GTK_WIDGET(g_object_ref(chatScrolled))};
+        g_idle_add_full(G_PRIORITY_LOW, +[](gpointer data) -> gboolean {
+            auto* selection = static_cast<ChatSelection*>(data);
+            const int page = gtk_notebook_page_num(GTK_NOTEBOOK(selection->notebook), selection->chat);
+            if (page >= 0) gtk_notebook_set_current_page(GTK_NOTEBOOK(selection->notebook), page);
+            g_object_unref(selection->chat);
+            g_object_unref(selection->notebook);
+            delete selection;
+            return G_SOURCE_REMOVE;
+        }, selection, nullptr);
+    }
     gtk_window_present(GTK_WINDOW(window));
     gtk_widget_grab_focus(editField);
 }
@@ -768,7 +807,17 @@ void TRemoteFrame::disconnect() {
         eventSource = 0;
     }
     if (connection == nullptr) return;
-    rc_disconnect(connection);
+    void* disconnectedConnection = connection;
+    detachScriptEditorConnection(disconnectedConnection);
+    detachGScriptEditorConnections(disconnectedConnection);
+    if (classList != nullptr) classList->setConnection(nullptr);
+    if (weaponList != nullptr) weaponList->setConnection(nullptr);
+    if (npcList != nullptr) npcList->setConnection(nullptr);
+    if (fileBrowser != nullptr) fileBrowser->setConnection(nullptr);
+    if (serverOptionsEditor != nullptr) serverOptionsEditor->setConnection(nullptr);
+    if (serverFlagsEditor != nullptr) serverFlagsEditor->setConnection(nullptr);
+    if (folderConfigEditor != nullptr) folderConfigEditor->setConnection(nullptr);
+    rc_disconnect(disconnectedConnection);
     connection = nullptr;
 }
 
@@ -907,7 +956,7 @@ void TRemoteFrame::onFileBrowser(GtkMenuItem*, gpointer data) {
 void TRemoteFrame::onClasses(GtkMenuItem*, gpointer data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
     if (frame->connection == nullptr || rc_is_nc_authenticated(frame->connection) == 0) return;
-    if (frame->classList == nullptr) frame->classList = new TScriptList("classes", &frame->options);
+    if (frame->classList == nullptr) frame->classList = new TScriptList("classes", &frame->options, frame->extensionsManager.get());
     frame->classList->setServerName(frame->serverName);
     frame->classList->open(frame->connection);
 }
@@ -915,7 +964,7 @@ void TRemoteFrame::onClasses(GtkMenuItem*, gpointer data) {
 void TRemoteFrame::onWeapons(GtkMenuItem*, gpointer data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
     if (frame->connection == nullptr || rc_is_nc_authenticated(frame->connection) == 0) return;
-    if (frame->weaponList == nullptr) frame->weaponList = new TScriptList("weapons", &frame->options);
+    if (frame->weaponList == nullptr) frame->weaponList = new TScriptList("weapons", &frame->options, frame->extensionsManager.get());
     frame->weaponList->setServerName(frame->serverName);
     frame->weaponList->open(frame->connection);
 }
@@ -923,7 +972,7 @@ void TRemoteFrame::onWeapons(GtkMenuItem*, gpointer data) {
 void TRemoteFrame::onNPCs(GtkMenuItem*, gpointer data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
     if (frame->connection == nullptr || rc_is_nc_authenticated(frame->connection) == 0) return;
-    if (frame->npcList == nullptr) frame->npcList = new TNPCList(frame->accountName);
+    if (frame->npcList == nullptr) frame->npcList = new TNPCList(frame->accountName, &frame->options);
     frame->npcList->setServerName(frame->serverName);
     frame->npcList->open(frame->connection);
 }
@@ -1422,11 +1471,22 @@ void TRemoteFrame::onConnected(void* data) {
     remoteControlDebugLog("connected to %s", frame->accountName.c_str());
     if (!frame->nickname.empty()) rc_set_nickname(frame->connection, frame->nickname.c_str());
     frame->updateMassPMAcceptance();
-    rc_execute(frame->connection, (std::string("/npc newrc,") + REMOTE_CONTROL_BUILD_DATE).c_str());
+    rc_execute(frame->connection, (std::string("/npc newrc,") + remoteControlBuildDate()).c_str());
 }
 
 void TRemoteFrame::onDisconnected(const char* reason, void* data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
+    void* disconnectedConnection = frame->connection;
+    detachScriptEditorConnection(disconnectedConnection);
+    detachGScriptEditorConnections(disconnectedConnection);
+    if (frame->classList != nullptr) frame->classList->setConnection(nullptr);
+    if (frame->weaponList != nullptr) frame->weaponList->setConnection(nullptr);
+    if (frame->npcList != nullptr) frame->npcList->setConnection(nullptr);
+    if (frame->fileBrowser != nullptr) frame->fileBrowser->setConnection(nullptr);
+    if (frame->serverOptionsEditor != nullptr) frame->serverOptionsEditor->setConnection(nullptr);
+    if (frame->serverFlagsEditor != nullptr) frame->serverFlagsEditor->setConnection(nullptr);
+    if (frame->folderConfigEditor != nullptr) frame->folderConfigEditor->setConnection(nullptr);
+    frame->connection = nullptr;
     remote_control_set_tray_label(nullptr, 0);
     if (frame->suppressReconnectDisconnect) {
         frame->suppressReconnectDisconnect = false;

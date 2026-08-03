@@ -637,7 +637,7 @@ int main(int argc, char** argv) {
     std::function<void()> openAnotherServerList;
     TRemoteFrame* pendingServerSwitch = nullptr;
     TServerList* pendingServerSwitchSource = nullptr;
-    TServerList serverList([&] { if (remoteFrames.empty()) startFrame->show(); }, [&](TServerList* sourceList, void* connection, int serverIndex, const std::string& serverName, const std::string& nickname, const std::string& accountName, bool additional) {
+    TServerList serverList(applicationDirectory, [&] { if (remoteFrames.empty()) startFrame->show(); }, [&](TServerList* sourceList, void* connection, int serverIndex, const std::string& serverName, const std::string& nickname, const std::string& accountName, bool additional) {
         RC::loadRCOptions(options, applicationDirectory);
         applyRemoteControlTheme(options.theme, options.darkmode, options.roundedcorners);
         if (pendingServerSwitch != nullptr && pendingServerSwitchSource == sourceList && !additional) {

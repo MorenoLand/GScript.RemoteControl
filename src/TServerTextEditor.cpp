@@ -68,6 +68,7 @@ TServerTextEditor::TServerTextEditor(Kind nextKind, const char* nextTitle, RC::R
 void TServerTextEditor::setServerName(const std::string& server) { serverName = server; gtk_window_set_title(GTK_WINDOW(window), server.empty() ? title.c_str() : (title + " - " + server).c_str()); }
 
 TServerTextEditor::~TServerTextEditor() { if (window != nullptr) gtk_widget_destroy(window); }
+void TServerTextEditor::setConnection(void* nextConnection) { connection = nextConnection; }
 void TServerTextEditor::hide() { if (window != nullptr) gtk_widget_hide(window); }
 
 void TServerTextEditor::open(void* nextConnection) {

@@ -29,6 +29,7 @@ public:
     explicit TFileBrowserTree(const std::filesystem::path& applicationDirectory);
     ~TFileBrowserTree();
     void open(void* connection);
+    void setConnection(void* connection);
     void openFolder(void* connection, const std::string& folder);
     void hide();
     void setDownloadFolder(const std::string& folder);

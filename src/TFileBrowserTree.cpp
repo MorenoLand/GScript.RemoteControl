@@ -4,6 +4,7 @@
 #include "TGScriptEditor.h"
 #include "TMng.h"
 #include "TTheme.h"
+#include "TScriptEditorTracking.h"
 
 #include <grclib.h>
 #include <gtksourceview/gtksource.h>
@@ -133,6 +134,16 @@ namespace {
         const int height = gdk_pixbuf_get_height(pixbuf);
         const double scale = std::min(static_cast<double>(maximumWidth) / std::max(1, width), static_cast<double>(maximumHeight) / std::max(1, height));
         return gdk_pixbuf_scale_simple(pixbuf, std::max(1, static_cast<int>(width * scale)), std::max(1, static_cast<int>(height * scale)), GDK_INTERP_BILINEAR);
+    }
+
+    std::string createDragStagingFolder() {
+        GError* error = nullptr;
+        gchar* path = g_dir_make_tmp("RemoteControl-filebrowser-drag-XXXXXX", &error);
+        if (error != nullptr) g_error_free(error);
+        if (path == nullptr) return {};
+        std::string result(path);
+        g_free(path);
+        return result;
     }
 
     bool pathMatches(const std::string& expected, const std::string& received) {
@@ -476,8 +487,8 @@ TFileBrowserTree::TFileBrowserTree(const std::filesystem::path& nextApplicationD
     GtkTargetEntry dropTargets[] = {{const_cast<gchar*>("application/x-remote-control-file-path"), GTK_TARGET_SAME_APP, 1}, {const_cast<gchar*>("text/uri-list"), 0, 2}};
 #ifndef _WIN32
     GtkTargetEntry fileTarget[] = {{const_cast<gchar*>("application/x-remote-control-file-path"), GTK_TARGET_SAME_APP, 1}, {const_cast<gchar*>("text/uri-list"), 0, 2}};
-    gtk_drag_source_set(fileView, GDK_BUTTON1_MASK, fileTarget, G_N_ELEMENTS(fileTarget), static_cast<GdkDragAction>(GDK_ACTION_COPY | GDK_ACTION_MOVE));
-    gtk_drag_source_set(modernView, GDK_BUTTON1_MASK, fileTarget, G_N_ELEMENTS(fileTarget), static_cast<GdkDragAction>(GDK_ACTION_COPY | GDK_ACTION_MOVE));
+    gtk_drag_source_set(fileView, GDK_BUTTON1_MASK, fileTarget, G_N_ELEMENTS(fileTarget), GDK_ACTION_COPY);
+    gtk_drag_source_set(modernView, GDK_BUTTON1_MASK, fileTarget, G_N_ELEMENTS(fileTarget), GDK_ACTION_COPY);
 #else
     gtk_widget_add_events(fileView, GDK_BUTTON_RELEASE_MASK);
     g_signal_connect(fileView, "button-release-event", G_CALLBACK(onFileButtonRelease), this);
@@ -1384,10 +1395,7 @@ void TFileBrowserTree::onFileDragBegin(GtkWidget* widget, GdkDragContext* contex
     GtkTreeModel* model = nullptr;
     GList* rows = selectedRows(widget, &model);
     if (rows == nullptr) return;
-    gchar* staging = g_canonicalize_filename("cache/filebrowser-drag", nullptr);
-    browser->dragStagingFolder = staging == nullptr ? "" : staging;
-    g_free(staging);
-    if (!browser->dragStagingFolder.empty()) g_mkdir_with_parents(browser->dragStagingFolder.c_str(), 0755);
+    browser->dragStagingFolder = createDragStagingFolder();
     for (GList* node = rows; node != nullptr; node = node->next) {
         GtkTreeIter selectedRow;
         gchar* remotePath = nullptr;
@@ -1925,6 +1933,8 @@ void TFileBrowserTree::showTextEditor(const char* path, const void* content, int
     addEditorFindButton(dialog, editor);
     gtk_text_view_set_monospace(GTK_TEXT_VIEW(editor), true);
     setGScriptEditorContent(GTK_TEXT_BUFFER(sourceBuffer), static_cast<const char*>(content), length);
+    const std::string original = content == nullptr || length <= 0 ? std::string() : std::string(static_cast<const char*>(content), static_cast<std::size_t>(length));
+    trackScriptEditor(dialog, GTK_TEXT_BUFFER(sourceBuffer), "File: " + std::string(path), original, connection);
     g_object_unref(sourceBuffer);
     GtkWidget* scrolled = gtk_scrolled_window_new(nullptr, nullptr);
     gtk_container_add(GTK_CONTAINER(scrolled), editor);
@@ -1949,7 +1959,8 @@ void TFileBrowserTree::showTextEditor(const char* path, const void* content, int
         GtkTextIter end;
         gtk_text_buffer_get_bounds(buffer, &start, &end);
         gchar* value = gtk_text_buffer_get_text(buffer, &start, &end, false);
-        rc_upload_file(editorState->connection, editorState->path.c_str(), value, static_cast<int>(strlen(value)));
+        void* currentConnection = scriptEditorConnection(buffer);
+        if (currentConnection != nullptr) rc_upload_file(currentConnection, editorState->path.c_str(), value, static_cast<int>(strlen(value)));
         g_free(value);
     }), state);
     g_signal_connect(dialog, "destroy", G_CALLBACK(+[](GtkWidget*, gpointer userData) { delete static_cast<EditorState*>(userData); }), state);
@@ -1959,6 +1970,8 @@ void TFileBrowserTree::showTextEditor(const char* path, const void* content, int
 void TFileBrowserTree::refresh() {
     if (connection != nullptr && !rc_filebrowser_start(connection)) appendLog(rc_last_error(connection));
 }
+
+void TFileBrowserTree::setConnection(void* nextConnection) { connection = nextConnection; }
 
 void TFileBrowserTree::rebuildModernItems() {
     if (modernItems == nullptr) return;

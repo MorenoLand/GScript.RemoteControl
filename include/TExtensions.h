@@ -10,6 +10,28 @@
 
 namespace RC {
 
+    struct ExtensionWindowAction {
+        std::string kind;
+        std::string id;
+        std::string label;
+    };
+
+    struct ExtensionWindowActionBinding {
+        std::string extensionId;
+        std::string extensionName;
+        ExtensionWindowAction action;
+    };
+
+    struct ExtensionWindowContext {
+        std::string windowId;
+        std::string kind;
+        std::string title;
+        std::string scriptType;
+        std::string scriptName;
+        std::string text;
+        std::string selection;
+    };
+
     struct ExtensionProcess {
         GPid pid = 0;
         gint input = -1;
@@ -30,6 +52,7 @@ namespace RC {
         std::vector<std::string> themes;
         std::vector<std::string> commands;
         std::vector<std::string> readOnlyViews;
+        std::vector<ExtensionWindowAction> windowActions;
         bool autoDiscover = false;
         int api = 1;
         std::string error;
@@ -47,6 +70,8 @@ public:
     TExtensionsManager(GtkWindow* parent, const std::filesystem::path& applicationDirectory, std::function<void(const std::string&, const std::string&)> outputCallback = {}, std::function<void(const std::string&)> closeCallback = {});
     ~TExtensionsManager();
     void showWindow();
+    std::vector<RC::ExtensionWindowActionBinding> windowActions(const std::string& kind) const;
+    bool invokeWindowAction(const RC::ExtensionWindowActionBinding& action, const RC::ExtensionWindowContext& context, std::string& error);
 
 private:
     struct AsyncState;

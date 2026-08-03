@@ -12,6 +12,7 @@ public:
     TServerTextEditor(Kind kind, const char* title, RC::RCOptions* options);
     ~TServerTextEditor();
     void open(void* connection);
+    void setConnection(void* connection);
     void hide();
     void setContent(const char* content);
     void setServerName(const std::string& server);

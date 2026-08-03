@@ -1124,6 +1124,8 @@ void setGScriptEditorConnection(GtkWidget* editor, void* connection) {
     const auto state = std::find_if(editorCompletionStates.begin(), editorCompletionStates.end(), [editor](const EditorCompletionState& value) { return value.editor == editor; });
     if (state != editorCompletionStates.end()) state->connection = connection;
 }
+void detachGScriptEditorConnections(void* connection) { if (connection == nullptr) return; for (auto& state : editorCompletionStates) if (state.connection == connection) state.connection = nullptr; }
+void rebindGScriptEditorConnections(void* disconnectedConnection, void* connection) { for (auto& state : editorCompletionStates) if (state.connection == disconnectedConnection) state.connection = connection; }
 void updateGScriptEditorPlayerProperty(void* connection, int playerId, const char* property, const char* value) {
     if (connection == nullptr || property == nullptr) return;
     if (g_ascii_strcasecmp(property, "account") == 0) playerCommunityNames[connection].erase(playerId);

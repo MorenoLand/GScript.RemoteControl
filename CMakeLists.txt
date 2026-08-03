@@ -1,8 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 project(RemoteControl LANGUAGES CXX)
 
-string(TIMESTAMP REMOTE_CONTROL_BUILD_DATE "%Y/%m/%d")
-
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -90,7 +88,7 @@ if(WIN32)
     target_sources(RemoteControl PRIVATE assets/RemoteControl.rc)
 endif()
 target_link_libraries(RemoteControl PRIVATE remote_control_options grclib OpenSSL::Crypto OpenSSL::SSL PkgConfig::GTK3 PkgConfig::GTKSOURCEVIEW3 PkgConfig::WEBP PkgConfig::FONTCONFIG)
-target_compile_definitions(RemoteControl PRIVATE REMOTE_CONTROL_BUILD_DATE="${REMOTE_CONTROL_BUILD_DATE}")
+target_compile_definitions(RemoteControl PRIVATE REMOTE_CONTROL_BUILD_DATE=__DATE__)
 if(WIN32)
     target_link_libraries(RemoteControl PRIVATE iphlpapi rpcrt4 shell32 ole32)
 elseif(X11_FOUND)

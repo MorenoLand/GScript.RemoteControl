@@ -34,7 +34,7 @@ int main() {
     assert(manifests.size() == 1);
     assert(manifests[0].id == "gs2engine");
     std::filesystem::create_directories(root / "smoke");
-    std::ofstream(root / "smoke" / "extension.json") << "{\"id\":\"test.extension\",\"name\":\"Test Extension\",\"version\":\"1.0.0\",\"publisher\":\"RC Tests\",\"runtime\":\"gs2engine-stdio\",\"entry\":\"main.gs2\",\"capabilities\":[\"script-read\",\"file-read\"],\"ui\":[\"output-tab\"],\"themes\":[\"theme.dark\"],\"commands\":[\"test.run\"],\"readOnlyViews\":[\"test.status\"],\"api\":1}";
+    std::ofstream(root / "smoke" / "extension.json") << "{\"id\":\"test.extension\",\"name\":\"Test Extension\",\"version\":\"1.0.0\",\"publisher\":\"RC Tests\",\"runtime\":\"gs2engine-stdio\",\"entry\":\"main.gs2\",\"capabilities\":[\"script-read\",\"file-read\"],\"ui\":[\"output-tab\"],\"themes\":[\"theme.dark\"],\"commands\":[\"test.run\"],\"readOnlyViews\":[\"test.status\"],\"windowActions\":[{\"kind\":\"script-editor\",\"id\":\"evaluate\",\"label\":\"Evaluate\"}],\"api\":1}";
     std::ofstream(root / "smoke" / "main.gs2") << "echo(\"RC GS2 extension smoke ready\");\n";
     const auto jsonManifests = RC::scanExtensionManifests(root);
     assert(jsonManifests.size() == 2);
@@ -49,6 +49,7 @@ int main() {
     assert(smoke->themes.size() == 1 && smoke->themes[0] == "theme.dark");
     assert(smoke->commands.size() == 1 && smoke->commands[0] == "test.run");
     assert(smoke->readOnlyViews.size() == 1 && smoke->readOnlyViews[0] == "test.status");
+    assert(smoke->windowActions.size() == 1 && smoke->windowActions[0].kind == "script-editor" && smoke->windowActions[0].id == "evaluate" && smoke->windowActions[0].label == "Evaluate");
     assert(smoke->api == 1);
     std::filesystem::create_directories(root / "auto");
     std::ofstream(root / "auto" / "extension.json") << "{\"id\":\"auto.extension\",\"name\":\"Auto Extension\",\"version\":\"1.0.0\",\"runtime\":\"gs2engine-stdio\",\"mode\":\"auto\",\"api\":1}";

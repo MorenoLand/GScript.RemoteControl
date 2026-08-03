@@ -6,7 +6,7 @@
 #include <unordered_map>
 
 namespace {
-    struct EditorState { GtkWidget* dialog; GtkTextBuffer* buffer; std::string name; std::string original; GtkTextTag* changedLines; };
+    struct EditorState { GtkWidget* dialog; GtkTextBuffer* buffer; std::string name; std::string original; GtkTextTag* changedLines; void* connection; };
     std::unordered_map<GtkTextBuffer*, EditorState> editors;
 
     std::vector<std::string> lines(const std::string& text) {
@@ -64,14 +64,18 @@ namespace {
     }
 }
 
-void trackScriptEditor(GtkWidget* dialog, GtkTextBuffer* buffer, const std::string& name, const std::string& original) {
+void trackScriptEditor(GtkWidget* dialog, GtkTextBuffer* buffer, const std::string& name, const std::string& original, void* connection) {
     GdkRGBA changedLineTint{1.0, 0.78, 0.18, 0.14};
     GtkTextTag* changedLines = gtk_text_buffer_create_tag(buffer, nullptr, "background-rgba", &changedLineTint, nullptr);
-    editors.insert_or_assign(buffer, EditorState{dialog, buffer, name, original, changedLines});
+    editors.insert_or_assign(buffer, EditorState{dialog, buffer, name, original, changedLines, connection});
     gtk_text_buffer_set_modified(buffer, false);
     g_signal_connect(buffer, "changed", G_CALLBACK(+[](GtkTextBuffer* changedBuffer, gpointer) { updateChangedLines(changedBuffer); }), nullptr);
     g_signal_connect(dialog, "destroy", G_CALLBACK(+[](GtkWidget*, gpointer data) { editors.erase(static_cast<GtkTextBuffer*>(data)); }), buffer);
 }
+
+void detachScriptEditorConnection(void* connection) { if (connection == nullptr) return; for (auto& entry : editors) if (entry.second.connection == connection) entry.second.connection = nullptr; }
+void rebindScriptEditorConnection(void* disconnectedConnection, void* connection) { for (auto& entry : editors) if (entry.second.connection == disconnectedConnection) entry.second.connection = connection; }
+void* scriptEditorConnection(GtkTextBuffer* buffer) { const auto found = editors.find(buffer); return found == editors.end() ? nullptr : found->second.connection; }
 
 void markScriptEditorSaved(GtkTextBuffer* buffer) {
     const auto found = editors.find(buffer);

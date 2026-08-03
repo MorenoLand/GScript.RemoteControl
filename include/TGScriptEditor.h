@@ -19,5 +19,7 @@ void setGScriptEditorOptions(const RC::RCOptions& options);
 void refreshGScriptEditorTheme();
 void setGScriptEditorCacheDirectory(const std::filesystem::path& directory);
 void setGScriptEditorConnection(GtkWidget* editor, void* connection);
+void detachGScriptEditorConnections(void* connection);
+void rebindGScriptEditorConnections(void* disconnectedConnection, void* connection);
 void updateGScriptEditorPlayerProperty(void* connection, int playerId, const char* property, const char* value);
 void requestGScriptHelp(const std::string& query, std::function<void(std::vector<std::string>)> callback);

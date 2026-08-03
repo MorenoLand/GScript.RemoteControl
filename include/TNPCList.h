@@ -1,13 +1,17 @@
 #pragma once
 
 #include <gtk/gtk.h>
+#include "TRCOptions.h"
+#include "TExternalEditor.h"
+#include <memory>
 #include <string>
 
 class TNPCList {
 public:
-    explicit TNPCList(std::string accountName);
+    explicit TNPCList(std::string accountName, RC::RCOptions* options = nullptr);
     ~TNPCList();
     void open(void* connection);
+    void setConnection(void* connection);
     void hide();
     void setServerName(const std::string& server);
 private:
@@ -39,6 +43,10 @@ private:
     void* connection = nullptr;
     std::string accountName;
     std::string serverName;
+    RC::RCOptions* options = nullptr;
+    std::unique_ptr<TExternalEditor> externalEditor;
+    std::string externalWorkspace;
+    std::string externalCommand;
     std::string addNPCType = "OBJECT";
     std::string addNPCLevel = "onlinestartlocal.nw";
     std::string addNPCX = "30.5";

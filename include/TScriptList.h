@@ -6,11 +6,14 @@
 #include <memory>
 #include <string>
 
+class TExtensionsManager;
+
 class TScriptList {
 public:
-    TScriptList(std::string type, RC::RCOptions* options);
+    TScriptList(std::string type, RC::RCOptions* options, TExtensionsManager* extensions = nullptr);
     ~TScriptList();
     void open(void* connection);
+    void setConnection(void* connection);
     void hide();
     void setServerName(const std::string& server);
     static void restoreScriptReceiver(void* connection);
@@ -34,6 +37,7 @@ private:
     void* connection = nullptr;
     std::string serverName;
     RC::RCOptions* options = nullptr;
+    TExtensionsManager* extensionsManager = nullptr;
     std::unique_ptr<TExternalEditor> externalEditor;
     std::string externalWorkspace;
     std::string externalCommand;
