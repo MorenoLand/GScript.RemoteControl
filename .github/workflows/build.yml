@@ -172,55 +172,28 @@ jobs:
         with:
           path: artifacts
           merge-multiple: true
-      - uses: actions/checkout@v4
-        with:
-          path: source
-      - uses: actions/checkout@v4
-        with:
-          repository: MorenoLand/GScript.RC-releases
-          token: ${{ secrets.RC_RELEASES_TOKEN }}
-          path: releases-repo
-      - name: Publish release bundles
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.RC_RELEASES_TOKEN }}
         run: |
           build_id="$(date -u +%Y%m%d-%H%M%S)"
-          cd releases-repo
-          mkdir -p "releases/$build_id"
-          cp ../artifacts/* "releases/$build_id/"
-          cat > "releases/$build_id/RELEASE_INFO.md" <<EOF
-          # Remote Control Production Build
-
-          ## Build Information
-
-          - Build date: $(date -u '+%Y-%m-%d %H:%M:%S UTC')
-          - Source commit: ${GITHUB_SHA}
-          - Build type: Release (optimized, stripped)
-
-          ## Packages
-
-          Each package has a matching `.sha256` file for verification.
-          EOF
-          for bundle in "releases/$build_id"/*.zip "releases/$build_id"/*.AppImage "releases/$build_id"/*.dmg; do
-            [ -f "$bundle" ] && sha256sum "$bundle" > "$bundle.sha256"
+          for bundle in artifacts/*; do
+            [ -f "$bundle" ] || continue
+            sha256sum "$bundle" > "$bundle.sha256"
           done
-          git rm -r --ignore-unmatch releases/latest
-          mkdir -p releases/latest
-          cp "releases/$build_id"/* releases/latest/
-          cp ../source/LICENSE LICENSE
-          printf '\n%s\n' 'The reconstructed source code is MIT licensed. Original artwork, logos, and other supplied runtime assets remain the property of their respective owners.' >> LICENSE
+          notes_file="$RUNNER_TEMP/remote-control-release-notes.md"
           {
-            echo "# Remote Control - GTK3 Edition"
+            echo "# Remote Control build $build_id"
             echo
-            echo "Automated builds of an independent GTK3 Remote Control project. It is not affiliated with Toonslab or an official client release."
+            echo "- Source commit: ${GITHUB_SHA}"
+            echo "- Build date: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+            echo "- Build type: Release (optimized, stripped)"
             echo
-            echo "Each package has a neighboring `.sha256` checksum file."
-            echo
-            echo "## License"
-            echo
-            echo "The reconstructed source code is MIT licensed. Original artwork, logos, and other supplied runtime assets remain the property of their respective owners."
-          } > README.md
-          git rm --ignore-unmatch hashes.md
-          git config user.name "GScript RemoteControl CI"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add LICENSE README.md releases
-          git diff --cached --quiet || git commit -m "Publish Remote Control build $build_id"
-          git push origin main
+            echo "Checksums are included beside each package asset."
+          } > "$notes_file"
+          gh release create "build-$build_id" artifacts/* \
+            --repo MorenoLand/GScript.RC-releases \
+            --target main \
+            --title "Remote Control $build_id" \
+            --notes-file "$notes_file" \
+            --latest
