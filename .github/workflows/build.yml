@@ -68,16 +68,6 @@ jobs:
           find "$bundle/lib" -type f -name '*.so*' -exec patchelf --set-rpath '$ORIGIN' {} +
           if find "$bundle/lib" -type f -name '*.so*' -exec sh -c 'ldd "$1" | grep -q "not found"' _ {} \; -print -quit | grep -q .; then echo "Bundled Linux dependency is unresolved."; exit 1; fi
           (cd "$bundle" && zip -r "../$bundle.zip" .)
-          appDir="${bundle}.AppDir"
-          mkdir -p "$appDir"
-          cp -a "$bundle/." "$appDir/"
-          cp remotecontrol/assets/appimage/AppRun "$appDir/"
-          cp remotecontrol/assets/appimage/RemoteControl.desktop "$appDir/"
-          cp "$appDir/images/rcicon.png" "$appDir/RemoteControl.png"
-          chmod +x "$appDir/AppRun"
-          curl -L --fail --retry 3 -o appimagetool.AppImage https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
-          chmod +x appimagetool.AppImage
-          ARCH=x86_64 APPIMAGE_EXTRACT_AND_RUN=1 ./appimagetool.AppImage "$appDir" "${bundle}.AppImage"
       - name: Stage macOS bundle
         if: runner.os == 'macOS'
         run: |
@@ -119,9 +109,7 @@ jobs:
         if: runner.os == 'Linux'
         with:
           name: ${{ matrix.bundle }}
-          path: |
-            ${{ matrix.bundle }}.zip
-            ${{ matrix.bundle }}.AppImage
+          path: ${{ matrix.bundle }}.zip
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
         if: runner.os == 'macOS'

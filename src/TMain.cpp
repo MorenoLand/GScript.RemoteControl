@@ -652,7 +652,7 @@ int main(int argc, char** argv) {
         pendingServerSwitch = nullptr;
         pendingServerSwitchSource = nullptr;
         auto frameSlot = std::make_shared<TRemoteFrame*>(nullptr);
-        remoteFrames.push_back(std::make_unique<TRemoteFrame>(options, applicationDirectory, [sourceList] { sourceList->reopen(); }, [sourceList, frameSlot, &pendingServerSwitch, &pendingServerSwitchSource] { pendingServerSwitch = *frameSlot; pendingServerSwitchSource = sourceList; sourceList->reopen(); }, [sourceList] { sourceList->openListServerSettings(); }));
+        remoteFrames.push_back(std::make_unique<TRemoteFrame>(options, applicationDirectory, [sourceList, frameSlot, &pendingServerSwitch, &pendingServerSwitchSource] { pendingServerSwitch = *frameSlot; pendingServerSwitchSource = sourceList; sourceList->reopen(); }, [sourceList, frameSlot, &pendingServerSwitch, &pendingServerSwitchSource] { pendingServerSwitch = *frameSlot; pendingServerSwitchSource = sourceList; sourceList->reopen(); }, [sourceList] { sourceList->openListServerSettings(); }));
         TRemoteFrame* frame = remoteFrames.back().get();
         *frameSlot = frame;
         trayRemoteFrames.push_back(frame);

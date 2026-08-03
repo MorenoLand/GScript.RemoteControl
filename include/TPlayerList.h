@@ -15,6 +15,7 @@ public:
     ~TPlayerList();
     void open(void* connection);
     void setConnection(void* connection);
+    void rebindConnection(void* connection);
     void setServerName(const std::string& server);
     void setStatusList(const char* statuses);
     void setAttachAway(bool enabled);

@@ -737,6 +737,7 @@ void TRemoteFrame::open(void* nextConnection, int serverIndex, const std::string
     connection = nextConnection;
     rebindScriptEditorConnection(nullptr, connection);
     rebindGScriptEditorConnections(nullptr, connection);
+    if (playerList != nullptr) playerList->rebindConnection(connection);
     if (classList != nullptr) classList->setConnection(connection);
     if (weaponList != nullptr) weaponList->setConnection(connection);
     if (npcList != nullptr) npcList->setConnection(connection);
@@ -746,6 +747,7 @@ void TRemoteFrame::open(void* nextConnection, int serverIndex, const std::string
     if (folderConfigEditor != nullptr) folderConfigEditor->setConnection(connection);
     currentServerIndex = serverIndex;
     this->serverName = serverName;
+    if (playerList != nullptr) playerList->setServerName(serverName);
     syncManager->setConnection(nextConnection, serverName);
     gtk_window_set_title(GTK_WINDOW(window), remoteControlTitle(serverName).c_str());
     trayPlayerCount = -1;
@@ -810,6 +812,7 @@ void TRemoteFrame::disconnect() {
     void* disconnectedConnection = connection;
     detachScriptEditorConnection(disconnectedConnection);
     detachGScriptEditorConnections(disconnectedConnection);
+    if (playerList != nullptr) playerList->setConnection(nullptr);
     if (classList != nullptr) classList->setConnection(nullptr);
     if (weaponList != nullptr) weaponList->setConnection(nullptr);
     if (npcList != nullptr) npcList->setConnection(nullptr);
@@ -1479,6 +1482,7 @@ void TRemoteFrame::onDisconnected(const char* reason, void* data) {
     void* disconnectedConnection = frame->connection;
     detachScriptEditorConnection(disconnectedConnection);
     detachGScriptEditorConnections(disconnectedConnection);
+    if (frame->playerList != nullptr) frame->playerList->setConnection(nullptr);
     if (frame->classList != nullptr) frame->classList->setConnection(nullptr);
     if (frame->weaponList != nullptr) frame->weaponList->setConnection(nullptr);
     if (frame->npcList != nullptr) frame->npcList->setConnection(nullptr);
