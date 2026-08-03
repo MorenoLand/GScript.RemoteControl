@@ -10,6 +10,7 @@
 
 #include <grclib.h>
 #include <gtksourceview/gtksource.h>
+#include <filesystem>
 #include <utility>
 
 namespace {
@@ -53,6 +54,44 @@ namespace {
         std::string error;
         if (!state->manager->invokeWindowAction(state->action, context, error) && !error.empty()) g_printerr("Extension window action failed: %s\n", error.c_str());
         g_free(text);
+    }
+
+    GtkWidget* extensionActionIcon(const RC::ExtensionWindowActionBinding& action) {
+        const std::string& specification = action.action.icon;
+        if (specification.empty()) return nullptr;
+        if (specification.rfind("gtk:", 0) == 0) return gtk_image_new_from_icon_name(specification.substr(4).c_str(), GTK_ICON_SIZE_BUTTON);
+        std::string value = specification.rfind("file:", 0) == 0 ? specification.substr(5) : specification;
+        std::filesystem::path path(value);
+        if (path.is_relative()) {
+            const auto direct = action.extensionDirectory / path;
+            const auto images = action.extensionDirectory / "images" / path;
+            path = std::filesystem::exists(direct) ? direct : images;
+        }
+        if (!std::filesystem::exists(path)) return gtk_image_new_from_icon_name(specification.c_str(), GTK_ICON_SIZE_BUTTON);
+        GError* error = nullptr;
+        GdkPixbuf* pixbuf = gdk_pixbuf_new_from_file_at_scale(path.string().c_str(), 18, 18, true, &error);
+        if (error != nullptr) g_error_free(error);
+        if (pixbuf == nullptr) return nullptr;
+        GtkWidget* image = gtk_image_new_from_pixbuf(pixbuf);
+        g_object_unref(pixbuf);
+        return image;
+    }
+
+    GtkWidget* createEditorExtensionActionButton(const RC::ExtensionWindowActionBinding& action, GtkWidget* editor, TExtensionsManager* extensionsManager, const std::string& type, const std::string& scriptName, const std::string& editorTitle) {
+        auto* actionState = new EditorExtensionActionState{extensionsManager, action, editor, type + ":" + scriptName, "script-editor", type, scriptName, editorTitle};
+        GtkWidget* actionButton = gtk_button_new_with_label(action.action.label.c_str());
+        if (GtkWidget* image = extensionActionIcon(action)) { gtk_button_set_image(GTK_BUTTON(actionButton), image); gtk_button_set_always_show_image(GTK_BUTTON(actionButton), true); }
+        gtk_widget_set_tooltip_text(actionButton, ("Run " + action.action.label + " from " + action.extensionName).c_str());
+        g_signal_connect_data(actionButton, "clicked", G_CALLBACK(onEditorExtensionAction), actionState, [](gpointer data, GClosure*) { delete static_cast<EditorExtensionActionState*>(data); }, static_cast<GConnectFlags>(0));
+        return actionButton;
+    }
+
+    void addEditorExtensionActionBar(GtkWidget* content, const std::vector<RC::ExtensionWindowActionBinding>& actions, GtkWidget* editor, TExtensionsManager* extensionsManager, const std::string& type, const std::string& scriptName, const std::string& editorTitle) {
+        if (actions.empty()) return;
+        GtkWidget* actionBar = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
+        gtk_container_set_border_width(GTK_CONTAINER(actionBar), 4);
+        for (const auto& action : actions) gtk_box_pack_start(GTK_BOX(actionBar), createEditorExtensionActionButton(action, editor, extensionsManager, type, scriptName, editorTitle), false, false, 0);
+        gtk_box_pack_start(GTK_BOX(content), actionBar, false, false, 0);
     }
 }
 
@@ -261,18 +300,10 @@ void TScriptList::showEditor(const char* name, const char* script) {
     gtk_container_set_border_width(GTK_CONTAINER(content), 0);
     gtk_box_set_spacing(GTK_BOX(content), 0);
     const auto actions = extensionsManager == nullptr ? std::vector<RC::ExtensionWindowActionBinding>() : extensionsManager->windowActions("script-editor");
-    if (!actions.empty()) {
-        GtkWidget* actionBar = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
-        gtk_container_set_border_width(GTK_CONTAINER(actionBar), 4);
-        for (const auto& action : actions) {
-            auto* actionState = new EditorExtensionActionState{extensionsManager, action, editor, type + ":" + scriptName, "script-editor", type, scriptName, editorTitle};
-            GtkWidget* actionButton = gtk_button_new_with_label(action.action.label.c_str());
-            gtk_widget_set_tooltip_text(actionButton, ("Run " + action.action.label + " from " + action.extensionName).c_str());
-            g_signal_connect_data(actionButton, "clicked", G_CALLBACK(onEditorExtensionAction), actionState, [](gpointer data, GClosure*) { delete static_cast<EditorExtensionActionState*>(data); }, static_cast<GConnectFlags>(0));
-            gtk_box_pack_start(GTK_BOX(actionBar), actionButton, false, false, 0);
-        }
-        gtk_box_pack_start(GTK_BOX(content), actionBar, false, false, 0);
-    }
+    std::vector<RC::ExtensionWindowActionBinding> topActions;
+    std::vector<RC::ExtensionWindowActionBinding> bottomActions;
+    for (const auto& action : actions) (action.action.placement == "bottom" ? bottomActions : topActions).push_back(action);
+    addEditorExtensionActionBar(content, topActions, editor, extensionsManager, type, scriptName, editorTitle);
     GtkWidget* icon = nullptr;
     if (type == "weapons") {
         GtkWidget* iconRow = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 5);
@@ -286,6 +317,12 @@ void TScriptList::showEditor(const char* name, const char* script) {
     }
     gtk_widget_set_margin_top(scrolled, 0);
     gtk_box_pack_start(GTK_BOX(content), wrapGScriptEditor(editor, scrolled), true, true, 0);
+    if (!bottomActions.empty()) {
+        GtkWidget* actionBar = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
+        gtk_container_set_border_width(GTK_CONTAINER(actionBar), 4);
+        for (const auto& action : bottomActions) gtk_box_pack_start(GTK_BOX(actionBar), createEditorExtensionActionButton(action, editor, extensionsManager, type, scriptName, editorTitle), false, false, 0);
+        gtk_box_pack_end(GTK_BOX(content), actionBar, false, false, 0);
+    }
     addGScriptEditorLineStatus(GTK_DIALOG(dialog), editor);
     g_signal_connect(editor, "key-press-event", G_CALLBACK(+[](GtkWidget* widget, GdkEventKey* event, gpointer dialog) {
         if (consumeEditorCtrlS(widget, event)) {

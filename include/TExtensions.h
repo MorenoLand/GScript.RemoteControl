@@ -14,11 +14,14 @@ namespace RC {
         std::string kind;
         std::string id;
         std::string label;
+        std::string placement = "top";
+        std::string icon;
     };
 
     struct ExtensionWindowActionBinding {
         std::string extensionId;
         std::string extensionName;
+        std::filesystem::path extensionDirectory;
         ExtensionWindowAction action;
     };
 

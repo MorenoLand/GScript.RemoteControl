@@ -174,8 +174,11 @@ namespace {
             jsonStringValue(object, "kind", action.kind);
             jsonStringValue(object, "id", action.id);
             jsonStringValue(object, "label", action.label);
+            jsonStringValue(object, "placement", action.placement);
+            jsonStringValue(object, "icon", action.icon);
             if (action.kind.empty()) action.kind = "script-editor";
             if (action.label.empty()) action.label = action.id;
+            if (action.placement != "bottom") action.placement = "top";
             if (!action.id.empty() && !action.label.empty()) result.push_back(std::move(action));
         }
         return result;
@@ -638,7 +641,7 @@ std::vector<RC::ExtensionWindowActionBinding> TExtensionsManager::windowActions(
     std::vector<RC::ExtensionWindowActionBinding> result;
     for (const auto& extension : extensions) {
         if (!extension.enabled || !extension.manifest.error.empty()) continue;
-        for (const auto& action : extension.manifest.windowActions) if (action.kind == kind) result.push_back({extension.manifest.id, extension.manifest.name, action});
+        for (const auto& action : extension.manifest.windowActions) if (action.kind == kind) result.push_back({extension.manifest.id, extension.manifest.name, extension.manifest.directory, action});
     }
     return result;
 }

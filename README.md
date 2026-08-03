@@ -84,14 +84,14 @@ JSON manifests require `id`, `name`, `version`, `runtime`, and either `entry` or
   "themes": ["theme.dark"],
   "commands": ["example.run"],
   "readOnlyViews": ["example.status"],
-  "windowActions": [{"kind": "script-editor", "id": "evaluate", "label": "Evaluate"}],
+  "windowActions": [{"kind": "script-editor", "id": "evaluate", "label": "Evaluate", "placement": "bottom", "icon": "gtk:document-properties-symbolic"}],
   "api": 1
 }
 ```
 
 For a package whose runtime discovers files itself, omit `entry` and use `"mode": "auto"` (or `"autoDiscover": true`). RC launches the runtime from the package directory, captures its stdout/stderr, and can route readable output to a tab named from `name`. The Extensions window persists each package's enabled and output-tab state; disabling an extension requests shutdown and closes its output tab.
 
-Requested capabilities, themes, commands/shortcuts, read-only views, and UI slots are declarative: they are shown in the extension Details view and only explicitly approved capability names are persisted for that package. Output tabs are currently the supported live view contribution. A `windowActions` object may declare a labeled action for a supported host window kind such as `script-editor`; RC renders the action in that window and sends the current window/script context over the extension's JSON-lines channel when activated. Unknown slots and actions are never silently wired to unrestricted RC or GTK access. Removing a package stops its runtime, closes its output tab, and deletes only that package directory after confirmation.
+Requested capabilities, themes, commands/shortcuts, read-only views, and UI slots are declarative: they are shown in the extension Details view and only explicitly approved capability names are persisted for that package. Output tabs are currently the supported live view contribution. A `windowActions` object may declare a labeled action for a supported host window kind such as `script-editor`; `placement` may be `top` (the default) or `bottom`, and `icon` may use a GTK icon name with the `gtk:` prefix or an image path with the `file:` prefix resolved from the extension directory or its `images` folder. RC renders the action in the selected bar and sends the current window/script context over the extension's JSON-lines channel when activated. Unknown slots and actions are never silently wired to unrestricted RC or GTK access. Removing a package stops its runtime, closes its output tab, and deletes only that package directory after confirmation.
 
 Use line-oriented JSON for host control messages. Human-facing output should include a non-empty `display`, `text`, or `message` field; RC suppresses protocol-only status envelopes instead of showing raw transport data.
 
