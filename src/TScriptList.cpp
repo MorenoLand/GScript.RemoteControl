@@ -130,7 +130,7 @@ TScriptList::TScriptList(std::string nextType, RC::RCOptions* nextOptions, TExte
     GtkWidget* buttons = gtk_button_box_new(GTK_ORIENTATION_HORIZONTAL);
     gtk_button_box_set_layout(GTK_BUTTON_BOX(buttons), GTK_BUTTONBOX_END);
     GtkWidget* editButton = gtk_button_new_with_label("Edit");
-    GtkWidget* addButton = type == "weapons" ? gtk_button_new_with_label("Add") : nullptr;
+    GtkWidget* addButton = (type == "weapons" || type == "classes") ? gtk_button_new_with_label("Add") : nullptr;
     GtkWidget* deleteButton = gtk_button_new_with_label("Delete");
     GtkWidget* closeButton = gtk_button_new_with_label("Close");
     applyGtkButtonIcon(editButton, GTK_STOCK_EDIT);
@@ -188,23 +188,29 @@ void TScriptList::onDeleteScript(GtkButton*, gpointer data) { static_cast<TScrip
 void TScriptList::onAdd(GtkButton*, gpointer data) {
     struct AddState { TScriptList* list; GtkWidget* name; GtkWidget* image; };
     TScriptList* list = static_cast<TScriptList*>(data);
-    GtkWidget* dialog = gtk_dialog_new_with_buttons("Add Weapon/GUI Script", GTK_WINDOW(list->window), GTK_DIALOG_MODAL, "Cancel", GTK_RESPONSE_CANCEL, "Add", GTK_RESPONSE_ACCEPT, nullptr);
+    const bool isClass = list->type == "classes";
+    GtkWidget* dialog = gtk_dialog_new_with_buttons(isClass ? "Add Class" : "Add Weapon/GUI Script", GTK_WINDOW(list->window), GTK_DIALOG_MODAL, "Cancel", GTK_RESPONSE_CANCEL, "Add", GTK_RESPONSE_ACCEPT, nullptr);
     GtkWidget* grid = gtk_grid_new();
     gtk_container_set_border_width(GTK_CONTAINER(grid), 8);
     gtk_grid_set_row_spacing(GTK_GRID(grid), 5);
     GtkWidget* name = gtk_entry_new();
-    GtkWidget* image = gtk_entry_new();
+    GtkWidget* image = isClass ? nullptr : gtk_entry_new();
     gtk_grid_attach(GTK_GRID(grid), gtk_label_new("Name:"), 0, 0, 1, 1);
     gtk_grid_attach(GTK_GRID(grid), name, 1, 0, 1, 1);
-    gtk_grid_attach(GTK_GRID(grid), gtk_label_new("Icon:"), 0, 1, 1, 1);
-    gtk_grid_attach(GTK_GRID(grid), image, 1, 1, 1, 1);
+    if (!isClass) {
+        gtk_grid_attach(GTK_GRID(grid), gtk_label_new("Icon:"), 0, 1, 1, 1);
+        gtk_grid_attach(GTK_GRID(grid), image, 1, 1, 1, 1);
+    }
     gtk_box_pack_start(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), grid, true, true, 0);
     auto* state = new AddState{list, name, image};
     g_signal_connect(dialog, "response", G_CALLBACK(+[](GtkDialog* addDialog, gint response, gpointer userData) {
         auto* values = static_cast<AddState*>(userData);
         if (response == GTK_RESPONSE_ACCEPT) {
             const char* name = gtk_entry_get_text(GTK_ENTRY(values->name));
-            if (name != nullptr && *name != '\0') rc_add_weapon(values->list->connection, name, gtk_entry_get_text(GTK_ENTRY(values->image)), "");
+            if (name != nullptr && *name != '\0') {
+                if (values->list->type == "classes") rc_add_class(values->list->connection, name, "");
+                else rc_add_weapon(values->list->connection, name, gtk_entry_get_text(GTK_ENTRY(values->image)), "");
+            }
         }
         gtk_widget_destroy(GTK_WIDGET(addDialog));
     }), state);
