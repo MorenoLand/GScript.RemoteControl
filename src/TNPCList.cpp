@@ -1,6 +1,7 @@
 #include "TNPCList.h"
 #include "TButtonIcons.h"
 #include "TBackup.h"
+#include "TDebug.h"
 #include "TEditorFind.h"
 #include "TGScriptEditor.h"
 #include "TScriptEditorTracking.h"
@@ -124,7 +125,10 @@ void TNPCList::onAddResponse(GtkDialog* dialog, gint response, gpointer data) {
     TNPCList* list = static_cast<TNPCList*>(data);
     if (response == GTK_RESPONSE_OK) {
         const auto value = [dialog](const char* key) { return gtk_entry_get_text(GTK_ENTRY(g_object_get_data(G_OBJECT(dialog), key))); };
-        rc_create_npc_on_server(list->connection, value("name"), std::atoi(value("id")), value("type"), value("scripter"), value("level"), value("x"), value("y"));
+        const int id = std::atoi(value("id"));
+        const int result = rc_create_npc_on_server(list->connection, value("name"), id, value("type"), value("scripter"), value("level"), value("x"), value("y"));
+        remoteControlDebugLog("script create: type=npcs name=%s id=%d result=%d", value("name"), id, result);
+        if (result > 0) { list->pendingCreateId = id; list->pendingCreateName = value("name"); }
         list->addNPCType = value("type");
         list->addNPCLevel = value("level");
         list->addNPCX = value("x");
@@ -419,7 +423,18 @@ void TNPCList::showAttributes(int id, const char* attributes) {
     gtk_widget_show_all(dialog);
 }
 void TNPCList::onClose(GtkButton*, gpointer data) { gtk_widget_hide(static_cast<TNPCList*>(data)->window); }
-void TNPCList::onNPCChanged(int, const char*, void* data) { static_cast<TNPCList*>(data)->refresh(); }
+void TNPCList::onNPCChanged(int id, const char* name, void* data) {
+    auto* list = static_cast<TNPCList*>(data);
+    if (list == nullptr) return;
+    list->refresh();
+    if (list->pendingCreateId != id || list->connection == nullptr) return;
+    list->pendingCreateId = -1;
+    list->pendingCreateName.clear();
+    rc_on_script_received(list->connection, onNPCScript, list);
+    const int result = rc_request_npc_script(list->connection, id);
+    remoteControlDebugLog("script create: type=npcs name=%s id=%d request result=%d", name == nullptr ? "" : name, id, result);
+    if (result <= 0) list->pendingCreateId = id;
+}
 gboolean TNPCList::onDelete(GtkWidget*, GdkEvent*, gpointer data) { gtk_widget_hide(static_cast<TNPCList*>(data)->window); return true; }
 void TNPCList::refresh() {
     gtk_tree_sortable_set_sort_column_id(GTK_TREE_SORTABLE(store), GTK_TREE_SORTABLE_UNSORTED_SORT_COLUMN_ID, GTK_SORT_ASCENDING);

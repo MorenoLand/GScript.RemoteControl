@@ -18,6 +18,7 @@ int main() {
     assert(options.scriptfontsize == 10);
     assert(options.scriptfontfamily == "Monospace");
     assert(!options.filebrowserthumbnails);
+    assert(!options.extensionsenabled && !options.syncenabled && options.levellistenabled);
     assert(options.background == "rc_background.png");
     assert(options.timestampformat == "[%I:%M %p]");
     assert(options.buttonimagefiles[0] == "rc_playerlist_normal.png");
@@ -29,6 +30,7 @@ int main() {
     options.mcpapproveweapon = true; options.mcpapproveclass = true; options.mcpapprovenpc = true; options.mcpserver = true; options.mcplogin = true; options.mcpwindows = true; options.mcpfullcontrol = true;
     options.afkenabled = true; options.afktimeout = 30;
     options.modernfilebrowser = true; options.filebrowserhoverpreview = false; options.filebrowserthumbnails = false;
+    options.extensionsenabled = true; options.syncenabled = true; options.levellistenabled = false;
     options.chatfontfamily = "Tempus Sans ITC Bold Italic"; options.scriptfontfamily = "Serif Italic";
     RC::saveRCOptions(options, saved);
     RC::RCOptions restored;
@@ -38,6 +40,7 @@ int main() {
     assert(restored.afkenabled && restored.afktimeout == 30);
     assert(restored.modernfilebrowser);
     assert(!restored.filebrowserhoverpreview && !restored.filebrowserthumbnails);
+    assert(restored.extensionsenabled && restored.syncenabled && !restored.levellistenabled);
     assert(restored.chatfontfamily == "Tempus Sans ITC Bold Italic" && restored.scriptfontfamily == "Serif Italic");
     const std::filesystem::path redirected = saved / "xdg";
     RC::setRCOptionsDirectory(redirected);

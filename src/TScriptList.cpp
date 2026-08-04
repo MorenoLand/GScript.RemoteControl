@@ -152,7 +152,7 @@ TScriptList::TScriptList(std::string nextType, RC::RCOptions* nextOptions, TExte
 
 void TScriptList::setServerName(const std::string& server) { serverName = server; const std::string base = type == "classes" ? "Classes" : "Weapon/GUI-Script List"; gtk_window_set_title(GTK_WINDOW(window), serverName.empty() ? base.c_str() : (base + " - " + serverName).c_str()); }
 
-TScriptList::~TScriptList() { if (classList == this) classList = nullptr; if (weaponList == this) weaponList = nullptr; if (window != nullptr) gtk_widget_destroy(window); if (store != nullptr) g_object_unref(store); }
+TScriptList::~TScriptList() { if (pendingCreateTimer != 0) g_source_remove(pendingCreateTimer); if (classList == this) classList = nullptr; if (weaponList == this) weaponList = nullptr; if (window != nullptr) gtk_widget_destroy(window); if (store != nullptr) g_object_unref(store); }
 void TScriptList::hide() { if (window != nullptr) gtk_widget_hide(window); }
 
 void TScriptList::open(void* nextConnection) {
@@ -161,6 +161,8 @@ void TScriptList::open(void* nextConnection) {
     if (type == "classes") {
         classList = this;
         restoreScriptReceiver(connection);
+        rc_on_class_added(connection, onClassAdded, this);
+        rc_on_class_deleted(connection, onClassDeleted, this);
         refresh();
         gtk_widget_show_all(window);
         gtk_window_present(GTK_WINDOW(window));
@@ -168,6 +170,8 @@ void TScriptList::open(void* nextConnection) {
     }
     weaponList = this;
     restoreScriptReceiver(connection);
+    rc_on_weapon_added(connection, onWeaponAdded, this);
+    rc_on_weapon_deleted(connection, onWeaponDeleted, this);
     rc_on_weapon_list_received(connection, onWeaponListReceived, this);
     rc_request_weapon_list(connection);
 }
@@ -179,8 +183,70 @@ void TScriptList::onWeaponListReceived(int, void* data) {
     if (list == nullptr || list->connection == nullptr) return;
     remoteControlDebugLog("script list: weapon list received list=%p connection=%p", list, list->connection);
     list->refresh();
+    if (!list->pendingCreateName.empty() || !list->pendingDeleteName.empty()) {
+        RCWeapon* entries = nullptr;
+        const int count = rc_get_weapons(list->connection, &entries);
+        bool deleted = !list->pendingDeleteName.empty();
+        for (int index = 0; index < count; ++index) if (entries[index].name != nullptr && list->pendingCreateName == entries[index].name) {
+            list->pendingScriptName = list->pendingCreateName;
+            list->pendingScriptRequestAt = std::chrono::steady_clock::now();
+            const int result = rc_request_weapon_script(list->connection, list->pendingCreateName.c_str());
+            remoteControlDebugLog("script create: type=weapons name=%s request result=%d", list->pendingCreateName.c_str(), result);
+            list->pendingCreateName.clear();
+            break;
+        }
+        if (deleted) for (int index = 0; index < count; ++index) if (entries[index].name != nullptr && list->pendingDeleteName == entries[index].name) { deleted = false; break; }
+        if (deleted) { remoteControlDebugLog("script delete: type=weapons name=%s confirmed", list->pendingDeleteName.c_str()); list->pendingDeleteName.clear(); }
+        if (list->pendingCreateName.empty() && list->pendingDeleteName.empty() && list->pendingCreateTimer != 0) {
+            g_source_remove(list->pendingCreateTimer);
+            list->pendingCreateTimer = 0;
+        }
+    }
     gtk_widget_show_all(list->window);
     gtk_window_present(GTK_WINDOW(list->window));
+}
+
+void TScriptList::onWeaponAdded(const char* name, void* data) {
+    auto* list = static_cast<TScriptList*>(data);
+    if (list == nullptr || list->type != "weapons") return;
+    list->refresh();
+    if (name == nullptr || list->pendingCreateName != name) return;
+    list->pendingScriptName = name;
+    list->pendingScriptRequestAt = std::chrono::steady_clock::now();
+    const int result = rc_request_weapon_script(list->connection, name);
+    remoteControlDebugLog("script create: type=weapons name=%s callback request result=%d", name, result);
+    if (result > 0) list->pendingCreateName.clear();
+}
+
+void TScriptList::onWeaponDeleted(const char* name, void* data) {
+    auto* list = static_cast<TScriptList*>(data);
+    if (list == nullptr || list->type != "weapons") return;
+    list->refresh();
+    if (name != nullptr && list->pendingDeleteName == name) {
+        list->pendingDeleteName.clear();
+        if (list->pendingCreateName.empty() && list->pendingCreateTimer != 0) { g_source_remove(list->pendingCreateTimer); list->pendingCreateTimer = 0; }
+    }
+}
+
+void TScriptList::onClassAdded(const char* name, void* data) {
+    auto* list = static_cast<TScriptList*>(data);
+    if (list == nullptr || list->type != "classes") return;
+    list->refresh();
+    if (name == nullptr || list->pendingCreateName != name) return;
+    list->pendingScriptName = name;
+    list->pendingScriptRequestAt = std::chrono::steady_clock::now();
+    const int result = rc_request_class_script(list->connection, name);
+    remoteControlDebugLog("script create: type=classes name=%s callback request result=%d", name, result);
+    if (result > 0) list->pendingCreateName.clear();
+}
+
+void TScriptList::onClassDeleted(const char*, void* data) { auto* list = static_cast<TScriptList*>(data); if (list != nullptr) list->refresh(); }
+
+gboolean TScriptList::onWeaponMutationPoll(gpointer data) {
+    auto* list = static_cast<TScriptList*>(data);
+    if (list == nullptr || list->connection == nullptr || (list->pendingCreateName.empty() && list->pendingDeleteName.empty()) || ++list->pendingCreateAttempts > 20) { if (list != nullptr) { list->pendingCreateName.clear(); list->pendingDeleteName.clear(); list->pendingCreateTimer = 0; } return G_SOURCE_REMOVE; }
+    rc_request_weapon_list(list->connection);
+    return G_SOURCE_CONTINUE;
 }
 
 void TScriptList::onEdit(GtkButton*, gpointer data) { static_cast<TScriptList*>(data)->edit(); }
@@ -208,8 +274,17 @@ void TScriptList::onAdd(GtkButton*, gpointer data) {
         if (response == GTK_RESPONSE_ACCEPT) {
             const char* name = gtk_entry_get_text(GTK_ENTRY(values->name));
             if (name != nullptr && *name != '\0') {
-                if (values->list->type == "classes") rc_add_class(values->list->connection, name, "");
-                else rc_add_weapon(values->list->connection, name, gtk_entry_get_text(GTK_ENTRY(values->image)), "");
+                const int result = values->list->type == "classes" ? rc_add_class(values->list->connection, name, "") : rc_add_weapon(values->list->connection, name, gtk_entry_get_text(GTK_ENTRY(values->image)), "");
+                remoteControlDebugLog("script create: type=%s name=%s result=%d", values->list->type.c_str(), name, result);
+                if (result > 0) {
+                    values->list->pendingCreateName = name;
+                    if (values->list->type == "weapons") {
+                        values->list->pendingCreateAttempts = 0;
+                        if (values->list->pendingCreateTimer != 0) g_source_remove(values->list->pendingCreateTimer);
+                        values->list->pendingCreateTimer = g_timeout_add(250, onWeaponMutationPoll, values->list);
+                        rc_request_weapon_list(values->list->connection);
+                    }
+                }
             }
         }
         gtk_widget_destroy(GTK_WIDGET(addDialog));
@@ -271,8 +346,15 @@ void TScriptList::deleteSelected() {
     const gint response = gtk_dialog_run(GTK_DIALOG(dialog));
     gtk_widget_destroy(dialog);
     if (response == GTK_RESPONSE_OK) {
-        if (type == "weapons") rc_delete_weapon(connection, name);
-        else rc_delete_class(connection, name);
+        const int result = type == "weapons" ? rc_delete_weapon(connection, name) : rc_delete_class(connection, name);
+        remoteControlDebugLog("script delete: type=%s name=%s result=%d", type.c_str(), name, result);
+        if (result > 0 && type == "weapons") {
+            pendingDeleteName = name;
+            pendingCreateAttempts = 0;
+            if (pendingCreateTimer != 0) g_source_remove(pendingCreateTimer);
+            pendingCreateTimer = g_timeout_add(250, onWeaponMutationPoll, this);
+            rc_request_weapon_list(connection);
+        }
     }
     g_free(name);
 }
@@ -291,6 +373,7 @@ void TScriptList::onScript(const char* scriptType, const char* name, int id, con
     if (!list->pendingScriptName.empty() && name != nullptr && list->pendingScriptName == name) elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - list->pendingScriptRequestAt).count();
     remoteControlDebugLog("script received: routing list=%p requested=%s elapsed_ms=%lld", list, list->pendingScriptName.c_str(), elapsedMs);
     list->showEditor(name == nullptr ? "" : name, script == nullptr ? "" : script);
+    if (!list->pendingScriptName.empty() && name != nullptr && list->pendingScriptName == name) list->pendingScriptName.clear();
 }
 
 void TScriptList::showEditor(const char* name, const char* script) {

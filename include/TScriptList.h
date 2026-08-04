@@ -25,7 +25,12 @@ private:
     static void onClose(GtkButton*, gpointer data);
     static void onTreeActivated(GtkTreeView*, GtkTreePath*, GtkTreeViewColumn*, gpointer data);
     static void onScript(const char* type, const char* name, int id, const char* script, void* data);
+    static void onWeaponAdded(const char* name, void* data);
+    static void onWeaponDeleted(const char* name, void* data);
+    static void onClassAdded(const char* name, void* data);
+    static void onClassDeleted(const char* name, void* data);
     static void onWeaponListReceived(int count, void* data);
+    static gboolean onWeaponMutationPoll(gpointer data);
     static gboolean onDelete(GtkWidget*, GdkEvent*, gpointer data);
     void refresh();
     void edit();
@@ -44,4 +49,8 @@ private:
     std::string externalCommand;
     std::string pendingScriptName;
     std::chrono::steady_clock::time_point pendingScriptRequestAt{};
+    std::string pendingCreateName;
+    std::string pendingDeleteName;
+    guint pendingCreateTimer = 0;
+    int pendingCreateAttempts = 0;
 };

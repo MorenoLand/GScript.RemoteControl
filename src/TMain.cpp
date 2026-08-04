@@ -85,6 +85,7 @@ namespace {
 
     TStartFrame* trayStartFrame = nullptr;
     TRemoteFrame* trayRemoteFrame = nullptr;
+    void toggleTrayApplication();
 
     gboolean onTopLevelSizeAllocate(GSignalInvocationHint*, guint, const GValue* values, gpointer) {
         GtkWidget* widget = GTK_WIDGET(g_value_get_object(&values[0]));
@@ -171,7 +172,7 @@ namespace {
     GdkFilterReturn onWindowsMessage(GdkXEvent* event, GdkEvent*, gpointer) {
         MSG* message = static_cast<MSG*>(event);
         if (message->message == WM_HOTKEY && message->wParam == VisibilityHotkeyId) {
-            onTrayOpen(nullptr, nullptr);
+            toggleTrayApplication();
             return GDK_FILTER_REMOVE;
         }
         return GDK_FILTER_CONTINUE;
@@ -180,7 +181,6 @@ namespace {
     int visibilityHotkeyKeycode = 0;
     unsigned int visibilityHotkeyModifiers = 0;
     bool visibilityHotkeyFilterInstalled = false;
-    void toggleTrayApplication();
     GdkFilterReturn onX11Message(GdkXEvent* nativeEvent, GdkEvent*, gpointer) {
         XEvent* event = static_cast<XEvent*>(nativeEvent);
         if (event->type == KeyPress && event->xkey.keycode == visibilityHotkeyKeycode && (event->xkey.state & (ShiftMask | ControlMask | Mod1Mask | Mod4Mask)) == visibilityHotkeyModifiers) {

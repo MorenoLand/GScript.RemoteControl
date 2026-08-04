@@ -59,6 +59,9 @@ private:
     GtkWidget* modernFileBrowser = nullptr;
     GtkWidget* fileBrowserHoverPreview = nullptr;
     GtkWidget* fileBrowserThumbnails = nullptr;
+    GtkWidget* extensionsEnabled = nullptr;
+    GtkWidget* syncEnabled = nullptr;
+    GtkWidget* levelListEnabled = nullptr;
     GtkWidget* syntax = nullptr;
     GtkWidget* autoIndent = nullptr;
     GtkWidget* smartHomeEnd = nullptr;

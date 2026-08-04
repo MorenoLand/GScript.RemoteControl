@@ -53,4 +53,6 @@ private:
     std::string addNPCX = "30.5";
     std::string addNPCY = "30";
     int selectedNPCId = -1;
+    int pendingCreateId = -1;
+    std::string pendingCreateName;
 };

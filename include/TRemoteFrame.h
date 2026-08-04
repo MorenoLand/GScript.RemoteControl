@@ -105,6 +105,9 @@ private:
     void appendChat(const std::string& message, bool suppressUrgency = false, bool suppressEmotes = false);
     void appendChatLog(const std::string& message) const;
     void applyOptions(const RC::RCOptions& previous);
+    void applyOptionalTools();
+    void createGraphicalButton(int index);
+    void setOptionalButton(int index, bool enabled);
     void refreshNotebookTheme();
     void sendServerListOptions();
     void updateMassPMAcceptance();

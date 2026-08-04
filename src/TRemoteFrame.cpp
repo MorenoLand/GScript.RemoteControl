@@ -393,7 +393,6 @@ TRemoteFrame::TRemoteFrame(const RC::RCOptions& nextOptions, const std::filesyst
     pmNormalEmote = gdk_pixbuf_new_from_file((applicationDirectory / "images" / "pmicon_normal.png").string().c_str(), nullptr);
     pacmanEmote = gdk_pixbuf_new_from_file((applicationDirectory / "images" / "emote_pacman.png").string().c_str(), nullptr);
     window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
-    syncManager = std::make_unique<TSyncManager>(window, applicationDirectory, [this](int progress, bool active) { syncProgress = progress; syncInProgress = active; });
     gtk_widget_set_name(window, "RemoteFrame");
     gtk_window_set_title(GTK_WINDOW(window), remoteControlTitle().c_str());
     gtk_window_set_default_size(GTK_WINDOW(window), 500, 350);
@@ -487,22 +486,7 @@ TRemoteFrame::TRemoteFrame(const RC::RCOptions& nextOptions, const std::filesyst
             gtk_widget_queue_draw(frame->backgroundImage);
             return G_SOURCE_CONTINUE;
         }, this);
-        const int positions[15][2] = {{5, 15}, {5, 48}, {38, 15}, {71, 15}, {394, 15}, {427, 15}, {460, 15}, {460, 48}, {460, 81}, {427, 114}, {394, 114}, {360, 114}, {104, 15}, {460, 114}, {361, 15}};
-        const char* tooltips[15] = {"Player List", "File Browser", "Accounts", "Toalls", "Options", "Server Flags", "Folder Options", "Server Options", "Local NPCs", "Classes", "Weapons", "NPCs", "Extensions", "Level List", "Sync & Git"};
-        for (int index = 0; index < 15; ++index) {
-            GtkWidget* button = gtk_event_box_new();
-            gtk_event_box_set_visible_window(GTK_EVENT_BOX(button), false);
-            gtk_widget_add_events(button, GDK_BUTTON_PRESS_MASK | GDK_BUTTON_RELEASE_MASK);
-            GtkWidget* buttonImage = gtk_image_new_from_file((applicationDirectory / "images" / options.buttonimagefiles[index]).string().c_str());
-            gtk_container_add(GTK_CONTAINER(button), buttonImage);
-            g_object_set_data(G_OBJECT(button), "button-index", GINT_TO_POINTER(index));
-            g_signal_connect(button, "button-press-event", G_CALLBACK(onGraphicalButton), this);
-            g_signal_connect(button, "button-release-event", G_CALLBACK(onGraphicalButton), this);
-            gtk_widget_set_tooltip_text(button, tooltips[index]);
-            gtk_fixed_put(GTK_FIXED(fixed), button, positions[index][0], positions[index][1]);
-            graphicalButtons[index] = button;
-            if (index >= 8 && index != 12) gtk_widget_hide(button);
-        }
+        for (int index = 0; index < 15; ++index) createGraphicalButton(index);
         GtkWidget* listServerSettings = gtk_button_new_with_label("⚙");
         gtk_widget_set_size_request(listServerSettings, 28, 28);
         gtk_widget_set_tooltip_text(listServerSettings, "List server settings");
@@ -583,7 +567,7 @@ TRemoteFrame::TRemoteFrame(const RC::RCOptions& nextOptions, const std::filesyst
         gtk_widget_set_margin_top(notebook, 156);
         gtk_overlay_add_overlay(GTK_OVERLAY(graphicalContainer), notebook);
     } else gtk_box_pack_start(GTK_BOX(root), notebook, true, true, 0);
-    extensionsManager = std::make_unique<TExtensionsManager>(GTK_WINDOW(window), applicationDirectory, [this](const std::string& extension, const std::string& output) { appendChannelMessage(extension, output); }, [this](const std::string& extension) { removeChannel(extension); });
+    applyOptionalTools();
 
     editField = gtk_entry_new();
     gtk_widget_set_name(editField, "EditField");
@@ -748,7 +732,7 @@ void TRemoteFrame::open(void* nextConnection, int serverIndex, const std::string
     currentServerIndex = serverIndex;
     this->serverName = serverName;
     if (playerList != nullptr) playerList->setServerName(serverName);
-    syncManager->setConnection(nextConnection, serverName);
+    if (syncManager != nullptr) syncManager->setConnection(nextConnection, serverName);
     gtk_window_set_title(GTK_WINDOW(window), remoteControlTitle(serverName).c_str());
     trayPlayerCount = -1;
     setBackupServerName(serverName);
@@ -784,6 +768,7 @@ void TRemoteFrame::open(void* nextConnection, int serverIndex, const std::string
     if (eventSource == 0) eventSource = g_timeout_add(50, processEvents, this);
     refreshMentionCompletion();
     gtk_widget_show_all(window);
+    applyOptionalTools();
     const int chatPage = chatScrolled == nullptr ? -1 : gtk_notebook_page_num(GTK_NOTEBOOK(notebook), chatScrolled);
     if (chatPage >= 0) gtk_notebook_set_current_page(GTK_NOTEBOOK(notebook), chatPage);
     struct ChatSelection { GtkWidget* notebook; GtkWidget* chat; };
@@ -984,7 +969,7 @@ void TRemoteFrame::onLevels(GtkMenuItem*, gpointer data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
     const int authenticated = frame->connection == nullptr ? 0 : rc_is_nc_authenticated(frame->connection);
     remoteControlDebugLog("level list requested: connection=%p authenticated=%d", frame->connection, authenticated);
-    if (frame->connection == nullptr || authenticated == 0) return;
+    if (!frame->options.levellistenabled || frame->connection == nullptr || authenticated == 0) return;
     if (frame->levelList == nullptr) frame->levelList = new TLevelList(GTK_WINDOW(frame->window));
     frame->levelList->setServerName(frame->serverName);
     frame->levelList->open(frame->connection);
@@ -1399,7 +1384,14 @@ void TRemoteFrame::repositionGraphicalButtons(int requestedWidth) {
         }
     }
     const int positions[15][2] = {{5, 15}, {5, 48}, {38, 15}, {71, 15}, {394, 15}, {427, 15}, {460, 15}, {460, 48}, {460, 81}, {427, 114}, {394, 114}, {360, 114}, {104, 15}, {460, 114}, {361, 15}};
-    for (int index = 4; index < 15; ++index) if (index != 12 && graphicalButtons[index] != nullptr) gtk_fixed_move(GTK_FIXED(graphicalFixed), graphicalButtons[index], std::clamp(width - (500 - positions[index][0]), 0, std::max(0, width - 32)), positions[index][1]);
+    const bool bottomRow[] = {false, false, false, false, false, false, false, false, false, true, true, true, false, true, false};
+    for (int index = 4; index < 15; ++index) if (!bottomRow[index] && index != 12 && graphicalButtons[index] != nullptr) gtk_fixed_move(GTK_FIXED(graphicalFixed), graphicalButtons[index], std::clamp(width - (500 - positions[index][0]), 0, std::max(0, width - 32)), positions[index][1]);
+    const int bottomIndices[] = {11, 10, 9, 13};
+    const int bottomSlots[] = {360, 394, 427, 460};
+    int bottomCount = 0;
+    for (int index : bottomIndices) if (graphicalButtons[index] != nullptr) ++bottomCount;
+    int bottomSlot = static_cast<int>(std::size(bottomSlots)) - bottomCount;
+    for (int index : bottomIndices) if (graphicalButtons[index] != nullptr) { const int slot = bottomSlots[bottomSlot++]; gtk_fixed_move(GTK_FIXED(graphicalFixed), graphicalButtons[index], std::clamp(width - (500 - slot), 0, std::max(0, width - 32)), 114); }
 }
 
 gboolean TRemoteFrame::processEvents(gpointer data) {
@@ -1508,8 +1500,9 @@ void TRemoteFrame::onDisconnected(const char* reason, void* data) {
         gtk_widget_destroy(warning);
     }
     gtk_widget_hide(frame->window);
-    frame->onCloseCallback();
-        createErrorWindow("Connection Error", reason == nullptr ? "You have been disconnected!" : reason, GTK_WINDOW(frame->window));
+    const std::shared_ptr<bool> callbackAlive = frame->callbackAlive;
+    const std::function<void()> reopenListServer = frame->onCloseCallback;
+    createErrorWindow("Connection Error", reason == nullptr ? "You have been disconnected!" : reason, GTK_WINDOW(frame->window), [callbackAlive, reopenListServer] { if (*callbackAlive && reopenListServer) reopenListServer(); });
 }
 
 void TRemoteFrame::onMessage(const char* message, void* data) {
@@ -1716,6 +1709,50 @@ void TRemoteFrame::appendChatLog(const std::string& message) const {
     stream << message << '\n';
 }
 
+void TRemoteFrame::createGraphicalButton(int index) {
+    if (index < 0 || index >= static_cast<int>(graphicalButtons.size()) || graphicalFixed == nullptr || graphicalButtons[index] != nullptr) return;
+    static const int positions[15][2] = {{5, 15}, {5, 48}, {38, 15}, {71, 15}, {394, 15}, {427, 15}, {460, 15}, {460, 48}, {460, 81}, {427, 114}, {394, 114}, {360, 114}, {104, 15}, {460, 114}, {361, 15}};
+    static const char* tooltips[15] = {"Player List", "File Browser", "Accounts", "Toalls", "Options", "Server Flags", "Folder Options", "Server Options", "Local NPCs", "Classes", "Weapons", "NPCs", "Extensions", "Level List", "Sync & Git"};
+    GtkWidget* button = gtk_event_box_new();
+    gtk_event_box_set_visible_window(GTK_EVENT_BOX(button), false);
+    gtk_widget_add_events(button, GDK_BUTTON_PRESS_MASK | GDK_BUTTON_RELEASE_MASK);
+    GtkWidget* buttonImage = gtk_image_new_from_file((applicationDirectory / "images" / options.buttonimagefiles[index]).string().c_str());
+    gtk_container_add(GTK_CONTAINER(button), buttonImage);
+    g_object_set_data(G_OBJECT(button), "button-index", GINT_TO_POINTER(index));
+    g_signal_connect(button, "button-press-event", G_CALLBACK(onGraphicalButton), this);
+    g_signal_connect(button, "button-release-event", G_CALLBACK(onGraphicalButton), this);
+    gtk_widget_set_tooltip_text(button, tooltips[index]);
+    gtk_fixed_put(GTK_FIXED(graphicalFixed), button, positions[index][0], positions[index][1]);
+    graphicalButtons[index] = button;
+    gtk_widget_show_all(button);
+    if (index >= 8 && index != 12) gtk_widget_hide(button);
+}
+
+void TRemoteFrame::setOptionalButton(int index, bool enabled) {
+    if (index < 0 || index >= static_cast<int>(graphicalButtons.size())) return;
+    if (!enabled) {
+        if (graphicalButtons[index] != nullptr) { gtk_widget_destroy(graphicalButtons[index]); graphicalButtons[index] = nullptr; }
+        repositionGraphicalButtons();
+        return;
+    }
+    createGraphicalButton(index);
+    if (graphicalButtons[index] != nullptr) { gtk_widget_show(graphicalButtons[index]); repositionGraphicalButtons(); }
+}
+
+void TRemoteFrame::applyOptionalTools() {
+    if (options.extensionsenabled) {
+        if (extensionsManager == nullptr) extensionsManager = std::make_unique<TExtensionsManager>(GTK_WINDOW(window), applicationDirectory, [this](const std::string& extension, const std::string& output) { appendChannelMessage(extension, output); }, [this](const std::string& extension) { removeChannel(extension); });
+    } else extensionsManager.reset();
+    if (options.syncenabled) {
+        if (syncManager == nullptr) syncManager = std::make_unique<TSyncManager>(window, applicationDirectory, [this](int progress, bool active) { syncProgress = progress; syncInProgress = active; });
+        if (connection != nullptr) syncManager->setConnection(connection, serverName);
+    } else syncManager.reset();
+    if (!options.levellistenabled && levelList != nullptr) { delete levelList; levelList = nullptr; }
+    setOptionalButton(12, options.extensionsenabled);
+    setOptionalButton(13, options.levellistenabled && isNCAuthenticated());
+    setOptionalButton(14, options.syncenabled && connection != nullptr);
+}
+
 void TRemoteFrame::applyOptions(const RC::RCOptions& previous) {
     updateMcpGuiBridgeOptions(options);
     nickname = options.nickname;
@@ -1730,6 +1767,7 @@ void TRemoteFrame::applyOptions(const RC::RCOptions& previous) {
     if (fileBrowser != nullptr && options.modernfilebrowser != previous.modernfilebrowser) fileBrowser->setModernFileBrowser(options.modernfilebrowser);
     if (fileBrowser != nullptr && options.filebrowserhoverpreview != previous.filebrowserhoverpreview) fileBrowser->setHoverPreviews(options.filebrowserhoverpreview);
     if (fileBrowser != nullptr && options.filebrowserthumbnails != previous.filebrowserthumbnails) fileBrowser->setModernThumbnails(options.filebrowserthumbnails);
+    if (options.extensionsenabled != previous.extensionsenabled || options.syncenabled != previous.syncenabled || options.levellistenabled != previous.levellistenabled) applyOptionalTools();
     if (options.background != previous.background) reloadBackground();
     if (options.backgroundtint != previous.backgroundtint && backgroundImage != nullptr) gtk_widget_queue_draw(backgroundImage);
     refreshTheme();
@@ -1948,8 +1986,11 @@ void TRemoteFrame::refreshMentionCompletion() {
 
 void TRemoteFrame::updateNCUi(bool connected) {
     for (int index = 8; index < 15; ++index) {
+        if (index == 12) { setOptionalButton(index, options.extensionsenabled); continue; }
+        if (index == 13) { setOptionalButton(index, options.levellistenabled && connected && isNCAuthenticated()); continue; }
+        if (index == 14) { setOptionalButton(index, options.syncenabled && connected && connection != nullptr); continue; }
         if (graphicalButtons[index] == nullptr) continue;
-        if (connected) gtk_widget_show(graphicalButtons[index]); else gtk_widget_hide(graphicalButtons[index]);
+        if (!connected) gtk_widget_hide(graphicalButtons[index]); else gtk_widget_show(graphicalButtons[index]);
     }
     if (npcServerLabel != nullptr) {
         if (connected) gtk_widget_show(npcServerLabel); else gtk_widget_hide(npcServerLabel);
@@ -2342,7 +2383,7 @@ void TRemoteFrame::send() {
 }
 
 void TRemoteFrame::reconnectNPCServer() {
-    syncManager->setConnection(nullptr, serverName);
+    if (syncManager != nullptr) syncManager->setConnection(nullptr, serverName);
     if (connection == nullptr) return;
     ncManuallyDisconnected = false;
     updateNCUi(false);

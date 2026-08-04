@@ -84,6 +84,9 @@ namespace RC {
             else if (key == "modernfilebrowser") options.modernfilebrowser = isTrue(value);
             else if (key == "filebrowserhoverpreview") options.filebrowserhoverpreview = isTrue(value);
             else if (key == "filebrowserthumbnails") options.filebrowserthumbnails = isTrue(value);
+            else if (key == "extensionsenabled") options.extensionsenabled = isTrue(value);
+            else if (key == "syncenabled") options.syncenabled = isTrue(value);
+            else if (key == "levellistenabled") options.levellistenabled = isTrue(value);
             else if (key == "chatfontsize") options.chatfontsize = std::stoi(value);
             else if (key == "chatfontfamily") options.chatfontfamily = value.empty() ? "Sans" : value;
             else if (key == "globalpms") options.globalpms = isTrue(value);
@@ -174,6 +177,9 @@ namespace RC {
         writeBool(stream, "modernfilebrowser", options.modernfilebrowser);
         writeBool(stream, "filebrowserhoverpreview", options.filebrowserhoverpreview);
         writeBool(stream, "filebrowserthumbnails", options.filebrowserthumbnails);
+        writeBool(stream, "extensionsenabled", options.extensionsenabled);
+        writeBool(stream, "syncenabled", options.syncenabled);
+        writeBool(stream, "levellistenabled", options.levellistenabled);
         writeBool(stream, "dontsavepassword", options.dontsavepassword);
         writeBool(stream, "graphicalmenu", options.graphicalmenu);
         writeBool(stream, "darkmode", options.darkmode);

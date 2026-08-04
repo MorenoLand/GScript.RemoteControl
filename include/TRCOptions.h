@@ -27,6 +27,9 @@ namespace RC {
         bool modernfilebrowser = false;
         bool filebrowserhoverpreview = true;
         bool filebrowserthumbnails = false;
+        bool extensionsenabled = false;
+        bool syncenabled = false;
+        bool levellistenabled = true;
         bool dontsavepassword = false;
         bool graphicalmenu = true;
         bool darkmode = true;

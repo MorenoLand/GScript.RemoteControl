@@ -1,10 +1,13 @@
 #pragma once
 
 #include <algorithm>
+#include <functional>
 #include <string>
 #include <gtk/gtk.h>
 
-inline GtkWidget* createErrorWindow(const char* title, const char* message, GtkWindow* parent = nullptr) {
+struct ErrorWindowState { std::function<void()> onClosed; bool handled = false; };
+
+inline GtkWidget* createErrorWindow(const char* title, const char* message, GtkWindow* parent = nullptr, std::function<void()> onClosed = {}) {
     GtkWidget* window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
     gtk_widget_set_name(window, "ErrorWindow");
     gtk_container_set_border_width(GTK_CONTAINER(window), 5);
@@ -26,6 +29,12 @@ inline GtkWidget* createErrorWindow(const char* title, const char* message, GtkW
     GtkWidget* button = gtk_button_new_from_stock(GTK_STOCK_OK);
     gtk_widget_set_size_request(button, 80, 24);
     gtk_container_add(GTK_CONTAINER(buttons), button);
+    auto* state = new ErrorWindowState{std::move(onClosed), false};
+    g_signal_connect(window, "destroy", G_CALLBACK(+[](GtkWidget*, gpointer data) {
+        auto* state = static_cast<ErrorWindowState*>(data);
+        if (!state->handled) { state->handled = true; auto callback = std::move(state->onClosed); delete state; if (callback) callback(); }
+        else delete state;
+    }), state);
     g_signal_connect(button, "clicked", G_CALLBACK(+[](GtkButton*, gpointer data) { gtk_widget_destroy(GTK_WIDGET(data)); }), window);
     gtk_widget_show_all(window);
     if (parent != nullptr) {

@@ -677,8 +677,8 @@ gboolean TServerList::finishLoad(gpointer data) {
         gtk_label_set_text(GTK_LABEL(result->serverList->statusField), "");
         result->serverList->disconnectCurrentConnection();
         gtk_widget_hide(result->serverList->window);
-        result->serverList->onCloseCallback();
-        createErrorWindow("Error", result->error.c_str(), result->serverList->loginParent != nullptr ? result->serverList->loginParent : GTK_WINDOW(result->serverList->window));
+        const std::function<void()> reopenListServer = result->serverList->onCloseCallback;
+        createErrorWindow("Error", result->error.c_str(), result->serverList->loginParent != nullptr ? result->serverList->loginParent : GTK_WINDOW(result->serverList->window), [reopenListServer] { if (reopenListServer) reopenListServer(); });
     }
     gtk_widget_set_sensitive(result->serverList->refreshButton, true);
     result.release();
