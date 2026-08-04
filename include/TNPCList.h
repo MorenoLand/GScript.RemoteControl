@@ -34,8 +34,9 @@ private:
     static gboolean onDelete(GtkWidget*, GdkEvent*, gpointer data);
     void refresh();
     void showScriptEditor(const char* name, int id, const char* script);
-    void showFlagsEditor(int id, const char* flags);
+    void showFlagsEditor(int id, const std::string& npcName, const char* flags);
     void showAttributes(int id, const char* attributes);
+    std::string npcNameForId(int id) const;
     int firstFreeNPCId() const;
     GtkWidget* window = nullptr;
     GtkWidget* tree = nullptr;

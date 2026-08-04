@@ -1162,6 +1162,45 @@ gboolean TPlayerList::onServerButtonPress(GtkWidget* widget, GdkEventButton* eve
     TPlayerList* list = static_cast<TPlayerList*>(data);
     const int depth = gtk_tree_path_get_depth(path);
     if (depth == 1 && event->type == GDK_BUTTON_PRESS && event->button == GDK_BUTTON_PRIMARY) onServerActivated(GTK_TREE_VIEW(widget), path, nullptr, data);
+    else if (depth == 1 && event->type == GDK_BUTTON_PRESS && event->button == GDK_BUTTON_SECONDARY) {
+        GtkTreeSelection* selection = gtk_tree_view_get_selection(GTK_TREE_VIEW(widget));
+        gtk_tree_selection_unselect_all(selection);
+        gtk_tree_selection_select_path(selection, path);
+        GtkWidget* menu = gtk_menu_new();
+        GtkWidget* closeServer = gtk_menu_item_new_with_label("Close server");
+        gtk_menu_shell_append(GTK_MENU_SHELL(menu), closeServer);
+        g_signal_connect(closeServer, "activate", G_CALLBACK(+[](GtkMenuItem*, gpointer userData) {
+            TPlayerList* remoteList = static_cast<TPlayerList*>(userData);
+            GtkTreeModel* model = nullptr;
+            GtkTreeIter row;
+            if (remoteList->serverTree == nullptr || !gtk_tree_selection_get_selected(gtk_tree_view_get_selection(GTK_TREE_VIEW(remoteList->serverTree)), &model, &row)) return;
+            gchar* serverName = nullptr;
+            gboolean requested = false;
+            gboolean received = false;
+            gtk_tree_model_get(model, &row, 1, &serverName, 3, &requested, 4, &received, -1);
+            if (serverName != nullptr && (requested || received)) {
+                GtkTreePath* serverPath = gtk_tree_model_get_path(model, &row);
+                if (serverPath != nullptr && gtk_tree_view_row_expanded(GTK_TREE_VIEW(remoteList->serverTree), serverPath)) gtk_tree_view_collapse_row(GTK_TREE_VIEW(remoteList->serverTree), serverPath);
+                if (serverPath != nullptr) gtk_tree_path_free(serverPath);
+                rc_unmap_pm_server(remoteList->connection, serverName);
+                GtkTreeIter child;
+                while (gtk_tree_model_iter_children(model, &child, &row)) gtk_tree_store_remove(remoteList->serverStore, &child);
+                gtk_tree_store_set(remoteList->serverStore, &row, 0, remoteList->channelClosedIcon, 3, false, 4, false, -1);
+                remoteList->serverPlayers.erase(serverName);
+            }
+            g_free(serverName);
+        }), list);
+        g_signal_connect(menu, "deactivate", G_CALLBACK(+[](GtkWidget* menuWidget, gpointer) {
+            g_object_ref(menuWidget);
+            g_idle_add_full(G_PRIORITY_DEFAULT_IDLE, +[](gpointer menuData) {
+                gtk_widget_destroy(GTK_WIDGET(menuData));
+                g_object_unref(menuData);
+                return G_SOURCE_REMOVE;
+            }, menuWidget, nullptr);
+        }), nullptr);
+        gtk_widget_show_all(menu);
+        gtk_menu_popup_at_pointer(GTK_MENU(menu), reinterpret_cast<GdkEvent*>(event));
+    }
     else if (depth == 2 && event->type == GDK_BUTTON_PRESS && event->button == GDK_BUTTON_PRIMARY) {
         gtk_tree_path_free(path);
         return false;
