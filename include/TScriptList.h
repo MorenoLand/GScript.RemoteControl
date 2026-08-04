@@ -5,6 +5,7 @@
 #include "TExternalEditor.h"
 #include <memory>
 #include <string>
+#include <chrono>
 
 class TExtensionsManager;
 
@@ -41,4 +42,6 @@ private:
     std::unique_ptr<TExternalEditor> externalEditor;
     std::string externalWorkspace;
     std::string externalCommand;
+    std::string pendingScriptName;
+    std::chrono::steady_clock::time_point pendingScriptRequestAt{};
 };

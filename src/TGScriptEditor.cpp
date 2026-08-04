@@ -1422,12 +1422,20 @@ void configureGScriptEditor(GtkWidget* editor, bool script) {
 
 void setGScriptEditorContent(GtkTextBuffer* buffer, const char* content, gint length) {
     if (buffer == nullptr) return;
-    gboolean undoEnabled = TRUE;
-    g_object_get(G_OBJECT(buffer), "enable-undo", &undoEnabled, nullptr);
-    g_object_set(G_OBJECT(buffer), "enable-undo", FALSE, nullptr);
-    gtk_text_buffer_set_text(buffer, content == nullptr ? "" : content, length);
+    const char* source = content == nullptr ? "" : content;
+    gint sourceLength = content == nullptr ? 0 : length;
+    gchar* validSource = nullptr;
+    if (!g_utf8_validate(source, sourceLength, nullptr)) {
+        validSource = g_utf8_make_valid(source, sourceLength);
+        source = validSource == nullptr ? "" : validSource;
+        sourceLength = -1;
+    }
+    GtkSourceUndoManager* undoManager = GTK_SOURCE_IS_BUFFER(buffer) ? gtk_source_buffer_get_undo_manager(GTK_SOURCE_BUFFER(buffer)) : nullptr;
+    if (undoManager != nullptr) gtk_source_undo_manager_begin_not_undoable_action(undoManager);
+    gtk_text_buffer_set_text(buffer, source, sourceLength);
     gtk_text_buffer_set_modified(buffer, FALSE);
-    g_object_set(G_OBJECT(buffer), "enable-undo", undoEnabled, nullptr);
+    if (undoManager != nullptr) gtk_source_undo_manager_end_not_undoable_action(undoManager);
+    g_free(validSource);
 }
 
 bool consumeEditorCtrlS(GtkWidget* editor, GdkEventKey* event) {

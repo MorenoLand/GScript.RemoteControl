@@ -7,15 +7,25 @@
 #include "TScriptEditorTracking.h"
 #include "TTheme.h"
 #include "TTreeSearch.h"
+#include "TDebug.h"
 
 #include <grclib.h>
 #include <gtksourceview/gtksource.h>
 #include <filesystem>
+#include <cstring>
 #include <utility>
 
 namespace {
     TScriptList* classList = nullptr;
     TScriptList* weaponList = nullptr;
+
+    std::size_t scriptByteCount(const char* script) { return script == nullptr ? 0 : std::strlen(script); }
+    std::size_t scriptLineCount(const char* script) {
+        if (script == nullptr || *script == '\0') return 0;
+        std::size_t lines = 1;
+        for (const char* cursor = script; *cursor != '\0'; ++cursor) if (*cursor == '\n') ++lines;
+        return lines;
+    }
 
     struct EditorExtensionActionState {
         TExtensionsManager* manager;
@@ -147,6 +157,7 @@ void TScriptList::hide() { if (window != nullptr) gtk_widget_hide(window); }
 
 void TScriptList::open(void* nextConnection) {
     connection = nextConnection;
+    remoteControlDebugLog("script list: open type=%s connection=%p server=%s", type.c_str(), connection, serverName.c_str());
     if (type == "classes") {
         classList = this;
         restoreScriptReceiver(connection);
@@ -166,6 +177,7 @@ void TScriptList::restoreScriptReceiver(void* connection) { rc_on_script_receive
 void TScriptList::onWeaponListReceived(int, void* data) {
     TScriptList* list = static_cast<TScriptList*>(data);
     if (list == nullptr || list->connection == nullptr) return;
+    remoteControlDebugLog("script list: weapon list received list=%p connection=%p", list, list->connection);
     list->refresh();
     gtk_widget_show_all(list->window);
     gtk_window_present(GTK_WINDOW(list->window));
@@ -209,10 +221,12 @@ void TScriptList::refresh() {
     if (type == "weapons") {
         RCWeapon* entries = nullptr;
         const int count = rc_get_weapons(connection, &entries);
+        remoteControlDebugLog("script list: refresh type=weapons count=%d connection=%p", count, connection);
         for (int index = 0; index < count; ++index) if (entries[index].name != nullptr && entries[index].name[0] != '\0') { GtkTreeIter row; gtk_list_store_append(store, &row); gtk_list_store_set(store, &row, 0, entries[index].name, -1); }
     } else {
         RCClass* entries = nullptr;
         const int count = rc_get_classes(connection, &entries);
+        remoteControlDebugLog("script list: refresh type=classes count=%d connection=%p", count, connection);
         for (int index = 0; index < count; ++index) if (entries[index].name != nullptr && entries[index].name[0] != '\0') { GtkTreeIter row; gtk_list_store_append(store, &row); gtk_list_store_set(store, &row, 0, entries[index].name, -1); }
     }
     gtk_tree_sortable_set_sort_column_id(GTK_TREE_SORTABLE(store), 0, GTK_SORT_ASCENDING);
@@ -221,12 +235,21 @@ void TScriptList::refresh() {
 void TScriptList::edit() {
     GtkTreeModel* model = nullptr;
     GtkTreeIter row;
-    if (!gtk_tree_selection_get_selected(gtk_tree_view_get_selection(GTK_TREE_VIEW(tree)), &model, &row)) return;
+    if (!gtk_tree_selection_get_selected(gtk_tree_view_get_selection(GTK_TREE_VIEW(tree)), &model, &row)) {
+        remoteControlDebugLog("script request: ignored because no row is selected type=%s connection=%p", type.c_str(), connection);
+        return;
+    }
     gchar* name = nullptr;
     gtk_tree_model_get(model, &row, 0, &name, -1);
-    if (name == nullptr) return;
-    if (type == "weapons") rc_request_weapon_script(connection, name);
-    else rc_request_class_script(connection, name);
+    if (name == nullptr) {
+        remoteControlDebugLog("script request: selected row has no script name type=%s connection=%p", type.c_str(), connection);
+        return;
+    }
+    pendingScriptName = name;
+    pendingScriptRequestAt = std::chrono::steady_clock::now();
+    remoteControlDebugLog("script request: type=%s name=%s connection=%p", type.c_str(), name, connection);
+    const int result = type == "weapons" ? rc_request_weapon_script(connection, name) : rc_request_class_script(connection, name);
+    remoteControlDebugLog("script request: type=%s name=%s result=%d", type.c_str(), name, result);
     g_free(name);
 }
 
@@ -248,14 +271,25 @@ void TScriptList::deleteSelected() {
     g_free(name);
 }
 
-void TScriptList::onScript(const char* scriptType, const char* name, int, const char* script, void* data) {
-    TScriptList* list = scriptType != nullptr && std::string(scriptType) == "weapon" ? weaponList : classList;
-    if (list == nullptr) return;
+void TScriptList::onScript(const char* scriptType, const char* name, int id, const char* script, void* data) {
+    const std::string callbackType = scriptType == nullptr ? "" : scriptType;
+    TScriptList* list = callbackType == "weapon" ? weaponList : classList;
+    const std::size_t bytes = scriptByteCount(script);
+    const std::size_t lines = scriptLineCount(script);
+    remoteControlDebugLog("script received: callbackType=%s id=%d name=%s bytes=%zu lines=%zu classList=%p weaponList=%p data=%p", callbackType.c_str(), id, name == nullptr ? "" : name, bytes, lines, classList, weaponList, data);
+    if (list == nullptr) {
+        remoteControlDebugLog("script received: dropped because no active %s list", callbackType.c_str());
+        return;
+    }
+    long long elapsedMs = -1;
+    if (!list->pendingScriptName.empty() && name != nullptr && list->pendingScriptName == name) elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - list->pendingScriptRequestAt).count();
+    remoteControlDebugLog("script received: routing list=%p requested=%s elapsed_ms=%lld", list, list->pendingScriptName.c_str(), elapsedMs);
     list->showEditor(name == nullptr ? "" : name, script == nullptr ? "" : script);
 }
 
 void TScriptList::showEditor(const char* name, const char* script) {
     const std::string scriptName = name == nullptr ? "" : name;
+    remoteControlDebugLog("script editor: prepare type=%s name=%s bytes=%zu lines=%zu server=%s external_scope=%s", type.c_str(), scriptName.c_str(), scriptByteCount(script), scriptLineCount(script), serverName.c_str(), options == nullptr ? "" : options->externaleditorscope.c_str());
     std::string weaponIcon;
     if (type == "weapons" && connection != nullptr) {
         RCWeapon* entries = nullptr;
@@ -263,6 +297,7 @@ void TScriptList::showEditor(const char* name, const char* script) {
         for (int index = 0; index < count; ++index) if (entries[index].name != nullptr && scriptName == entries[index].name) { if (entries[index].image != nullptr) weaponIcon = entries[index].image; break; }
     }
     if (options != nullptr && (options->externaleditorscope == "scripts" || options->externaleditorscope == "text")) {
+        remoteControlDebugLog("script editor: external open type=%s name=%s workspace=%s command=%s", type.c_str(), scriptName.c_str(), options->externaleditorworkspace.c_str(), options->externaleditorcommand.c_str());
         if (externalEditor == nullptr || externalWorkspace != options->externaleditorworkspace || externalCommand != options->externaleditorcommand) {
             externalWorkspace = options->externaleditorworkspace;
             externalCommand = options->externaleditorcommand;
@@ -272,6 +307,7 @@ void TScriptList::showEditor(const char* name, const char* script) {
             backupEditorText(type == "weapons" ? "weapon" : "class", scriptName, updated, true);
             if (type == "weapons") rc_update_weapon(connection, scriptName.c_str(), weaponIcon.c_str(), updated.c_str()); else rc_update_class(connection, scriptName.c_str(), updated.c_str());
         });
+        remoteControlDebugLog("script editor: external open dispatched type=%s name=%s", type.c_str(), scriptName.c_str());
         return;
     }
     struct EditorState { void* connection; bool weapon; std::string name; GtkWidget* editor; GtkWidget* icon; };
@@ -291,6 +327,7 @@ void TScriptList::showEditor(const char* name, const char* script) {
     addEditorFindButton(dialog, editor);
     gtk_text_view_set_monospace(GTK_TEXT_VIEW(editor), true);
     setGScriptEditorContent(GTK_TEXT_BUFFER(sourceBuffer), script);
+    remoteControlDebugLog("script editor: GTK buffer populated type=%s name=%s chars=%d utf8=%s", type.c_str(), scriptName.c_str(), gtk_text_buffer_get_char_count(GTK_TEXT_BUFFER(sourceBuffer)), g_utf8_validate(script == nullptr ? "" : script, -1, nullptr) ? "valid" : "repaired");
     trackScriptEditor(dialog, GTK_TEXT_BUFFER(sourceBuffer), editorTitle, script, connection);
     backupEditorText(type == "weapons" ? "weapon" : "class", scriptName.c_str(), script, false);
     g_object_unref(sourceBuffer);
@@ -353,6 +390,7 @@ void TScriptList::showEditor(const char* name, const char* script) {
     }), state);
     g_signal_connect(dialog, "destroy", G_CALLBACK(+[](GtkWidget*, gpointer data) { delete static_cast<EditorState*>(data); }), state);
     gtk_widget_show_all(dialog);
+    remoteControlDebugLog("script editor: GTK dialog presented type=%s name=%s dialog=%p", type.c_str(), scriptName.c_str(), dialog);
     if (icon != nullptr) {
         gtk_editable_select_region(GTK_EDITABLE(icon), 0, 0);
         gtk_editable_set_position(GTK_EDITABLE(icon), -1);
