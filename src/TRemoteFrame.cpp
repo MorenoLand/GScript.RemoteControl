@@ -45,6 +45,7 @@ extern void remote_control_set_tray_label(const char* serverName, int playerCoun
 namespace {
 struct ChannelScrollRequest { GtkWidget* field = nullptr; double previousValue = 0.0; };
 struct CompletionPopupRequest { GtkWidget* entry = nullptr; GtkTreeModel* model = nullptr; GtkEntryCompletion* completion = nullptr; unsigned attempts = 0; };
+struct DisconnectDispatch { std::shared_ptr<bool> alive; TRemoteFrame* frame = nullptr; void* handle = nullptr; std::uint64_t generation = 0; std::string reason; };
 bool isInternalProtocolText(const std::string& value) {
     if (value.rfind("GraalEngine", 0) == 0 || value.rfind("raalEngine", 0) == 0) return true;
     const std::size_t separator = value.find_first_of("\x01\n");
@@ -297,8 +298,6 @@ gboolean TRemoteFrame::scrollChannelToBottom(gpointer data) {
             gtk_adjustment_set_value(adjustment, gtk_adjustment_get_upper(adjustment) - gtk_adjustment_get_page_size(adjustment));
         }
     }
-    g_object_unref(field);
-    delete request;
     return G_SOURCE_REMOVE;
 }
 
@@ -719,8 +718,7 @@ TRemoteFrame::~TRemoteFrame() {
 
 void TRemoteFrame::open(void* nextConnection, int serverIndex, const std::string& serverName, const std::string& nickname, const std::string& accountName) {
     connection = nextConnection;
-    rebindScriptEditorConnection(nullptr, connection);
-    rebindGScriptEditorConnections(nullptr, connection);
+    ++connectionGeneration;
     if (playerList != nullptr) playerList->rebindConnection(connection);
     if (classList != nullptr) classList->setConnection(connection);
     if (weaponList != nullptr) weaponList->setConnection(connection);
@@ -747,7 +745,7 @@ void TRemoteFrame::open(void* nextConnection, int serverIndex, const std::string
     ncConnectionAttempted = false;
     ncManuallyDisconnected = false;
     rc_on_connected(connection, onConnected, this);
-    rc_on_disconnected(connection, onDisconnected, this);
+    rc_on_disconnected_ex(connection, onDisconnectedEx, this);
     rc_on_message(connection, onMessage, this);
     rc_on_irc_message(connection, onIrcMessage, this);
     rc_on_private_message_ex(connection, onPrivateMessage, this);
@@ -805,8 +803,8 @@ void TRemoteFrame::disconnect() {
     if (serverOptionsEditor != nullptr) serverOptionsEditor->setConnection(nullptr);
     if (serverFlagsEditor != nullptr) serverFlagsEditor->setConnection(nullptr);
     if (folderConfigEditor != nullptr) folderConfigEditor->setConnection(nullptr);
-    rc_disconnect(disconnectedConnection);
     connection = nullptr;
+    rc_disconnect(disconnectedConnection);
 }
 
 void TRemoteFrame::signOut() {
@@ -1471,38 +1469,59 @@ void TRemoteFrame::onConnected(void* data) {
 
 void TRemoteFrame::onDisconnected(const char* reason, void* data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
-    void* disconnectedConnection = frame->connection;
-    detachScriptEditorConnection(disconnectedConnection);
-    detachGScriptEditorConnections(disconnectedConnection);
-    if (frame->playerList != nullptr) frame->playerList->setConnection(nullptr);
-    if (frame->classList != nullptr) frame->classList->setConnection(nullptr);
-    if (frame->weaponList != nullptr) frame->weaponList->setConnection(nullptr);
-    if (frame->npcList != nullptr) frame->npcList->setConnection(nullptr);
-    if (frame->fileBrowser != nullptr) frame->fileBrowser->setConnection(nullptr);
-    if (frame->serverOptionsEditor != nullptr) frame->serverOptionsEditor->setConnection(nullptr);
-    if (frame->serverFlagsEditor != nullptr) frame->serverFlagsEditor->setConnection(nullptr);
-    if (frame->folderConfigEditor != nullptr) frame->folderConfigEditor->setConnection(nullptr);
-    frame->connection = nullptr;
-    remote_control_set_tray_label(nullptr, 0);
-    if (frame->suppressReconnectDisconnect) {
-        frame->suppressReconnectDisconnect = false;
+    onDisconnectedEx(frame == nullptr ? nullptr : frame->connection, reason, data);
+}
+
+void TRemoteFrame::onDisconnectedEx(void* handle, const char* reason, void* data) {
+    TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
+    if (frame == nullptr || handle == nullptr || frame->connection != handle) {
+        remoteControlDebugLog("ignoring stale disconnect callback handle=%p current=%p", handle, frame == nullptr ? nullptr : frame->connection);
         return;
     }
-    if (frame->disconnectHandled) return;
+    const std::uint64_t generation = frame->connectionGeneration;
+    auto* dispatch = new DisconnectDispatch{frame->callbackAlive, frame, handle, generation, reason == nullptr ? "You have been disconnected!" : reason};
+    g_idle_add_full(G_PRIORITY_DEFAULT_IDLE, +[](gpointer data) -> gboolean {
+        auto* dispatch = static_cast<DisconnectDispatch*>(data);
+        if (*dispatch->alive && dispatch->frame != nullptr && dispatch->frame->connection == dispatch->handle && dispatch->frame->connectionGeneration == dispatch->generation) dispatch->frame->handleDisconnected(dispatch->handle, dispatch->generation, dispatch->reason.c_str());
+        delete dispatch;
+        return G_SOURCE_REMOVE;
+    }, dispatch, nullptr);
+}
+
+void TRemoteFrame::handleDisconnected(void* disconnectedConnection, std::uint64_t generation, const char* reason) {
+    if (connection != disconnectedConnection || connectionGeneration != generation) return;
+    detachScriptEditorConnection(disconnectedConnection);
+    detachGScriptEditorConnections(disconnectedConnection);
+    if (playerList != nullptr) playerList->setConnection(nullptr);
+    if (classList != nullptr) classList->setConnection(nullptr);
+    if (weaponList != nullptr) weaponList->setConnection(nullptr);
+    if (npcList != nullptr) npcList->setConnection(nullptr);
+    if (fileBrowser != nullptr) fileBrowser->setConnection(nullptr);
+    if (serverOptionsEditor != nullptr) serverOptionsEditor->setConnection(nullptr);
+    if (serverFlagsEditor != nullptr) serverFlagsEditor->setConnection(nullptr);
+    if (folderConfigEditor != nullptr) folderConfigEditor->setConnection(nullptr);
+    connection = nullptr;
+    rc_disconnect(disconnectedConnection);
+    remote_control_set_tray_label(nullptr, 0);
+    if (suppressReconnectDisconnect) {
+        suppressReconnectDisconnect = false;
+        return;
+    }
+    if (disconnectHandled) return;
     remoteControlDebugLog("connection disconnected: %s", reason == nullptr ? "You have been disconnected!" : reason);
-    frame->disconnectHandled = true;
+    disconnectHandled = true;
     const std::vector<std::string> unsaved = unsavedScriptEditors();
     if (!unsaved.empty()) {
         std::string message = "The following scripts have unsaved changes and remain open:\n";
         for (const std::string& name : unsaved) message += "\n" + name;
-        GtkWidget* warning = gtk_message_dialog_new(GTK_WINDOW(frame->window), GTK_DIALOG_MODAL, GTK_MESSAGE_WARNING, GTK_BUTTONS_OK, "%s", message.c_str());
+        GtkWidget* warning = gtk_message_dialog_new(GTK_WINDOW(window), GTK_DIALOG_MODAL, GTK_MESSAGE_WARNING, GTK_BUTTONS_OK, "%s", message.c_str());
         gtk_dialog_run(GTK_DIALOG(warning));
         gtk_widget_destroy(warning);
     }
-    gtk_widget_hide(frame->window);
-    const std::shared_ptr<bool> callbackAlive = frame->callbackAlive;
-    const std::function<void()> reopenListServer = frame->onCloseCallback;
-    createErrorWindow("Connection Error", reason == nullptr ? "You have been disconnected!" : reason, GTK_WINDOW(frame->window), [callbackAlive, reopenListServer] { if (*callbackAlive && reopenListServer) reopenListServer(); });
+    gtk_widget_hide(window);
+    const std::shared_ptr<bool> alive = this->callbackAlive;
+    const std::function<void()> reopenListServer = onCloseCallback;
+    createErrorWindow("Connection Error", reason == nullptr ? "You have been disconnected!" : reason, GTK_WINDOW(window), [alive, reopenListServer] { if (*alive && reopenListServer) reopenListServer(); });
 }
 
 void TRemoteFrame::onMessage(const char* message, void* data) {
@@ -1553,7 +1572,13 @@ bool TRemoteFrame::mcpSendChat(const std::string& text, std::string& error) {
 }
 
 void TRemoteFrame::onIrcMessage(const char* channel, const char* line, void* data) {
-    static_cast<TRemoteFrame*>(data)->appendChannelMessage(channel == nullptr ? "" : channel, line == nullptr ? "" : line);
+    TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
+    const std::string channelName = channel == nullptr ? "" : channel;
+    if (!channelName.empty()) frame->ircChannels.insert(channelName);
+    std::string display = line == nullptr ? "" : line;
+    const std::size_t close = display.find("> ");
+    if (!display.empty() && display[0] == '<' && close != std::string::npos) display.insert(close + 1, ":");
+    frame->appendChannelMessage(channelName, display);
 }
 
 void TRemoteFrame::onPrivateMessage(int playerId, const char* account, const char* nick, const char* message, const char* type, void* data) {
@@ -2183,7 +2208,7 @@ void TRemoteFrame::appendChannelMessage(const std::string& channel, const std::s
         if (!hasActiveRemoteControlWindow()) gtk_window_set_urgency_hint(GTK_WINDOW(window), true);
         if (options.notificationsounds) gdk_beep();
     }
-    if (followBottom) g_idle_add(scrollChannelToBottom, new ChannelScrollRequest{GTK_WIDGET(g_object_ref(field)), previousValue});
+    if (followBottom) g_idle_add_full(G_PRIORITY_DEFAULT_IDLE, scrollChannelToBottom, new ChannelScrollRequest{GTK_WIDGET(g_object_ref(field)), previousValue}, +[](gpointer data) { auto* request = static_cast<ChannelScrollRequest*>(data); g_object_unref(request->field); delete request; });
 }
 
 void TRemoteFrame::removeChannel(const std::string& channel) {
@@ -2194,6 +2219,7 @@ void TRemoteFrame::removeChannel(const std::string& channel) {
     if (page != -1) gtk_notebook_remove_page(GTK_NOTEBOOK(notebook), page);
     chatTags.erase(gtk_text_view_get_buffer(GTK_TEXT_VIEW(found->second)));
     channelFields.erase(found);
+    ircChannels.erase(channel);
 }
 
 void TRemoteFrame::beginFindResults(const std::string& base) {
@@ -2306,12 +2332,33 @@ bool TRemoteFrame::applyAlertTag(std::string& message, bool allowUrgency) {
 }
 
 void TRemoteFrame::send() {
-    if (connection == nullptr) return;
-    const std::string message = gtk_entry_get_text(GTK_ENTRY(editField));
+    const char* rawMessage = gtk_entry_get_text(GTK_ENTRY(editField));
+    std::string message = rawMessage == nullptr ? "" : rawMessage;
+    const std::size_t first = message.find_first_not_of(" \t\r\n");
+    if (first == std::string::npos) return;
+    message.erase(0, first);
+    const std::size_t last = message.find_last_not_of(" \t\r\n");
+    message.erase(last + 1);
     if (message.empty()) return;
     if (chatHistory.empty() || chatHistory.front() != message) chatHistory.insert(chatHistory.begin(), message);
     if (chatHistory.size() > 30) chatHistory.pop_back();
     chatHistoryIndex = -1;
+    std::istringstream commandStream(message);
+    std::string command;
+    commandStream >> command;
+    std::transform(command.begin(), command.end(), command.begin(), [](unsigned char value) { return static_cast<char>(std::tolower(value)); });
+    if (command == "/nc") {
+        std::string subcommand;
+        commandStream >> subcommand;
+        std::transform(subcommand.begin(), subcommand.end(), subcommand.begin(), [](unsigned char value) { return static_cast<char>(std::tolower(value)); });
+        remoteControlDebugLog("custom command intercepted: %s", message.c_str());
+        if (subcommand == "connect" || subcommand == "c" || subcommand == "rc") reconnectNPCServer();
+        else if (subcommand == "disconnect" || subcommand == "dc") disconnectNPCServer();
+        else appendChat("Usage: /nc connect, /nc disconnect, or /nc rc");
+        gtk_entry_set_text(GTK_ENTRY(editField), "");
+        return;
+    }
+    if (connection == nullptr) return;
     if (message == "/rchelp") {
         appendChat("RC commands:");
         appendChat("  /nc connect (or /nc c) - connect to the NPC server");
@@ -2329,21 +2376,6 @@ void TRemoteFrame::send() {
         if (!rc_execute(connection, message.c_str())) appendChat(rc_last_error(connection));
         appendChat("RC: /rchelp - show Remote Control commands");
         appendChat("RC emotes: type Kappa, PMNormal, or :v in chat", false, true);
-        gtk_entry_set_text(GTK_ENTRY(editField), "");
-        return;
-    }
-    if (message == "/nc") {
-        appendChat("Usage: /nc connect, /nc disconnect, or /nc rc");
-        gtk_entry_set_text(GTK_ENTRY(editField), "");
-        return;
-    }
-    if (message == "/nc connect" || message == "/nc c" || message == "/nc rc") {
-        reconnectNPCServer();
-        gtk_entry_set_text(GTK_ENTRY(editField), "");
-        return;
-    }
-    if (message == "/nc disconnect" || message == "/nc dc") {
-        disconnectNPCServer();
         gtk_entry_set_text(GTK_ENTRY(editField), "");
         return;
     }
@@ -2372,6 +2404,14 @@ void TRemoteFrame::send() {
     if (message == "/clear all") {
         gtk_text_buffer_set_text(gtk_text_view_get_buffer(GTK_TEXT_VIEW(chatField)), "", -1);
         for (const auto& entry : channelFields) gtk_text_buffer_set_text(gtk_text_view_get_buffer(GTK_TEXT_VIEW(entry.second)), "", -1);
+        gtk_entry_set_text(GTK_ENTRY(editField), "");
+        return;
+    }
+    GtkWidget* selectedPage = gtk_notebook_get_nth_page(GTK_NOTEBOOK(notebook), gtk_notebook_get_current_page(GTK_NOTEBOOK(notebook)));
+    for (const std::string& channel : ircChannels) {
+        const auto field = channelFields.find(channel);
+        if (field == channelFields.end() || gtk_widget_get_parent(field->second) != selectedPage) continue;
+        if (!rc_send_irc_text(connection, "privmsg", channel.c_str(), message.c_str(), nullptr)) appendChannelMessage(channel, "* Failed to send message");
         gtk_entry_set_text(GTK_ENTRY(editField), "");
         return;
     }

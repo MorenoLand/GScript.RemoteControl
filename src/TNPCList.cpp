@@ -334,6 +334,20 @@ std::string TNPCList::npcNameForId(int id) const {
     }
     return {};
 }
+namespace {
+struct NPCFlagsEditorState { void* connection; int id; GtkWidget* window; GtkWidget* text; };
+void saveNPCFlagsEditor(NPCFlagsEditorState* state) {
+    if (state == nullptr || state->text == nullptr) return;
+    GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(state->text));
+    GtkTextIter start;
+    GtkTextIter end;
+    gtk_text_buffer_get_bounds(buffer, &start, &end);
+    gchar* content = gtk_text_buffer_get_text(buffer, &start, &end, false);
+    backupEditorText("npcflags", std::to_string(state->id), content == nullptr ? "" : content, true);
+    if (state->connection != nullptr) rc_set_npc_flags(state->connection, state->id, content == nullptr ? "" : content);
+    g_free(content);
+}
+}
 void TNPCList::showFlagsEditor(int id, const std::string& npcName, const char* flags) {
     if (options != nullptr && options->externaleditorscope == "text") {
         if (externalEditor == nullptr || externalWorkspace != options->externaleditorworkspace || externalCommand != options->externaleditorcommand) {
@@ -348,12 +362,16 @@ void TNPCList::showFlagsEditor(int id, const std::string& npcName, const char* f
         });
         return;
     }
-    struct FlagState { void* connection; int id; GtkWidget* text; };
     const std::string displayName = npcName.empty() ? "NPC " + std::to_string(id) : npcName;
     const std::string editorTitle = "NPC Flags: " + displayName + (serverName.empty() ? "" : " (" + serverName + ")");
-    GtkWidget* dialog = gtk_dialog_new_with_buttons(editorTitle.c_str(), GTK_WINDOW(window), static_cast<GtkDialogFlags>(0), nullptr);
+    GtkWidget* dialog = gtk_window_new(GTK_WINDOW_TOPLEVEL);
+    gtk_window_set_title(GTK_WINDOW(dialog), editorTitle.c_str());
+    gtk_window_set_transient_for(GTK_WINDOW(dialog), GTK_WINDOW(window));
+    gtk_window_set_destroy_with_parent(GTK_WINDOW(dialog), false);
     gtk_window_set_resizable(GTK_WINDOW(dialog), true);
     gtk_window_set_default_size(GTK_WINDOW(dialog), 600, 460);
+    GtkWidget* root = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    gtk_container_add(GTK_CONTAINER(dialog), root);
     GtkWidget* scrolled = gtk_scrolled_window_new(nullptr, nullptr);
     gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scrolled), GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
     GtkSourceLanguage* language = gtk_source_language_manager_get_language(gtk_source_language_manager_get_default(), "ini");
@@ -363,43 +381,54 @@ void TNPCList::showFlagsEditor(int id, const std::string& npcName, const char* f
     configureGScriptEditor(text, false);
     gtk_text_view_set_monospace(GTK_TEXT_VIEW(text), true);
     setGScriptEditorContent(GTK_TEXT_BUFFER(sourceBuffer), flags == nullptr ? "" : flags);
-    backupEditorText("npcflags", std::to_string(id), flags, false);
+    addEditorFindShortcut(text);
+    addEditorGoToLineShortcut(text);
+    backupEditorText("npcflags", std::to_string(id), flags == nullptr ? "" : flags, false);
     g_object_unref(sourceBuffer);
     gtk_container_add(GTK_CONTAINER(scrolled), text);
-    gtk_box_pack_start(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), wrapGScriptEditor(text, scrolled), true, true, 0);
-    addGScriptEditorLineStatus(GTK_DIALOG(dialog), text);
-    addEditorFindButton(dialog, text);
+    gtk_box_pack_start(GTK_BOX(root), wrapGScriptEditor(text, scrolled), true, true, 0);
+    GtkWidget* bottom = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 5);
+    gtk_box_pack_start(GTK_BOX(bottom), createGScriptEditorLineStatus(text), false, false, 0);
+    GtkWidget* spacer = gtk_label_new(nullptr);
+    gtk_widget_set_hexpand(spacer, true);
+    gtk_box_pack_start(GTK_BOX(bottom), spacer, true, true, 0);
+    GtkWidget* goToLineButton = editorIconButton("Go to line", "go-jump-symbolic");
+    GtkWidget* formatButton = createEditorFormatButton(text);
+    GtkWidget* findButton = editorIconButton("Find", "edit-find-symbolic");
     GtkWidget* applyButton = editorIconButton("Apply", "document-save-symbolic");
     GtkWidget* closeButton = editorIconButton("Close", "window-close-symbolic");
-    gtk_container_add(GTK_CONTAINER(gtk_dialog_get_action_area(GTK_DIALOG(dialog))), applyButton);
-    gtk_container_add(GTK_CONTAINER(gtk_dialog_get_action_area(GTK_DIALOG(dialog))), closeButton);
-    gtk_dialog_set_default_response(GTK_DIALOG(dialog), GTK_RESPONSE_ACCEPT);
-    g_signal_connect(applyButton, "clicked", G_CALLBACK(+[](GtkButton*, gpointer data) { gtk_dialog_response(GTK_DIALOG(data), GTK_RESPONSE_ACCEPT); }), dialog);
-    g_signal_connect(closeButton, "clicked", G_CALLBACK(+[](GtkButton*, gpointer data) { gtk_dialog_response(GTK_DIALOG(data), GTK_RESPONSE_CANCEL); }), dialog);
+    gtk_widget_set_tooltip_text(goToLineButton, "Go to line (Ctrl+G)");
+    gtk_widget_set_tooltip_text(findButton, "Find (Ctrl+F) / right-click Replace (Ctrl+H)");
+    GtkWidget* actions = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 5);
+    gtk_box_pack_start(GTK_BOX(actions), goToLineButton, false, false, 0);
+    gtk_box_pack_start(GTK_BOX(actions), formatButton, false, false, 0);
+    gtk_box_pack_start(GTK_BOX(actions), findButton, false, false, 0);
+    gtk_box_pack_start(GTK_BOX(actions), applyButton, false, false, 0);
+    gtk_box_pack_start(GTK_BOX(actions), closeButton, false, false, 0);
+    gtk_widget_set_margin_top(actions, 3);
+    gtk_widget_set_margin_bottom(actions, 3);
+    gtk_widget_set_margin_end(actions, 5);
+    gtk_box_pack_end(GTK_BOX(bottom), actions, false, false, 0);
+    gtk_box_pack_start(GTK_BOX(root), bottom, false, false, 0);
+    gtk_widget_add_events(findButton, GDK_BUTTON_PRESS_MASK);
+    g_signal_connect(goToLineButton, "clicked", G_CALLBACK(editorGoToLine), text);
+    g_signal_connect(findButton, "clicked", G_CALLBACK(editorFind), text);
+    g_signal_connect(findButton, "button-press-event", G_CALLBACK(editorFindButtonPress), text);
+    auto* state = new NPCFlagsEditorState{connection, id, dialog, text};
+    g_signal_connect(applyButton, "clicked", G_CALLBACK(+[](GtkButton*, gpointer data) { saveNPCFlagsEditor(static_cast<NPCFlagsEditorState*>(data)); }), state);
+    g_signal_connect(closeButton, "clicked", G_CALLBACK(+[](GtkButton*, gpointer data) { gtk_widget_destroy(static_cast<NPCFlagsEditorState*>(data)->window); }), state);
     g_signal_connect(text, "key-press-event", G_CALLBACK(+[](GtkWidget* widget, GdkEventKey* event, gpointer data) {
         if (consumeEditorCtrlS(widget, event)) {
-            gtk_dialog_response(GTK_DIALOG(data), GTK_RESPONSE_ACCEPT);
+            saveNPCFlagsEditor(static_cast<NPCFlagsEditorState*>(data));
             return static_cast<gboolean>(TRUE);
         }
         return static_cast<gboolean>(FALSE);
-    }), dialog);
-    g_signal_connect(text, "key-release-event", G_CALLBACK(releaseEditorCtrlS), nullptr);
-    auto* state = new FlagState{connection, id, text};
-    g_signal_connect(dialog, "response", G_CALLBACK(+[](GtkDialog* responseDialog, gint response, gpointer data) {
-        auto* state = static_cast<FlagState*>(data);
-        if (response == GTK_RESPONSE_ACCEPT) {
-            GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(state->text));
-            GtkTextIter start;
-            GtkTextIter end;
-            gtk_text_buffer_get_bounds(buffer, &start, &end);
-            gchar* content = gtk_text_buffer_get_text(buffer, &start, &end, false);
-            backupEditorText("npcflags", std::to_string(state->id), content == nullptr ? "" : content, true);
-            rc_set_npc_flags(state->connection, state->id, content == nullptr ? "" : content);
-            g_free(content);
-        } else gtk_widget_destroy(GTK_WIDGET(responseDialog));
     }), state);
-    g_signal_connect(dialog, "destroy", G_CALLBACK(+[](GtkWidget*, gpointer data) { delete static_cast<FlagState*>(data); }), state);
+    g_signal_connect(text, "key-release-event", G_CALLBACK(releaseEditorCtrlS), nullptr);
+    g_signal_connect(dialog, "destroy", G_CALLBACK(+[](GtkWidget*, gpointer data) { delete static_cast<NPCFlagsEditorState*>(data); }), state);
+    g_signal_connect(dialog, "delete-event", G_CALLBACK(+[](GtkWidget* widget, GdkEvent*, gpointer) { gtk_widget_destroy(widget); return static_cast<gboolean>(TRUE); }), nullptr);
     gtk_widget_show_all(dialog);
+    gtk_widget_grab_focus(text);
 }
 void TNPCList::showAttributes(int id, const char* attributes) {
     const std::string editorTitle = "Attributes of NPC " + std::to_string(id) + (serverName.empty() ? "" : " - " + serverName);

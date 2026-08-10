@@ -139,7 +139,7 @@ TOptionsWindow::TOptionsWindow(RC::RCOptions& nextOptions, const std::filesystem
     fileBrowserThumbnails = addCheckGrid(GTK_GRID(generalChecks), "Modern File Browser thumbnails (Experimental)", options.filebrowserthumbnails, 13);
     extensionsEnabled = addCheckGrid(GTK_GRID(generalChecks), "Extensions", options.extensionsenabled, 14);
     syncEnabled = addCheckGrid(GTK_GRID(generalChecks), "Sync & Git Backups", options.syncenabled, 15);
-    levelListEnabled = addCheckGrid(GTK_GRID(generalChecks), "Level List", options.levellistenabled, 16);
+    levelListEnabled = addCheckGrid(GTK_GRID(generalChecks), "Level List (Legacy)", options.levellistenabled, 16);
     gtk_box_pack_start(GTK_BOX(general), generalChecks, false, false, 0);
     GtkWidget* generalGrid = gtk_grid_new();
     gtk_grid_set_row_spacing(GTK_GRID(generalGrid), 5);

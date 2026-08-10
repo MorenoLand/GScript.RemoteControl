@@ -220,7 +220,7 @@ TServerList::TServerList(const std::filesystem::path& nextApplicationDirectory, 
     gtk_container_set_border_width(GTK_CONTAINER(buttons), 5);
     gtk_button_box_set_layout(GTK_BUTTON_BOX(buttons), GTK_BUTTONBOX_END);
     refreshButton = gtk_button_new_with_label("Refresh");
-    GtkWidget* connectButton = gtk_button_new_with_label("Connect");
+    connectButton = gtk_button_new_with_label("Connect");
     gtk_button_set_image(GTK_BUTTON(refreshButton), gtk_image_new_from_stock(GTK_STOCK_REFRESH, GTK_ICON_SIZE_BUTTON));
     gtk_button_set_image(GTK_BUTTON(connectButton), gtk_image_new_from_stock(GTK_STOCK_CONNECT, GTK_ICON_SIZE_BUTTON));
     gtk_button_set_always_show_image(GTK_BUTTON(refreshButton), true);
@@ -237,6 +237,8 @@ TServerList::TServerList(const std::filesystem::path& nextApplicationDirectory, 
 }
 
 TServerList::~TServerList() {
+    callbackAlive->store(false);
+    if (connectWorker.joinable()) connectWorker.join();
     if (worker.joinable()) worker.join();
     std::lock_guard lock(connectionMutex);
     if (connection != nullptr) rc_disconnect(connection);
@@ -685,8 +687,30 @@ gboolean TServerList::finishLoad(gpointer data) {
     return G_SOURCE_REMOVE;
 }
 
+gboolean TServerList::finishConnect(gpointer data) {
+    auto* result = static_cast<ConnectResult*>(data);
+    TServerList* serverList = result->serverList;
+    if (serverList == nullptr || !result->alive->load()) return G_SOURCE_REMOVE;
+    if (serverList->connectWorker.joinable()) serverList->connectWorker.join();
+    serverList->connecting = false;
+    gtk_widget_set_sensitive(serverList->refreshButton, true);
+    gtk_widget_set_sensitive(serverList->connectButton, true);
+    if (!result->error.empty() || result->connection == nullptr || result->serverIndex < 0) {
+        const std::string message = result->error.empty() ? "Server is no longer available." : result->error;
+        if (result->connection != nullptr) { rc_disconnect(result->connection); result->connection = nullptr; }
+        createErrorWindow("Connection Error", message.c_str(), serverList->loginParent != nullptr ? serverList->loginParent : GTK_WINDOW(serverList->window));
+        return G_SOURCE_REMOVE;
+    }
+    void* remoteConnection = result->connection;
+    result->connection = nullptr;
+    serverList->defaultAdditionalConnection = false;
+    gtk_widget_hide(serverList->window);
+    serverList->onConnectedCallback(serverList, remoteConnection, result->serverIndex, result->serverName, result->nickname, result->account, result->additional);
+    return G_SOURCE_REMOVE;
+}
+
 void TServerList::refresh() {
-    if (worker.joinable()) return;
+    if (worker.joinable() || connecting) return;
     gtk_label_set_text(GTK_LABEL(statusField), "Loading server list...");
     gtk_widget_set_sensitive(refreshButton, false);
     worker = std::jthread([this] {
@@ -721,22 +745,41 @@ void TServerList::connect(bool additional) {
     if (!gtk_tree_selection_get_selected(selection, &model, &iter)) return;
     int index = -1;
     gtk_tree_model_get(model, &iter, 4, &index, -1);
+    if (index < 0 || static_cast<std::size_t>(index) >= entries.size() || connecting) return;
     if (!additional && onServerSelectedCallback) onServerSelectedCallback();
-    std::lock_guard lock(connectionMutex);
-    if (connection == nullptr) return;
-    remoteControlDebugLog("connecting to server index %d", index);
-    if (rc_connect_to_server(connection, index)) {
-        void* remoteConnection = connection;
+    void* nextConnection = nullptr;
+    {
+        std::lock_guard lock(connectionMutex);
+        if (connection == nullptr) return;
+        nextConnection = connection;
         connection = nullptr;
-        defaultAdditionalConnection = false;
-        gtk_widget_hide(window);
-        onConnectedCallback(this, remoteConnection, index, entries[index].name, nickname, account, additional);
     }
-    else {
-        const char* reason = rc_last_error(connection);
-        remoteControlDebugLog("server connection failed: %s", reason == nullptr ? "You have been disconnected!" : reason);
-        createErrorWindow("Connection Error", reason == nullptr ? "You have been disconnected!" : reason, loginParent != nullptr ? loginParent : GTK_WINDOW(window));
-    }
+    connecting = true;
+    gtk_widget_set_sensitive(refreshButton, false);
+    gtk_widget_set_sensitive(connectButton, false);
+    const std::string selectedServerName = entries[static_cast<std::size_t>(index)].name;
+    const std::string selectedNickname = nickname;
+    const std::string selectedAccount = account;
+    const std::shared_ptr<std::atomic<bool>> alive = callbackAlive;
+    remoteControlDebugLog("connecting to server index %d", index);
+    connectWorker = std::jthread([this, alive, nextConnection, index, additional, selectedServerName, selectedNickname, selectedAccount] {
+        const bool success = rc_connect_to_server(nextConnection, index) != 0;
+        std::string error;
+        if (!success) {
+            const char* reason = rc_last_error(nextConnection);
+            error = reason == nullptr ? "You have been disconnected!" : reason;
+            remoteControlDebugLog("server connection failed: %s", error.c_str());
+        }
+        if (!alive->load()) {
+            rc_disconnect(nextConnection);
+            return;
+        }
+        g_idle_add_full(G_PRIORITY_DEFAULT, finishConnect, new ConnectResult{alive, this, nextConnection, index, additional, selectedServerName, selectedNickname, selectedAccount, std::move(error)}, +[](gpointer data) {
+            auto* result = static_cast<ConnectResult*>(data);
+            if (result->connection != nullptr) rc_disconnect(result->connection);
+            delete result;
+        });
+    });
 }
 
 void TServerList::connectWithAccount(const RC::RCAccount& selectedAccount) {
@@ -746,24 +789,44 @@ void TServerList::connectWithAccount(const RC::RCAccount& selectedAccount) {
     if (!gtk_tree_selection_get_selected(selection, &model, &iter)) return;
     int index = -1;
     gtk_tree_model_get(model, &iter, 4, &index, -1);
-    if (index < 0 || static_cast<std::size_t>(index) >= entries.size()) return;
-    void* nextConnection = rc_connect(listserverHost.c_str(), listserverPort, selectedAccount.name.c_str(), selectedAccount.password.c_str());
-    if (nextConnection == nullptr) { createErrorWindow("Connection Error", "Unable to create listserver connection.", loginParent != nullptr ? loginParent : GTK_WINDOW(window)); return; }
-    RCServer* servers = nullptr;
-    const int count = rc_get_servers(nextConnection, &servers);
-    int serverIndex = -1;
-    for (int server = 0; server < count; ++server) {
-        const std::string rawName = servers[server].name == nullptr ? "" : servers[server].name;
-        if (getServerListName(rawName) == entries[index].name) { serverIndex = server; break; }
-    }
-    if (serverIndex < 0 || !rc_connect_to_server(nextConnection, serverIndex)) {
-        const char* reason = rc_last_error(nextConnection);
-        createErrorWindow("Connection Error", reason == nullptr ? "Server is no longer available." : reason, loginParent != nullptr ? loginParent : GTK_WINDOW(window));
-        rc_disconnect(nextConnection);
-        return;
-    }
-    gtk_widget_hide(window);
-    onConnectedCallback(this, nextConnection, serverIndex, entries[index].name, nickname, selectedAccount.name, true);
+    if (index < 0 || static_cast<std::size_t>(index) >= entries.size() || connecting) return;
+    connecting = true;
+    gtk_widget_set_sensitive(refreshButton, false);
+    gtk_widget_set_sensitive(connectButton, false);
+    const std::string host = listserverHost;
+    const int port = listserverPort;
+    const std::string selectedServerName = entries[static_cast<std::size_t>(index)].name;
+    const std::string selectedNickname = nickname;
+    const std::string selectedAccountName = selectedAccount.name;
+    const std::string selectedPassword = selectedAccount.password;
+    const std::shared_ptr<std::atomic<bool>> alive = callbackAlive;
+    connectWorker = std::jthread([this, alive, host, port, index, selectedServerName, selectedNickname, selectedAccountName, selectedPassword] {
+        void* nextConnection = rc_connect(host.c_str(), port, selectedAccountName.c_str(), selectedPassword.c_str());
+        std::string error;
+        int serverIndex = -1;
+        if (nextConnection == nullptr) error = "Unable to create listserver connection.";
+        else {
+            RCServer* servers = nullptr;
+            const int count = rc_get_servers(nextConnection, &servers);
+            for (int server = 0; server < count; ++server) {
+                const std::string rawName = servers[server].name == nullptr ? "" : servers[server].name;
+                if (getServerListName(rawName) == selectedServerName) { serverIndex = server; break; }
+            }
+            if (serverIndex < 0 || !rc_connect_to_server(nextConnection, serverIndex)) {
+                const char* reason = rc_last_error(nextConnection);
+                error = reason == nullptr ? "Server is no longer available." : reason;
+            }
+        }
+        if (!alive->load()) {
+            if (nextConnection != nullptr) rc_disconnect(nextConnection);
+            return;
+        }
+        g_idle_add_full(G_PRIORITY_DEFAULT, finishConnect, new ConnectResult{alive, this, nextConnection, serverIndex, true, selectedServerName, selectedNickname, selectedAccountName, std::move(error)}, +[](gpointer data) {
+            auto* result = static_cast<ConnectResult*>(data);
+            if (result->connection != nullptr) rc_disconnect(result->connection);
+            delete result;
+        });
+    });
 }
 
 void TServerList::disconnectCurrentConnection() {

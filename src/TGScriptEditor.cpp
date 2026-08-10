@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <memory>
@@ -61,7 +62,7 @@ namespace {
     }
     typedef struct _RemoteCompletionProvider { GObject parent; GtkWidget* editor; } RemoteCompletionProvider;
     typedef struct _RemoteCompletionProviderClass { GObjectClass parentClass; } RemoteCompletionProviderClass;
-    struct EditorCompletionState { GtkWidget* editor; RemoteCompletionProvider* provider; GtkWidget* signaturePopover; GtkWidget* signatureLabel; void* connection; bool completionArmed = false; bool restoreSignature = false; guint restoreTimer = 0; };
+    struct EditorCompletionState { GtkWidget* editor; RemoteCompletionProvider* provider; GtkWidget* signaturePopover; GtkWidget* signatureLabel; void* connection; bool completionArmed = false; bool restoreSignature = false; guint restoreTimer = 0; guint signatureTimer = 0; };
     std::vector<EditorCompletionState> editorCompletionStates;
     std::unordered_map<void*, std::unordered_map<int, std::string>> playerCommunityNames;
     struct EditorSelection { GtkTextMark* anchor; GtkTextMark* caret; };
@@ -69,6 +70,10 @@ namespace {
     std::vector<std::unique_ptr<EditorMultiSelectionState>> multiSelectionStates;
     struct EditorDiagnosticsState { GtkWidget* editor; GtkTextTag* errorTag; GtkTextTag* warningTag; GtkTextTag* infoTag; guint timeout; std::string source; std::vector<GS2Diagnostic> diagnostics; };
     std::vector<std::unique_ptr<EditorDiagnosticsState>> diagnosticsStates;
+    struct EditorBulkInsertState { GtkWidget* editor; GtkSourceBuffer* buffer; guint resumeTimer; bool active; std::size_t pendingBytes; std::size_t pendingLines; };
+    std::vector<std::unique_ptr<EditorBulkInsertState>> bulkInsertStates;
+    constexpr std::size_t bulkInsertBytes = 8192;
+    constexpr std::size_t bulkInsertLines = 128;
     struct CompletionPayload { unsigned int request; std::vector<ApiDefinition> definitions; };
     static gboolean refreshEditorScrollbars(gpointer data);
 
@@ -88,6 +93,11 @@ namespace {
         return state == diagnosticsStates.end() ? nullptr : state->get();
     }
 
+    EditorBulkInsertState* bulkInsertState(GtkTextBuffer* buffer) {
+        const auto state = std::find_if(bulkInsertStates.begin(), bulkInsertStates.end(), [buffer](const auto& value) { return GTK_TEXT_BUFFER(value->buffer) == buffer; });
+        return state == bulkInsertStates.end() ? nullptr : state->get();
+    }
+
     void clearEditorDiagnostics(EditorDiagnosticsState* state) {
         if (state->timeout != 0) { g_source_remove(state->timeout); state->timeout = 0; }
         GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(state->editor));
@@ -102,6 +112,8 @@ namespace {
     }
 
     void runEditorDiagnostics(EditorDiagnosticsState* state) {
+        EditorBulkInsertState* bulk = bulkInsertState(gtk_text_view_get_buffer(GTK_TEXT_VIEW(state->editor)));
+        if (bulk != nullptr && bulk->active) return;
         clearEditorDiagnostics(state);
         if (!scriptDiagnosticsEnabled) return;
         GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(state->editor));
@@ -138,6 +150,41 @@ namespace {
     void scheduleEditorDiagnostics(EditorDiagnosticsState* state) {
         if (state->timeout != 0) g_source_remove(state->timeout);
         state->timeout = g_timeout_add(180, runScheduledEditorDiagnostics, state);
+    }
+
+    gboolean resumeEditorAfterBulkInsert(gpointer data) {
+        EditorBulkInsertState* state = static_cast<EditorBulkInsertState*>(data);
+        state->resumeTimer = 0;
+        state->active = false;
+        state->pendingBytes = 0;
+        state->pendingLines = 0;
+        gtk_source_buffer_set_highlight_syntax(state->buffer, syntaxHighlighting);
+        gtk_source_buffer_set_highlight_matching_brackets(state->buffer, showBrackets);
+        gtk_widget_queue_draw(state->editor);
+        EditorDiagnosticsState* diagnostics = diagnosticsState(state->editor);
+        if (diagnostics != nullptr && scriptDiagnosticsEnabled) scheduleEditorDiagnostics(diagnostics);
+        return G_SOURCE_REMOVE;
+    }
+
+    void scheduleBulkInsertResume(EditorBulkInsertState* state) {
+        if (state->resumeTimer != 0) g_source_remove(state->resumeTimer);
+        state->resumeTimer = g_timeout_add(220, resumeEditorAfterBulkInsert, state);
+    }
+
+    void onEditorInsertText(GtkTextBuffer*, GtkTextIter*, gchar* text, gint length, gpointer data) {
+        EditorBulkInsertState* state = static_cast<EditorBulkInsertState*>(data);
+        if (length <= 0) return;
+        state->pendingBytes += static_cast<std::size_t>(length);
+        state->pendingLines += static_cast<std::size_t>(std::count(text, text + length, '\n'));
+        if (!state->active && state->pendingBytes < bulkInsertBytes && state->pendingLines < bulkInsertLines) return;
+        if (!state->active) {
+            state->active = true;
+            gtk_source_buffer_set_highlight_syntax(state->buffer, false);
+            gtk_source_buffer_set_highlight_matching_brackets(state->buffer, false);
+            EditorDiagnosticsState* diagnostics = diagnosticsState(state->editor);
+            if (diagnostics != nullptr && diagnostics->timeout != 0) { g_source_remove(diagnostics->timeout); diagnostics->timeout = 0; }
+        }
+        scheduleBulkInsertResume(state);
     }
 
     bool showDiagnosticTooltip(GtkWidget* editor, const GtkTextIter& iter, GtkTooltip* tooltip) {
@@ -390,6 +437,40 @@ namespace {
         while (position < text.size() && std::isspace(static_cast<unsigned char>(text[position])) != 0) ++position;
     }
 
+    bool readUnicodeEscape(const std::string& text, std::size_t& position, std::string& value) {
+        if (position + 4 > text.size()) return false;
+        std::uint32_t codepoint = 0;
+        for (int index = 0; index < 4; ++index) {
+            const char character = text[position++];
+            codepoint <<= 4;
+            if (character >= '0' && character <= '9') codepoint += static_cast<std::uint32_t>(character - '0');
+            else if (character >= 'a' && character <= 'f') codepoint += static_cast<std::uint32_t>(character - 'a' + 10);
+            else if (character >= 'A' && character <= 'F') codepoint += static_cast<std::uint32_t>(character - 'A' + 10);
+            else return false;
+        }
+        if (codepoint >= 0xD800 && codepoint <= 0xDBFF && position + 6 <= text.size() && text[position] == '\\' && text[position + 1] == 'u') {
+            std::uint32_t low = 0;
+            bool validLow = true;
+            for (int index = 0; index < 4; ++index) {
+                const char character = text[position + 2 + index];
+                low <<= 4;
+                if (character >= '0' && character <= '9') low += static_cast<std::uint32_t>(character - '0');
+                else if (character >= 'a' && character <= 'f') low += static_cast<std::uint32_t>(character - 'a' + 10);
+                else if (character >= 'A' && character <= 'F') low += static_cast<std::uint32_t>(character - 'A' + 10);
+                else { validLow = false; break; }
+            }
+            if (validLow && low >= 0xDC00 && low <= 0xDFFF) {
+                codepoint = 0x10000 + ((codepoint - 0xD800) << 10) + (low - 0xDC00);
+                position += 6;
+            }
+        }
+        if (codepoint > 0x10FFFF || (codepoint >= 0xD800 && codepoint <= 0xDFFF)) codepoint = 0xFFFD;
+        gchar encoded[7]{};
+        const gint length = g_unichar_to_utf8(static_cast<gunichar>(codepoint), encoded);
+        value.append(encoded, static_cast<std::size_t>(length));
+        return true;
+    }
+
     bool readString(const std::string& text, std::size_t& position, std::string& value) {
         if (position >= text.size() || text[position++] != '"') return false;
         value.clear();
@@ -401,6 +482,9 @@ namespace {
             if (escaped == 'n') value += '\n';
             else if (escaped == 'r') value += '\r';
             else if (escaped == 't') value += '\t';
+            else if (escaped == 'b') value += '\b';
+            else if (escaped == 'f') value += '\f';
+            else if (escaped == 'u') { if (!readUnicodeEscape(text, position, value)) return false; }
             else value += escaped;
         }
         return false;
@@ -442,6 +526,89 @@ namespace {
         return false;
     }
 
+    void splitParameterSignature(const std::string& signature, std::vector<std::string>& values) {
+        std::size_t start = 0;
+        int nested = 0;
+        char quote = 0;
+        bool escaped = false;
+        for (std::size_t index = 0; index <= signature.size(); ++index) {
+            const char character = index < signature.size() ? signature[index] : ',';
+            if (quote != 0) {
+                if (escaped) escaped = false;
+                else if (character == '\\') escaped = true;
+                else if (character == quote) quote = 0;
+                continue;
+            }
+            if (character == '"' || character == '\'') { quote = character; continue; }
+            if (character == '(' || character == '[' || character == '{') ++nested;
+            else if (character == ')' || character == ']' || character == '}') nested = std::max(0, nested - 1);
+            else if (character == ',' && nested == 0) {
+                const std::size_t first = signature.find_first_not_of(" \t\r\n", start);
+                const std::size_t last = signature.find_last_not_of(" \t\r\n", index == 0 ? 0 : index - 1);
+                if (first != std::string::npos && first < index && last >= first) values.push_back(signature.substr(first, last - first + 1));
+                start = index + 1;
+            }
+        }
+    }
+
+    bool readParameterArray(const std::string& text, std::size_t& position, std::vector<std::string>& values) {
+        skipWhitespace(text, position);
+        if (position >= text.size() || text[position++] != '[') return false;
+        values.clear();
+        while (position < text.size()) {
+            skipWhitespace(text, position);
+            if (position < text.size() && text[position] == ']') { ++position; return true; }
+            if (position < text.size() && text[position] == '"') {
+                std::string value;
+                if (!readString(text, position, value)) return false;
+                if (!value.empty()) values.push_back(std::move(value));
+            } else if (position < text.size() && text[position] == '{') {
+                ++position;
+                std::string name;
+                std::string label;
+                std::string type;
+                while (position < text.size()) {
+                    skipWhitespace(text, position);
+                    if (position < text.size() && text[position] == '}') { ++position; break; }
+                    std::string key;
+                    if (!readString(text, position, key)) return false;
+                    skipWhitespace(text, position);
+                    if (position >= text.size() || text[position++] != ':') return false;
+                    skipWhitespace(text, position);
+                    if (key == "name" || key == "label" || key == "type") {
+                        std::string value;
+                        if (!readString(text, position, value)) return false;
+                        if (key == "name") name = std::move(value);
+                        else if (key == "label") label = std::move(value);
+                        else type = std::move(value);
+                    } else if (!skipValue(text, position)) return false;
+                    skipWhitespace(text, position);
+                    if (position < text.size() && text[position] == ',') ++position;
+                }
+                if (!name.empty()) values.push_back(std::move(name));
+                else if (!label.empty()) values.push_back(std::move(label));
+                else if (!type.empty()) values.push_back(std::move(type));
+            } else if (!skipValue(text, position)) return false;
+            skipWhitespace(text, position);
+            if (position < text.size() && text[position] == ',') ++position;
+        }
+        return false;
+    }
+
+    bool readParameterValue(const std::string& text, std::size_t& position, std::vector<std::string>& values) {
+        skipWhitespace(text, position);
+        if (position >= text.size()) return false;
+        if (text[position] == '[') return readParameterArray(text, position, values);
+        if (text[position] == '"') {
+            std::string signature;
+            if (!readString(text, position, signature)) return false;
+            values.clear();
+            splitParameterSignature(signature, values);
+            return true;
+        }
+        return skipValue(text, position);
+    }
+
     bool readDefinition(const std::string& text, std::size_t& position, ApiDefinition& definition) {
         skipWhitespace(text, position);
         if (position >= text.size() || text[position++] != '{') return false;
@@ -453,7 +620,7 @@ namespace {
             skipWhitespace(text, position);
             if (position >= text.size() || text[position++] != ':') return false;
             skipWhitespace(text, position);
-            if (key == "params") { if (!readStringArray(text, position, definition.params)) return false; }
+            if (key == "params" || key == "parameters" || key == "args" || key == "arguments") { if (!readParameterValue(text, position, definition.params)) return false; }
             else if (key == "name" || key == "type" || key == "returns" || key == "scope" || key == "description" || key == "example") {
                 std::string value;
                 if (!readString(text, position, value)) return false;
@@ -474,7 +641,20 @@ namespace {
         std::vector<ApiDefinition> definitions;
         std::size_t position = 0;
         skipWhitespace(json, position);
-        if (position >= json.size() || json[position++] != '{') return definitions;
+        if (position >= json.size()) return definitions;
+        if (json[position] == '[') {
+            ++position;
+            while (position < json.size()) {
+                skipWhitespace(json, position);
+                if (position < json.size() && json[position] == ']') { ++position; break; }
+                ApiDefinition definition;
+                if (!readDefinition(json, position, definition)) return {};
+                if (!definition.name.empty()) definitions.push_back(std::move(definition));
+                skipWhitespace(json, position);
+                if (position < json.size() && json[position] == ',') ++position;
+            }
+        } else {
+            if (json[position++] != '{') return definitions;
         while (position < json.size()) {
             skipWhitespace(json, position);
             if (position < json.size() && json[position] == '}') break;
@@ -488,6 +668,7 @@ namespace {
             if (!definition.name.empty()) definitions.push_back(std::move(definition));
             skipWhitespace(json, position);
             if (position < json.size() && json[position] == ',') ++position;
+        }
         }
         std::sort(definitions.begin(), definitions.end(), [](const ApiDefinition& left, const ApiDefinition& right) { return left.name < right.name; });
         return definitions;
@@ -748,9 +929,275 @@ namespace {
         return found == apiDefinitions.end() ? nullptr : &*found;
     }
 
+    int completionMatchScore(const std::string& candidate, const std::string& needle) {
+        if (needle.empty()) return 0;
+        const std::string lowerCandidate = lowerText(candidate);
+        if (lowerCandidate == needle) return 0;
+        if (lowerCandidate.rfind(needle, 0) == 0) return 10;
+        const std::size_t position = lowerCandidate.find(needle);
+        if (position != std::string::npos) return 20 + static_cast<int>(position);
+        std::size_t candidatePosition = 0;
+        int gaps = 0;
+        for (char character : needle) {
+            const std::size_t found = lowerCandidate.find(character, candidatePosition);
+            if (found == std::string::npos) return -1;
+            gaps += static_cast<int>(found - candidatePosition);
+            candidatePosition = found + 1;
+        }
+        return 100 + gaps;
+    }
+
+    GdkPixbuf* completionIcon(const std::string& type) {
+        const std::string lowerType = lowerText(type);
+        const char* names[] = {
+            lowerType == "class" ? "applications-development-symbolic" : lowerType == "property" ? "emblem-system-symbolic" : "system-run-symbolic",
+            lowerType == "class" ? "applications-development" : lowerType == "property" ? "emblem-system" : "system-run",
+            "text-x-generic-symbolic", "text-x-generic"
+        };
+        GtkIconTheme* theme = gtk_icon_theme_get_default();
+        for (const char* name : names) {
+            if (g_str_has_suffix(name, "-symbolic")) {
+                GtkIconInfo* iconInfo = gtk_icon_theme_lookup_icon(theme, name, 16, static_cast<GtkIconLookupFlags>(GTK_ICON_LOOKUP_USE_BUILTIN | GTK_ICON_LOOKUP_FORCE_SYMBOLIC));
+                if (iconInfo != nullptr) {
+                    const GdkRGBA foreground = {0.95, 0.97, 1.0, 1.0};
+                    gboolean wasSymbolic = FALSE;
+                    GError* symbolicError = nullptr;
+                    GdkPixbuf* pixbuf = gtk_icon_info_load_symbolic(iconInfo, &foreground, nullptr, nullptr, nullptr, &wasSymbolic, &symbolicError);
+                    gtk_icon_info_free(iconInfo);
+                    if (symbolicError != nullptr) g_error_free(symbolicError);
+                    if (pixbuf != nullptr && wasSymbolic) return pixbuf;
+                    if (pixbuf != nullptr) g_object_unref(pixbuf);
+                }
+            }
+            GError* error = nullptr;
+            GdkPixbuf* pixbuf = gtk_icon_theme_load_icon(theme, name, 16, GTK_ICON_LOOKUP_USE_BUILTIN, &error);
+            if (error != nullptr) g_error_free(error);
+            if (pixbuf != nullptr) {
+                if (gdk_pixbuf_get_has_alpha(pixbuf)) {
+                    GdkPixbuf* contrast = gdk_pixbuf_copy(pixbuf);
+                    if (contrast != nullptr) {
+                        const int width = gdk_pixbuf_get_width(contrast);
+                        const int height = gdk_pixbuf_get_height(contrast);
+                        const int rowstride = gdk_pixbuf_get_rowstride(contrast);
+                        const int channels = gdk_pixbuf_get_n_channels(contrast);
+                        guchar* pixels = gdk_pixbuf_get_pixels(contrast);
+                        for (int y = 0; y < height; ++y) {
+                            guchar* row = pixels + y * rowstride;
+                            for (int x = 0; x < width; ++x) {
+                                guchar* pixel = row + x * channels;
+                                if (pixel[3] == 0) continue;
+                                pixel[0] = 242;
+                                pixel[1] = 246;
+                                pixel[2] = 252;
+                            }
+                        }
+                        g_object_unref(pixbuf);
+                        return contrast;
+                    }
+                }
+                return pixbuf;
+            }
+        }
+        return nullptr;
+    }
+
+    struct CompletionPopupClampRequest { GtkSourceCompletion* completion; unsigned int attempts; };
+
+    GtkWidget* completionPopupTreeView(GtkWidget* widget) {
+        if (widget == nullptr) return nullptr;
+        if (GTK_IS_TREE_VIEW(widget)) return widget;
+        if (!GTK_IS_CONTAINER(widget)) return nullptr;
+        GtkWidget* found = nullptr;
+        GList* children = gtk_container_get_children(GTK_CONTAINER(widget));
+        for (GList* iterator = children; iterator != nullptr && found == nullptr; iterator = iterator->next) found = completionPopupTreeView(GTK_WIDGET(iterator->data));
+        g_list_free(children);
+        return found;
+    }
+
+    GtkWidget* completionDetailsButton(GtkWidget* widget) {
+        if (widget == nullptr) return nullptr;
+        if (GTK_IS_BUTTON(widget)) {
+            const gchar* label = gtk_button_get_label(GTK_BUTTON(widget));
+            if (label != nullptr && g_ascii_strncasecmp(label, "Details", 7) == 0) return widget;
+        }
+        if (!GTK_IS_CONTAINER(widget)) return nullptr;
+        GtkWidget* found = nullptr;
+        GList* children = gtk_container_get_children(GTK_CONTAINER(widget));
+        for (GList* iterator = children; iterator != nullptr && found == nullptr; iterator = iterator->next) found = completionDetailsButton(GTK_WIDGET(iterator->data));
+        g_list_free(children);
+        return found;
+    }
+
+    void updateCompletionPreview(GtkTreeSelection* selection, gpointer data) {
+        GtkWidget* preview = GTK_WIDGET(data);
+        GtkWidget* kindLabel = GTK_WIDGET(g_object_get_data(G_OBJECT(preview), "remote-completion-preview-kind"));
+        GtkWidget* textLabel = GTK_WIDGET(g_object_get_data(G_OBJECT(preview), "remote-completion-preview-text"));
+        GtkTreeModel* model = nullptr;
+        GtkTreeIter iter;
+        if (!gtk_tree_selection_get_selected(selection, &model, &iter)) { gtk_widget_hide(preview); return; }
+        const gchar* kind = nullptr;
+        const gchar* text = nullptr;
+        for (gint column = 0; column < gtk_tree_model_get_n_columns(model) && text == nullptr; ++column) {
+            if (!g_type_is_a(gtk_tree_model_get_column_type(model, column), G_TYPE_OBJECT)) continue;
+            GValue value = G_VALUE_INIT;
+            gtk_tree_model_get_value(model, &iter, column, &value);
+            GObject* object = static_cast<GObject*>(g_value_get_object(&value));
+            if (object != nullptr && GTK_SOURCE_IS_COMPLETION_PROPOSAL(object)) {
+                kind = static_cast<const gchar*>(g_object_get_data(object, "remote-completion-kind"));
+                text = static_cast<const gchar*>(g_object_get_data(object, "remote-completion-description"));
+            }
+            g_value_unset(&value);
+        }
+        if (text == nullptr || *text == '\0') { gtk_widget_hide(preview); return; }
+        gtk_label_set_text(GTK_LABEL(kindLabel), kind == nullptr || *kind == '\0' ? "Info" : kind);
+        gtk_label_set_text(GTK_LABEL(textLabel), text);
+        gtk_widget_show_all(preview);
+    }
+
+    void installCompletionPreview(GtkWidget* popup) {
+        if (popup == nullptr || g_object_get_data(G_OBJECT(popup), "remote-completion-preview") != nullptr) return;
+        GtkWidget* tree = completionPopupTreeView(popup);
+        GtkWidget* details = completionDetailsButton(popup);
+        if (tree == nullptr || details == nullptr) return;
+        GtkWidget* parent = gtk_widget_get_parent(details);
+        if (!GTK_IS_BOX(parent)) return;
+        gtk_widget_set_no_show_all(details, true);
+        gtk_widget_hide(details);
+        GtkWidget* preview = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 7);
+        GtkWidget* kind = gtk_label_new(nullptr);
+        GtkWidget* text = gtk_label_new(nullptr);
+        gtk_style_context_add_class(gtk_widget_get_style_context(preview), "remote-completion-preview");
+        gtk_style_context_add_class(gtk_widget_get_style_context(kind), "remote-completion-preview-kind");
+        gtk_style_context_add_class(gtk_widget_get_style_context(text), "remote-completion-preview-text");
+        gtk_label_set_xalign(GTK_LABEL(kind), 0.0F);
+        gtk_label_set_xalign(GTK_LABEL(text), 0.0F);
+        gtk_label_set_ellipsize(GTK_LABEL(text), PANGO_ELLIPSIZE_END);
+        gtk_label_set_single_line_mode(GTK_LABEL(text), true);
+        gtk_widget_set_hexpand(text, true);
+        gtk_box_pack_start(GTK_BOX(preview), kind, false, false, 0);
+        gtk_box_pack_start(GTK_BOX(preview), text, true, true, 0);
+        gtk_box_pack_start(GTK_BOX(parent), preview, true, true, 0);
+        g_object_set_data(G_OBJECT(preview), "remote-completion-preview-kind", kind);
+        g_object_set_data(G_OBJECT(preview), "remote-completion-preview-text", text);
+        g_object_set_data(G_OBJECT(popup), "remote-completion-preview", preview);
+        GtkTreeSelection* selection = gtk_tree_view_get_selection(GTK_TREE_VIEW(tree));
+        g_signal_connect(selection, "changed", G_CALLBACK(updateCompletionPreview), preview);
+        updateCompletionPreview(selection, preview);
+    }
+
+    void constrainCompletionPopupContents(GtkWidget* widget) {
+        if (widget == nullptr) return;
+        if (GTK_IS_SCROLLED_WINDOW(widget)) {
+            gtk_scrolled_window_set_max_content_width(GTK_SCROLLED_WINDOW(widget), 500);
+            gtk_scrolled_window_set_propagate_natural_width(GTK_SCROLLED_WINDOW(widget), false);
+        }
+        if (GTK_IS_TREE_VIEW(widget)) {
+            GtkTreeView* tree = GTK_TREE_VIEW(widget);
+            GList* columns = gtk_tree_view_get_columns(tree);
+            const gint columnCount = g_list_length(columns);
+            gint index = 0;
+            for (GList* iterator = columns; iterator != nullptr; iterator = iterator->next, ++index) {
+                GtkTreeViewColumn* column = GTK_TREE_VIEW_COLUMN(iterator->data);
+                GList* cells = gtk_cell_layout_get_cells(GTK_CELL_LAYOUT(column));
+                bool hasText = false;
+                for (GList* cell = cells; cell != nullptr; cell = cell->next) {
+                    if (!GTK_IS_CELL_RENDERER_TEXT(cell->data)) continue;
+                    hasText = true;
+                    g_object_set(cell->data, "ellipsize", PANGO_ELLIPSIZE_END, "ellipsize-set", TRUE, "max-width-chars", 46, nullptr);
+                }
+                g_list_free(cells);
+                gtk_tree_view_column_set_sizing(column, GTK_TREE_VIEW_COLUMN_FIXED);
+                gtk_tree_view_column_set_fixed_width(column, hasText ? (columnCount > 1 && index == columnCount - 1 ? 40 : 430) : 24);
+                gtk_tree_view_column_set_expand(column, false);
+            }
+            g_list_free(columns);
+            gtk_widget_set_hexpand(widget, false);
+        }
+        if (!GTK_IS_CONTAINER(widget)) return;
+        GList* children = gtk_container_get_children(GTK_CONTAINER(widget));
+        for (GList* iterator = children; iterator != nullptr; iterator = iterator->next) constrainCompletionPopupContents(GTK_WIDGET(iterator->data));
+        g_list_free(children);
+    }
+
+    GtkWindow* completionPopupWindow(GtkSourceCompletion* completion) {
+        GtkWidget* view = GTK_WIDGET(gtk_source_completion_get_view(completion));
+        GtkWidget* viewToplevel = view == nullptr ? nullptr : gtk_widget_get_toplevel(view);
+        GtkWindow* owner = viewToplevel != nullptr && GTK_IS_WINDOW(viewToplevel) ? GTK_WINDOW(viewToplevel) : nullptr;
+        GtkWindow* fallback = nullptr;
+        GList* windows = gtk_window_list_toplevels();
+        for (GList* iterator = windows; iterator != nullptr; iterator = iterator->next) {
+            GtkWindow* window = GTK_WINDOW(iterator->data);
+            if (!GTK_IS_WINDOW(window)) continue;
+            const gchar* typeName = G_OBJECT_TYPE_NAME(window);
+            GtkWindow* transient = gtk_window_get_transient_for(window);
+            const bool namedCompletion = typeName != nullptr && g_str_has_prefix(typeName, "GtkSourceCompletionWindow");
+            const bool attachedCompletion = owner != nullptr && transient == owner && completionPopupTreeView(GTK_WIDGET(window)) != nullptr;
+            if (!namedCompletion && !attachedCompletion) continue;
+            if (attachedCompletion) { fallback = window; break; }
+            if (gtk_widget_get_visible(GTK_WIDGET(window))) fallback = fallback == nullptr ? window : fallback;
+        }
+        g_list_free(windows);
+        return fallback;
+    }
+
+    gboolean clampCompletionPopup(gpointer data) {
+        CompletionPopupClampRequest* request = static_cast<CompletionPopupClampRequest*>(data);
+        GtkWindow* popup = completionPopupWindow(request->completion);
+        if (popup == nullptr && request->attempts++ < 30) return G_SOURCE_CONTINUE;
+        if (popup != nullptr) {
+            constexpr gint maxWidth = 520;
+            gtk_style_context_add_class(gtk_widget_get_style_context(GTK_WIDGET(popup)), "remote-completion-popup");
+            constrainCompletionPopupContents(GTK_WIDGET(popup));
+            installCompletionPreview(GTK_WIDGET(popup));
+            if (g_object_get_data(G_OBJECT(popup), "remote-completion-width-clamp") == nullptr) {
+                g_object_set_data(G_OBJECT(popup), "remote-completion-width-clamp", GINT_TO_POINTER(1));
+                GdkGeometry geometry{};
+                geometry.max_width = maxWidth;
+                gtk_window_set_geometry_hints(popup, nullptr, &geometry, GDK_HINT_MAX_SIZE);
+                g_signal_connect(popup, "size-allocate", G_CALLBACK(+[](GtkWidget* widget, GtkAllocation*, gpointer) {
+                    constexpr gint maxWidth = 520;
+                    GtkAllocation allocation;
+                    gtk_widget_get_allocation(widget, &allocation);
+                    if (allocation.width <= maxWidth || g_object_get_data(G_OBJECT(widget), "remote-completion-width-resize") != nullptr) return;
+                    g_object_set_data(G_OBJECT(widget), "remote-completion-width-resize", GINT_TO_POINTER(1));
+                    gtk_window_resize(GTK_WINDOW(widget), maxWidth, allocation.height > 0 ? allocation.height : 1);
+                    g_object_set_data(G_OBJECT(widget), "remote-completion-width-resize", nullptr);
+                }), nullptr);
+            }
+            GtkAllocation allocation;
+            gtk_widget_get_allocation(GTK_WIDGET(popup), &allocation);
+            const gint targetWidth = allocation.width <= 0 ? maxWidth : std::min(allocation.width, maxWidth);
+            if (allocation.width != targetWidth) {
+                gtk_window_set_resizable(popup, false);
+                const gint targetHeight = allocation.height > 0 ? allocation.height : 1;
+                gtk_window_set_default_size(popup, targetWidth, targetHeight);
+                gtk_window_resize(popup, targetWidth, targetHeight);
+            }
+        }
+        return G_SOURCE_REMOVE;
+    }
+
+    void scheduleCompletionPopupClamp(GtkSourceCompletion* completion) {
+        CompletionPopupClampRequest* request = new CompletionPopupClampRequest{GTK_SOURCE_COMPLETION(g_object_ref(completion)), 0};
+        g_timeout_add_full(G_PRIORITY_DEFAULT, 16, clampCompletionPopup, request, [](gpointer data) {
+            CompletionPopupClampRequest* request = static_cast<CompletionPopupClampRequest*>(data);
+            g_object_unref(request->completion);
+            delete request;
+        });
+    }
+
+    void setCompletionPreview(GtkSourceCompletionItem* item, const char* kind, const std::string& description) {
+        g_object_set_data_full(G_OBJECT(item), "remote-completion-kind", g_strdup(kind), g_free);
+        g_object_set_data_full(G_OBJECT(item), "remote-completion-description", g_strdup(description.c_str()), g_free);
+    }
+
     bool findEditorDefinition(GtkWidget* editor, const std::string& name, ApiDefinition& result) {
         const std::string lowerName = lowerText(name);
         if (const ApiDefinition* definition = findDefinition(name)) { result = *definition; return true; }
+        const std::size_t separator = name.rfind('.');
+        if (separator != std::string::npos) {
+            if (const ApiDefinition* definition = findDefinition(name.substr(separator + 1))) { result = *definition; return true; }
+        }
         for (const ApiDefinition& definition : localFunctionDefinitions(editor)) if (lowerText(definition.name) == lowerName) { result = definition; return true; }
         return false;
     }
@@ -823,20 +1270,15 @@ namespace {
         if (showDiagnosticTooltip(editor, iter, tooltip)) return true;
         ApiDefinition definition;
         if (!findEditorDefinition(editor, wordAtIter(iter), definition)) return false;
-        std::string signature = definition.name + "(";
-        for (std::size_t index = 0; index < definition.params.size(); ++index) { if (index != 0) signature += ", "; signature += definition.params[index]; }
-        signature += ')';
+        const std::string signature = definitionSignature(definition);
+        const std::string info = definitionInfo(definition);
         gchar* escapedSignature = g_markup_escape_text(signature.c_str(), -1);
-        gchar* escapedDescription = g_markup_escape_text(definition.description.c_str(), -1);
-        gchar* escapedExample = g_markup_escape_text(definition.example.c_str(), -1);
-        const std::string scope = upperCase(definition.scope);
-        const std::string returns = definition.returns.empty() ? "" : "Returns: " + definition.returns;
-        gchar* markup = g_strdup_printf("<b>%s</b>  <i>%s</i>\n%s%s%s%s%s", escapedSignature, scope.c_str(), returns.c_str(), definition.description.empty() ? "" : "\n", escapedDescription, definition.example.empty() ? "" : "\n\nExample:\n", escapedExample);
+        gchar* escapedInfo = g_markup_escape_text(info.c_str(), -1);
+        gchar* markup = g_strdup_printf("<b>%s</b>\n%s", escapedSignature, escapedInfo == nullptr ? "" : escapedInfo);
         gtk_tooltip_set_markup(tooltip, markup);
         g_free(markup);
         g_free(escapedSignature);
-        g_free(escapedDescription);
-        g_free(escapedExample);
+        g_free(escapedInfo);
         return true;
     }
 
@@ -875,22 +1317,36 @@ namespace {
         if (state != editorCompletionStates.end() && !state->completionArmed && gtk_source_completion_context_get_activation(context) == GTK_SOURCE_COMPLETION_ACTIVATION_INTERACTIVE) { gtk_source_completion_context_add_proposals(context, provider, nullptr, true); return; }
         const std::size_t dot = completionContext.rfind('.');
         const std::string objectPrefix = dot == std::string::npos ? "" : completionContext.substr(0, dot + 1);
-        if (prefix.size() < 2 && gtk_source_completion_context_get_activation(context) == GTK_SOURCE_COMPLETION_ACTIVATION_INTERACTIVE) { gtk_source_completion_context_add_proposals(context, provider, nullptr, true); return; }
+        if (prefix.empty() && gtk_source_completion_context_get_activation(context) == GTK_SOURCE_COMPLETION_ACTIVATION_INTERACTIVE) { gtk_source_completion_context_add_proposals(context, provider, nullptr, true); return; }
         std::set<std::string> seen;
         GList* proposals = nullptr;
         std::vector<ApiDefinition> definitions = apiDefinitions;
         const std::vector<ApiDefinition> localDefinitions = localFunctionDefinitions(remote->editor);
         definitions.insert(definitions.end(), localDefinitions.begin(), localDefinitions.end());
+        struct RankedDefinition { int score; ApiDefinition definition; };
+        std::vector<RankedDefinition> rankedDefinitions;
         for (const ApiDefinition& definition : definitions) {
             if (!seen.insert(lowerText(definition.name)).second) continue;
-            if (!prefix.empty() && lowerText(definition.name).rfind(prefix, 0) != 0) continue;
+            const int score = completionMatchScore(definition.name, prefix);
+            if (score < 0) continue;
+            rankedDefinitions.push_back({score, definition});
+        }
+        std::sort(rankedDefinitions.begin(), rankedDefinitions.end(), [](const RankedDefinition& left, const RankedDefinition& right) {
+            if (left.score != right.score) return left.score < right.score;
+            return lowerText(left.definition.name) < lowerText(right.definition.name);
+        });
+        for (const RankedDefinition& ranked : rankedDefinitions) {
+            const ApiDefinition& definition = ranked.definition;
             std::string label = definition.name;
             if (!definition.params.empty()) {
                 label += '(';
                 for (std::size_t index = 0; index < definition.params.size(); ++index) { if (index != 0) label += ", "; label += definition.params[index]; }
                 label += ')';
             }
-            GtkSourceCompletionItem* item = gtk_source_completion_item_new(label.c_str(), definition.name.c_str(), nullptr, definitionInfo(definition).c_str());
+            GdkPixbuf* icon = completionIcon(definition.type);
+            GtkSourceCompletionItem* item = gtk_source_completion_item_new(label.c_str(), definition.name.c_str(), icon, definitionInfo(definition).c_str());
+            setCompletionPreview(item, "Function", definition.description.empty() ? "Script API function" : definition.description);
+            if (icon != nullptr) g_object_unref(icon);
             proposals = g_list_prepend(proposals, item);
         }
         if (state != editorCompletionStates.end() && state->connection != nullptr && completionInsideString(iter)) {
@@ -909,11 +1365,14 @@ namespace {
                 std::set<std::string> aliasesSeen;
                 for (const auto& [alias, kind] : aliases) {
                     const std::string lowerAlias = lowerText(alias);
-                    if (alias.empty() || !aliasesSeen.insert(lowerAlias).second || (!prefix.empty() && lowerAlias.rfind(prefix, 0) != 0)) continue;
+                    if (alias.empty() || prefix.empty() || !aliasesSeen.insert(lowerAlias).second || completionMatchScore(alias, prefix) < 0) continue;
                     if (!seen.insert("player:" + lowerAlias).second) continue;
                     const std::string label = alias + "  [" + kind + "]";
                     const std::string detail = "Online player" + (account.empty() ? std::string() : " — " + account);
-                    GtkSourceCompletionItem* item = gtk_source_completion_item_new(label.c_str(), account.empty() ? alias.c_str() : account.c_str(), nullptr, detail.c_str());
+                    GdkPixbuf* icon = completionIcon("player");
+                    GtkSourceCompletionItem* item = gtk_source_completion_item_new(label.c_str(), account.empty() ? alias.c_str() : account.c_str(), icon, detail.c_str());
+                    setCompletionPreview(item, "Player", detail);
+                    if (icon != nullptr) g_object_unref(icon);
                     proposals = g_list_prepend(proposals, item);
                 }
             }
@@ -925,8 +1384,11 @@ namespace {
                 if (lowerName.rfind(lowerText(objectPrefix), 0) != 0) continue;
                 insertText = name.substr(objectPrefix.size());
             }
-            if ((!prefix.empty() && lowerText(insertText).rfind(prefix, 0) != 0) || !seen.insert(lowerText(insertText)).second) continue;
-            GtkSourceCompletionItem* item = gtk_source_completion_item_new(insertText.c_str(), insertText.c_str(), nullptr, "Current script identifier");
+            if (completionMatchScore(insertText, prefix) < 0 || !seen.insert(lowerText(insertText)).second) continue;
+            GdkPixbuf* icon = completionIcon("identifier");
+            GtkSourceCompletionItem* item = gtk_source_completion_item_new(insertText.c_str(), insertText.c_str(), icon, "Current script identifier");
+            setCompletionPreview(item, "Identifier", "Current script identifier");
+            if (icon != nullptr) g_object_unref(icon);
             proposals = g_list_prepend(proposals, item);
         }
         gtk_source_completion_context_add_proposals(context, provider, g_list_reverse(proposals), true);
@@ -934,20 +1396,18 @@ namespace {
     }
 
     GtkWidget* remoteCompletionProviderGetInfoWidget(GtkSourceCompletionProvider*, GtkSourceCompletionProposal*) {
-        GtkWidget* box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
+        GtkWidget* box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 3);
         gtk_style_context_add_class(gtk_widget_get_style_context(box), "remote-completion-info");
-        gtk_widget_set_size_request(box, 360, -1);
+        gtk_widget_set_size_request(box, 300, -1);
         GtkWidget* signature = gtk_label_new(nullptr);
         gtk_style_context_add_class(gtk_widget_get_style_context(signature), "remote-completion-signature");
         gtk_label_set_xalign(GTK_LABEL(signature), 0.0F);
         gtk_label_set_line_wrap(GTK_LABEL(signature), true);
-        gtk_label_set_selectable(GTK_LABEL(signature), true);
         GtkWidget* details = gtk_label_new(nullptr);
         gtk_style_context_add_class(gtk_widget_get_style_context(details), "remote-completion-details");
         gtk_label_set_xalign(GTK_LABEL(details), 0.0F);
         gtk_label_set_line_wrap(GTK_LABEL(details), true);
-        gtk_label_set_max_width_chars(GTK_LABEL(details), 64);
-        gtk_label_set_selectable(GTK_LABEL(details), true);
+        gtk_label_set_max_width_chars(GTK_LABEL(details), 48);
         gtk_box_pack_start(GTK_BOX(box), signature, false, false, 0);
         gtk_box_pack_start(GTK_BOX(box), details, false, false, 0);
         g_object_set_data(G_OBJECT(box), "remote-completion-signature", signature);
@@ -971,10 +1431,10 @@ namespace {
         gchar* infoText = gtk_source_completion_proposal_get_info(proposal);
         gtk_label_set_text(GTK_LABEL(details), infoText == nullptr ? "" : infoText);
         g_free(infoText);
-        gtk_widget_set_margin_start(box, 10);
-        gtk_widget_set_margin_end(box, 10);
-        gtk_widget_set_margin_top(box, 7);
-        gtk_widget_set_margin_bottom(box, 7);
+        gtk_widget_set_margin_start(box, 8);
+        gtk_widget_set_margin_end(box, 8);
+        gtk_widget_set_margin_top(box, 6);
+        gtk_widget_set_margin_bottom(box, 6);
         gtk_widget_show_all(box);
     }
 
@@ -989,6 +1449,63 @@ namespace {
 
     gboolean restoreEditorPopups(gpointer data);
 
+    struct ActiveCallContext { std::size_t open = std::string::npos; std::string name; int argument = 0; };
+
+    bool findActiveCallContext(const std::string& line, ActiveCallContext& result) {
+        std::vector<std::pair<char, std::size_t>> delimiters;
+        char quote = 0;
+        bool escaped = false;
+        bool lineComment = false;
+        bool blockComment = false;
+        for (std::size_t index = 0; index < line.size(); ++index) {
+            const char character = line[index];
+            const char next = index + 1 < line.size() ? line[index + 1] : '\0';
+            if (blockComment) { if (character == '*' && next == '/') { blockComment = false; ++index; } continue; }
+            if (lineComment) break;
+            if (quote != 0) {
+                if (escaped) escaped = false;
+                else if (character == '\\') escaped = true;
+                else if (character == quote) quote = 0;
+                continue;
+            }
+            if (character == '/' && next == '/') { lineComment = true; break; }
+            if (character == '/' && next == '*') { blockComment = true; ++index; continue; }
+            if (character == '"' || character == '\'') { quote = character; continue; }
+            if (character == '(' || character == '[' || character == '{') delimiters.emplace_back(character, index);
+            else if (character == ')' || character == ']' || character == '}') {
+                const char opening = character == ')' ? '(' : character == ']' ? '[' : '{';
+                for (auto iterator = delimiters.rbegin(); iterator != delimiters.rend(); ++iterator) {
+                    if (iterator->first == opening) { delimiters.erase(std::next(iterator).base()); break; }
+                }
+            }
+        }
+        auto openIterator = std::find_if(delimiters.rbegin(), delimiters.rend(), [](const auto& delimiter) { return delimiter.first == '('; });
+        if (openIterator == delimiters.rend()) return false;
+        result.open = openIterator->second;
+        std::size_t nameEnd = result.open;
+        while (nameEnd > 0 && g_ascii_isspace(line[nameEnd - 1])) --nameEnd;
+        std::size_t nameStart = nameEnd;
+        while (nameStart > 0 && (g_ascii_isalnum(line[nameStart - 1]) || line[nameStart - 1] == '_' || line[nameStart - 1] == '$' || line[nameStart - 1] == '.')) --nameStart;
+        result.name = line.substr(nameStart, nameEnd - nameStart);
+        int nested = 0;
+        quote = 0;
+        escaped = false;
+        for (std::size_t index = result.open + 1; index < line.size(); ++index) {
+            const char character = line[index];
+            if (quote != 0) {
+                if (escaped) escaped = false;
+                else if (character == '\\') escaped = true;
+                else if (character == quote) quote = 0;
+                continue;
+            }
+            if (character == '"' || character == '\'') { quote = character; continue; }
+            if (character == '(' || character == '[' || character == '{') ++nested;
+            else if (character == ')' || character == ']' || character == '}') { if (nested > 0) --nested; }
+            else if (character == ',' && nested == 0) ++result.argument;
+        }
+        return !result.name.empty();
+    }
+
     void updateSignatureHint(GtkWidget* editor) {
         const auto state = std::find_if(editorCompletionStates.begin(), editorCompletionStates.end(), [editor](const EditorCompletionState& value) { return value.editor == editor; });
         if (state == editorCompletionStates.end() || state->signaturePopover == nullptr || state->signatureLabel == nullptr || !lspEnabled || !state->completionArmed) return;
@@ -1000,34 +1517,55 @@ namespace {
         gchar* lineValue = gtk_text_iter_get_text(&lineStart, &iter);
         const std::string line = lineValue == nullptr ? "" : lineValue;
         g_free(lineValue);
-        int depth = 0;
-        std::size_t open = std::string::npos;
-        for (std::size_t index = line.size(); index-- > 0;) {
-            if (line[index] == ')') ++depth;
-            else if (line[index] == '(') { if (depth == 0) { open = index; break; } --depth; }
-        }
-        if (open == std::string::npos) { gtk_widget_hide(state->signaturePopover); return; }
-        std::size_t nameEnd = open;
-        while (nameEnd > 0 && g_ascii_isspace(line[nameEnd - 1])) --nameEnd;
-        std::size_t nameStart = nameEnd;
-        while (nameStart > 0 && (g_ascii_isalnum(line[nameStart - 1]) || line[nameStart - 1] == '_' || line[nameStart - 1] == '$')) --nameStart;
+        ActiveCallContext call;
+        if (!findActiveCallContext(line, call)) { gtk_widget_hide(state->signaturePopover); return; }
         ApiDefinition definition;
-        if (!findEditorDefinition(editor, line.substr(nameStart, nameEnd - nameStart), definition) || definition.params.empty()) { gtk_widget_hide(state->signaturePopover); return; }
-        int argument = 0;
-        depth = 0;
-        for (std::size_t index = open + 1; index < line.size(); ++index) { if (line[index] == '(') ++depth; else if (line[index] == ')' && depth > 0) --depth; else if (line[index] == ',' && depth == 0) ++argument; }
-        argument = std::min(argument, static_cast<int>(definition.params.size()) - 1);
-        std::string markup = "<b>" + definitionSignature(definition) + "</b>\n";
-        for (std::size_t index = 0; index < definition.params.size(); ++index) { if (index != 0) markup += ", "; const gchar* escaped = g_markup_escape_text(definition.params[index].c_str(), -1); markup += index == static_cast<std::size_t>(argument) ? "<b><u>" + std::string(escaped) + "</u></b>" : escaped; g_free(const_cast<gchar*>(escaped)); }
-        if (!definition.description.empty()) { const gchar* escaped = g_markup_escape_text(definition.description.c_str(), -1); markup += "\n" + std::string(escaped); g_free(const_cast<gchar*>(escaped)); }
+        if (!findEditorDefinition(editor, call.name, definition) || (definition.params.empty() && definition.returns.empty() && definition.description.empty() && definition.example.empty())) { gtk_widget_hide(state->signaturePopover); return; }
+        const auto escaped = [](const std::string& value) {
+            gchar* text = g_markup_escape_text(value.c_str(), -1);
+            std::string result = text == nullptr ? "" : text;
+            g_free(text);
+            return result;
+        };
+        std::string markup = "<b>" + escaped(definitionSignature(definition)) + "</b>";
+        const std::string kind = definition.type.empty() && definition.scope.empty() ? "" : definition.type + (definition.scope.empty() ? "" : "  " + upperCase(definition.scope));
+        if (!kind.empty()) markup += "  <i>" + escaped(kind) + "</i>";
+        if (!definition.params.empty()) {
+            const int argument = std::min(call.argument, static_cast<int>(definition.params.size()) - 1);
+            markup += "\n";
+            for (std::size_t index = 0; index < definition.params.size(); ++index) {
+                if (index != 0) markup += ", ";
+                const std::string parameter = escaped(definition.params[index]);
+                markup += index == static_cast<std::size_t>(argument) ? "<b><u>" + parameter + "</u></b>" : parameter;
+            }
+        }
+        if (!definition.returns.empty()) markup += "\n<b>Returns:</b> " + escaped(definition.returns);
+        if (!definition.description.empty()) markup += "\n" + escaped(definition.description);
+        if (!definition.example.empty()) markup += "\n\n<b>Example:</b>\n" + escaped(definition.example);
         gtk_label_set_markup(GTK_LABEL(state->signatureLabel), markup.c_str());
         GdkRectangle rect;
         gtk_text_view_get_iter_location(GTK_TEXT_VIEW(editor), &iter, &rect);
-        gtk_text_view_buffer_to_window_coords(GTK_TEXT_VIEW(editor), GTK_TEXT_WINDOW_WIDGET, rect.x, rect.y + rect.height, &rect.x, &rect.y);
-        rect.width = 1;
-        rect.height = 1;
+        gtk_text_view_buffer_to_window_coords(GTK_TEXT_VIEW(editor), GTK_TEXT_WINDOW_WIDGET, rect.x, rect.y, &rect.x, &rect.y);
+        rect.width = std::max(1, rect.width);
+        rect.height = std::max(1, rect.height);
+        gtk_popover_set_position(GTK_POPOVER(state->signaturePopover), GTK_POS_TOP);
         gtk_popover_set_pointing_to(GTK_POPOVER(state->signaturePopover), &rect);
         gtk_widget_show_all(state->signaturePopover);
+    }
+
+    gboolean updateSignatureHintLater(gpointer data) {
+        GtkWidget* editor = GTK_WIDGET(data);
+        const auto state = std::find_if(editorCompletionStates.begin(), editorCompletionStates.end(), [editor](const EditorCompletionState& value) { return value.editor == editor; });
+        if (state == editorCompletionStates.end()) return G_SOURCE_REMOVE;
+        state->signatureTimer = 0;
+        updateSignatureHint(editor);
+        return G_SOURCE_REMOVE;
+    }
+
+    void scheduleSignatureHint(GtkWidget* editor) {
+        const auto state = std::find_if(editorCompletionStates.begin(), editorCompletionStates.end(), [editor](const EditorCompletionState& value) { return value.editor == editor; });
+        if (state == editorCompletionStates.end() || !state->completionArmed || state->signatureTimer != 0) return;
+        state->signatureTimer = g_idle_add(updateSignatureHintLater, editor);
     }
 
     gboolean onEditorWindowConfigure(GtkWidget* window, GdkEventConfigure*, gpointer) {
@@ -1086,13 +1624,14 @@ namespace {
         if (!GTK_SOURCE_IS_VIEW(editor)) return;
         GtkSourceView* view = GTK_SOURCE_VIEW(editor);
         GtkSourceBuffer* buffer = GTK_SOURCE_BUFFER(gtk_text_view_get_buffer(GTK_TEXT_VIEW(editor)));
+        EditorBulkInsertState* bulk = bulkInsertState(GTK_TEXT_BUFFER(buffer));
         gtk_source_view_set_tab_width(view, tabWidth);
         gtk_source_view_set_insert_spaces_instead_of_tabs(view, !useTabs);
         gtk_source_view_set_show_line_numbers(view, showLineNumbers);
         gtk_source_view_set_auto_indent(view, autoIndenting);
         gtk_source_view_set_smart_home_end(view, smartHomeEnd ? GTK_SOURCE_SMART_HOME_END_BEFORE : GTK_SOURCE_SMART_HOME_END_DISABLED);
-        gtk_source_buffer_set_highlight_syntax(buffer, syntaxHighlighting);
-        gtk_source_buffer_set_highlight_matching_brackets(buffer, showBrackets);
+        gtk_source_buffer_set_highlight_syntax(buffer, syntaxHighlighting && (bulk == nullptr || !bulk->active));
+        gtk_source_buffer_set_highlight_matching_brackets(buffer, showBrackets && (bulk == nullptr || !bulk->active));
         gtk_source_buffer_set_highlight_matching_brackets(buffer, showBrackets);
         setEditorFontSize(editor, scriptFontSize);
         GtkWidget* map = static_cast<GtkWidget*>(g_object_get_data(G_OBJECT(editor), "remote-control-minimap"));
@@ -1137,12 +1676,11 @@ void requestGScriptHelp(const std::string& query, std::function<void(std::vector
     const std::string source = completionSource;
     std::thread([query, source, callback = std::move(callback)] {
         auto* payload = new std::pair<std::function<void(std::vector<std::string>)>, std::vector<std::string>>{std::move(callback), formatScriptHelp(fetchCompletionDefinitions(source), query)};
-        g_idle_add(+[](gpointer data) {
+        g_idle_add_full(G_PRIORITY_DEFAULT, +[](gpointer data) {
             auto* payload = static_cast<std::pair<std::function<void(std::vector<std::string>)>, std::vector<std::string>>*>(data);
             payload->first(std::move(payload->second));
-            delete payload;
             return G_SOURCE_REMOVE;
-        }, payload);
+        }, payload, +[](gpointer data) { delete static_cast<std::pair<std::function<void(std::vector<std::string>)>, std::vector<std::string>>*>(data); });
     }).detach();
 }
 
@@ -1310,6 +1848,15 @@ void configureGScriptEditor(GtkWidget* editor, bool script) {
         multiSelection->applying = false;
         EditorMultiSelectionState* multiSelectionPointer = multiSelection.get();
         multiSelectionStates.push_back(std::move(multiSelection));
+        auto bulk = std::make_unique<EditorBulkInsertState>();
+        bulk->editor = editor;
+        bulk->buffer = GTK_SOURCE_BUFFER(editorBuffer);
+        bulk->resumeTimer = 0;
+        bulk->active = false;
+        bulk->pendingBytes = 0;
+        bulk->pendingLines = 0;
+        EditorBulkInsertState* bulkPointer = bulk.get();
+        bulkInsertStates.push_back(std::move(bulk));
         GdkRGBA errorColor{};
         GdkRGBA warningColor{};
         GdkRGBA infoColor{};
@@ -1333,8 +1880,9 @@ void configureGScriptEditor(GtkWidget* editor, bool script) {
         g_signal_connect_after(editor, "draw", G_CALLBACK(drawMultiSelections), multiSelectionPointer);
         g_signal_connect(editorBuffer, "changed", G_CALLBACK(+[](GtkTextBuffer*, gpointer data) {
             EditorMultiSelectionState* state = static_cast<EditorMultiSelectionState*>(data);
-            if (!state->applying) refreshMultiSelections(state);
+            if (!state->applying && !state->selections.empty()) refreshMultiSelections(state);
         }), multiSelectionPointer);
+        g_signal_connect(editorBuffer, "insert-text", G_CALLBACK(onEditorInsertText), bulkPointer);
         if (diagnosticsPointer != nullptr) {
             g_signal_connect(editorBuffer, "changed", G_CALLBACK(+[](GtkTextBuffer*, gpointer data) {
                 EditorDiagnosticsState* state = static_cast<EditorDiagnosticsState*>(data);
@@ -1345,10 +1893,12 @@ void configureGScriptEditor(GtkWidget* editor, bool script) {
         auto* provider = REMOTE_COMPLETION_PROVIDER(g_object_new(REMOTE_TYPE_COMPLETION_PROVIDER, nullptr));
         provider->editor = editor;
         GtkWidget* signaturePopover = gtk_popover_new(editor);
-        gtk_popover_set_position(GTK_POPOVER(signaturePopover), GTK_POS_BOTTOM);
+        gtk_popover_set_position(GTK_POPOVER(signaturePopover), GTK_POS_TOP);
         gtk_popover_set_modal(GTK_POPOVER(signaturePopover), false);
         GtkWidget* signatureLabel = gtk_label_new(nullptr);
         gtk_label_set_line_wrap(GTK_LABEL(signatureLabel), true);
+        gtk_label_set_line_wrap_mode(GTK_LABEL(signatureLabel), PANGO_WRAP_WORD_CHAR);
+        gtk_label_set_max_width_chars(GTK_LABEL(signatureLabel), 48);
         gtk_label_set_xalign(GTK_LABEL(signatureLabel), 0.0F);
         gtk_widget_set_margin_start(signatureLabel, 8);
         gtk_widget_set_margin_end(signatureLabel, 8);
@@ -1360,6 +1910,7 @@ void configureGScriptEditor(GtkWidget* editor, bool script) {
             const auto state = std::find_if(editorCompletionStates.begin(), editorCompletionStates.end(), [widget](const EditorCompletionState& value) { return value.editor == widget; });
             if (state != editorCompletionStates.end()) {
                 if (state->restoreTimer != 0) g_source_remove(state->restoreTimer);
+                if (state->signatureTimer != 0) g_source_remove(state->signatureTimer);
                 GtkSourceCompletion* completion = gtk_source_view_get_completion(GTK_SOURCE_VIEW(widget));
                 gtk_source_completion_remove_provider(completion, GTK_SOURCE_COMPLETION_PROVIDER(state->provider), nullptr);
                 gtk_widget_destroy(state->signaturePopover);
@@ -1368,6 +1919,11 @@ void configureGScriptEditor(GtkWidget* editor, bool script) {
             }
             completionEditors.erase(std::remove(completionEditors.begin(), completionEditors.end(), widget), completionEditors.end());
             multiSelectionStates.erase(std::remove_if(multiSelectionStates.begin(), multiSelectionStates.end(), [widget](const auto& value) { return value->editor == widget; }), multiSelectionStates.end());
+            const auto bulk = std::find_if(bulkInsertStates.begin(), bulkInsertStates.end(), [widget](const auto& value) { return value->editor == widget; });
+            if (bulk != bulkInsertStates.end()) {
+                if ((*bulk)->resumeTimer != 0) g_source_remove((*bulk)->resumeTimer);
+                bulkInsertStates.erase(bulk);
+            }
             const auto diagnostics = std::find_if(diagnosticsStates.begin(), diagnosticsStates.end(), [widget](const auto& value) { return value->editor == widget; });
             if (diagnostics != diagnosticsStates.end()) {
                 if ((*diagnostics)->timeout != 0) g_source_remove((*diagnostics)->timeout);
@@ -1376,16 +1932,22 @@ void configureGScriptEditor(GtkWidget* editor, bool script) {
         }), nullptr);
     }
     GtkSourceCompletion* completion = gtk_source_view_get_completion(GTK_SOURCE_VIEW(editor));
+    GtkSourceCompletionInfo* infoWindow = gtk_source_completion_get_info_window(completion);
+    if (infoWindow != nullptr) gtk_style_context_add_class(gtk_widget_get_style_context(GTK_WIDGET(infoWindow)), "remote-completion-info-window");
+    g_signal_connect(completion, "show", G_CALLBACK(+[](GtkSourceCompletion* completion, gpointer) { scheduleCompletionPopupClamp(completion); }), nullptr);
     g_object_set(completion, "auto-complete-delay", 120, "show-headers", FALSE, nullptr);
     if (lspEnabled) setCompletionProvider(editor, true);
     gtk_widget_set_has_tooltip(editor, true);
     g_signal_connect(editor, "query-tooltip", G_CALLBACK(editorQueryTooltip), nullptr);
     GtkTextBuffer* completionBuffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(editor));
+    g_signal_connect(completionBuffer, "changed", G_CALLBACK(+[](GtkTextBuffer*, gpointer data) {
+        scheduleSignatureHint(GTK_WIDGET(data));
+    }), editor);
     g_signal_connect(completionBuffer, "mark-set", G_CALLBACK(+[](GtkTextBuffer* buffer, GtkTextIter*, GtkTextMark* mark, gpointer data) {
         if (mark != gtk_text_buffer_get_insert(buffer)) return;
         GtkWidget* editor = GTK_WIDGET(data);
         const auto state = std::find_if(editorCompletionStates.begin(), editorCompletionStates.end(), [editor](const EditorCompletionState& value) { return value.editor == editor; });
-        if (state != editorCompletionStates.end() && state->completionArmed) updateSignatureHint(editor);
+        if (state != editorCompletionStates.end() && state->completionArmed) scheduleSignatureHint(editor);
     }), editor);
     g_signal_connect(editor, "key-press-event", G_CALLBACK(+[](GtkWidget* widget, GdkEventKey* event, gpointer) {
         const auto state = std::find_if(editorCompletionStates.begin(), editorCompletionStates.end(), [widget](const EditorCompletionState& value) { return value.editor == widget; });

@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <functional>
 #include <gtk/gtk.h>
+#include <atomic>
 #include <cstdint>
 #include <memory>
 #include <mutex>
@@ -59,6 +60,18 @@ private:
         std::string error;
     };
 
+    struct ConnectResult {
+        std::shared_ptr<std::atomic<bool>> alive;
+        TServerList* serverList;
+        void* connection;
+        int serverIndex;
+        bool additional;
+        std::string serverName;
+        std::string nickname;
+        std::string account;
+        std::string error;
+    };
+
     static void onRefresh(GtkButton*, gpointer data);
     static void onConnect(GtkButton*, gpointer data);
     static void onSelectionChanged(GtkTreeSelection*, gpointer data);
@@ -67,6 +80,7 @@ private:
     static void onHomepage(GtkButton*, gpointer data);
     static gboolean onDelete(GtkWidget*, GdkEvent*, gpointer data);
     static gboolean finishLoad(gpointer data);
+    static gboolean finishConnect(gpointer data);
 
     void refresh();
     void connect(bool additional = false);
@@ -92,10 +106,14 @@ private:
     GtkWidget* descriptionField = nullptr;
     GtkWidget* statusField = nullptr;
     GtkWidget* refreshButton = nullptr;
+    GtkWidget* connectButton = nullptr;
     GdkPixbuf* serverIcons[4] = {nullptr, nullptr, nullptr, nullptr};
     std::jthread worker;
+    std::jthread connectWorker;
     std::mutex connectionMutex;
     void* connection = nullptr;
+    std::shared_ptr<std::atomic<bool>> callbackAlive = std::make_shared<std::atomic<bool>>(true);
+    bool connecting = false;
     std::uint64_t accountId = 0;
     std::string account;
     std::string password;

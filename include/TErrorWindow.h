@@ -39,16 +39,15 @@ inline GtkWidget* createErrorWindow(const char* title, const char* message, GtkW
     gtk_widget_show_all(window);
     if (parent != nullptr) {
         struct Placement { GtkWidget* dialog; GtkWindow* parent; };
-        g_idle_add(+[](gpointer data) -> gboolean {
+        g_idle_add_full(G_PRIORITY_DEFAULT_IDLE, +[](gpointer data) -> gboolean {
             auto* placement = static_cast<Placement*>(data);
             gint parentX = 0, parentY = 0, parentWidth = 0, parentHeight = 0, dialogWidth = 0, dialogHeight = 0;
             gtk_window_get_position(placement->parent, &parentX, &parentY);
             gtk_window_get_size(placement->parent, &parentWidth, &parentHeight);
             gtk_window_get_size(GTK_WINDOW(placement->dialog), &dialogWidth, &dialogHeight);
             gtk_window_move(GTK_WINDOW(placement->dialog), parentX + std::max(0, (parentWidth - dialogWidth) / 2), parentY + std::max(0, (parentHeight - dialogHeight) / 2));
-            delete placement;
             return G_SOURCE_REMOVE;
-        }, new Placement{window, parent});
+        }, new Placement{window, parent}, +[](gpointer data) { delete static_cast<Placement*>(data); });
     }
     gtk_widget_grab_focus(button);
     return window;

@@ -8,6 +8,7 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 class TPlayerList;
@@ -92,6 +93,7 @@ private:
     static gboolean processEvents(gpointer data);
     static void onConnected(void* data);
     static void onDisconnected(const char* reason, void* data);
+    static void onDisconnectedEx(void* handle, const char* reason, void* data);
     static void onMessage(const char* message, void* data);
     static void onIrcMessage(const char* channel, const char* line, void* data);
     static void onPrivateMessage(int playerId, const char* account, const char* nick, const char* message, const char* type, void* data);
@@ -130,6 +132,7 @@ private:
     void reconnectNPCServer();
     void disconnectNPCServer();
     void reconnectServer();
+    void handleDisconnected(void* disconnectedConnection, std::uint64_t generation, const char* reason);
     void addMenuItem(GtkWidget* menu, const char* label, GCallback callback = nullptr);
     void graphicalAction(int index);
 
@@ -165,6 +168,7 @@ private:
     unsigned int backgroundAnimationSource = 0;
     int graphicalBackgroundWidth = 500;
     void* connection = nullptr;
+    std::uint64_t connectionGeneration = 0;
     int currentServerIndex = -1;
     std::string serverName;
     std::string nickname;
@@ -211,6 +215,7 @@ private:
     RC::RCOptions options;
     std::filesystem::path applicationDirectory;
     std::unordered_map<std::string, GtkWidget*> channelFields;
+    std::unordered_set<std::string> ircChannels;
     std::unordered_map<int, std::string> playerCommunityNames;
     std::string findResultBase;
     GtkWidget* findResultsField = nullptr;

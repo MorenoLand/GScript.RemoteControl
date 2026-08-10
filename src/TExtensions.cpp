@@ -750,12 +750,12 @@ void TExtensionsManager::launch(std::size_t index) {
         result->state = state;
         result->index = index;
         RC::spawnExtensionProcess(directory, arguments, result->process, result->error);
-        g_main_context_invoke(nullptr, onLaunchComplete, result);
+        g_main_context_invoke_full(nullptr, G_PRIORITY_DEFAULT, onLaunchComplete, result, +[](gpointer data) { delete static_cast<LaunchResult*>(data); });
     }).detach();
 }
 
 gboolean TExtensionsManager::onLaunchComplete(gpointer data) {
-    std::unique_ptr<LaunchResult> result(static_cast<LaunchResult*>(data));
+    auto* result = static_cast<LaunchResult*>(data);
     TExtensionsManager* manager = nullptr;
     { std::lock_guard<std::mutex> lock(result->state->mutex); manager = result->state->owner; }
     if (manager != nullptr) manager->finishLaunch(result->index, result->process, result->error);
@@ -818,11 +818,11 @@ void TExtensionsManager::finishLaunch(std::size_t index, RC::ExtensionProcess pr
                 pending.append(buffer, count);
                 std::size_t newline = 0;
                 while ((newline = pending.find('\n')) != std::string::npos) {
-                    g_main_context_invoke(nullptr, onReaderLine, new ReaderLine{state, index, protocol, pending.substr(0, newline)});
+                    g_main_context_invoke_full(nullptr, G_PRIORITY_DEFAULT, onReaderLine, new ReaderLine{state, index, protocol, pending.substr(0, newline)}, +[](gpointer data) { delete static_cast<ReaderLine*>(data); });
                     pending.erase(0, newline + 1);
                 }
             }
-            if (!pending.empty() && !reader->stop.load()) g_main_context_invoke(nullptr, onReaderLine, new ReaderLine{state, index, protocol, pending});
+            if (!pending.empty() && !reader->stop.load()) g_main_context_invoke_full(nullptr, G_PRIORITY_DEFAULT, onReaderLine, new ReaderLine{state, index, protocol, pending}, +[](gpointer data) { delete static_cast<ReaderLine*>(data); });
         });
         return reader;
     };
@@ -904,7 +904,7 @@ void TExtensionsManager::stop(std::size_t index) {
 
 #ifdef _WIN32
 gboolean TExtensionsManager::onReaderLine(gpointer data) {
-    std::unique_ptr<ReaderLine> result(static_cast<ReaderLine*>(data));
+    auto* result = static_cast<ReaderLine*>(data);
     TExtensionsManager* manager = nullptr;
     { std::lock_guard<std::mutex> lock(result->state->mutex); manager = result->state->owner; }
     if (manager == nullptr || result->index >= manager->extensions.size()) return G_SOURCE_REMOVE;

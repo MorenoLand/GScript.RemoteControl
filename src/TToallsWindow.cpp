@@ -50,7 +50,16 @@ void TToallsWindow::append(const char* message) {
     GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(chat));
     GtkTextIter end;
     gtk_text_buffer_get_end_iter(buffer, &end);
-    gtk_text_buffer_insert(buffer, &end, (line + "\n").c_str(), -1);
+    const std::size_t separator = line.find(':');
+    if (separator != std::string::npos && separator > 0) {
+        GtkTextTag* senderTag = static_cast<GtkTextTag*>(g_object_get_data(G_OBJECT(buffer), "toall-sender-tag"));
+        if (senderTag == nullptr) {
+            senderTag = gtk_text_buffer_create_tag(buffer, nullptr, "foreground", "#79b8ff", "weight", PANGO_WEIGHT_BOLD, nullptr);
+            g_object_set_data(G_OBJECT(buffer), "toall-sender-tag", senderTag);
+        }
+        gtk_text_buffer_insert_with_tags(buffer, &end, line.substr(0, separator + 1).c_str(), -1, senderTag, nullptr);
+        gtk_text_buffer_insert(buffer, &end, (line.substr(separator + 1) + "\n").c_str(), -1);
+    } else gtk_text_buffer_insert(buffer, &end, (line + "\n").c_str(), -1);
     gtk_text_buffer_get_end_iter(buffer, &end);
     gtk_text_view_scroll_to_iter(GTK_TEXT_VIEW(chat), &end, 0.0, false, 0.0, 1.0);
 }

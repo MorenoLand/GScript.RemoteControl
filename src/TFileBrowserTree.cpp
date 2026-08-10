@@ -1253,13 +1253,12 @@ void TFileBrowserTree::previewWorkerLoop() {
             g_object_unref(loader);
         }
         auto* completion = new std::shared_ptr<PreviewDecodeRequest>(std::move(request));
-        g_main_context_invoke(nullptr, onPreviewDecoded, completion);
+        g_main_context_invoke_full(nullptr, G_PRIORITY_DEFAULT, onPreviewDecoded, completion, +[](gpointer data) { delete static_cast<std::shared_ptr<PreviewDecodeRequest>*>(data); });
     }
 }
 
 gboolean TFileBrowserTree::onPreviewDecoded(gpointer data) {
     std::shared_ptr<PreviewDecodeRequest> request = std::move(*static_cast<std::shared_ptr<PreviewDecodeRequest>*>(data));
-    delete static_cast<std::shared_ptr<PreviewDecodeRequest>*>(data);
     TFileBrowserTree* browser = request->state->browser;
     if (browser != nullptr && request->preview != nullptr && request->generation == request->state->generation && request->folder == browser->previewFolder && (!browser->modernFileBrowser || std::find(browser->visiblePreviewPaths.begin(), browser->visiblePreviewPaths.end(), request->path) != browser->visiblePreviewPaths.end())) {
         const auto existing = browser->previewCache.find(request->path);
