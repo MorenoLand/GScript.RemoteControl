@@ -77,6 +77,7 @@ private:
     void adminMessageSelectedPlayer();
     void updatePMIcons();
     void openPrivateMessage(int playerId, const char* account, const char* nick);
+    std::string privateMessageSourceServer(int playerId, const std::string& account, const std::string& nick) const;
     void openPrivateMessageHistory(const char* account, const char* nick);
     void markPrivateMessageRead(int playerId);
     void appendHistory(const char* account, const char* sender, const char* message) const;

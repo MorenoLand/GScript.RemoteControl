@@ -72,11 +72,12 @@ namespace {
         std::string account;
         std::string nick;
         std::string localAccount;
-        std::string message;
+        std::string sourceServer;
     };
 
     struct PMPlayerIdentity { int id; std::string account; std::string nick; };
     std::string formatPMCommaText(const std::string& value);
+    std::string stripPMLabel(const std::string& value);
 
     gboolean findServerPlayerById(GtkTreeModel* model, GtkTreePath*, GtkTreeIter* row, gpointer data) {
         PMPlayerIdentity* identity = static_cast<PMPlayerIdentity*>(data);
@@ -122,7 +123,7 @@ namespace {
         if (applied) return;
         applied = true;
         GtkCssProvider* provider = gtk_css_provider_new();
-        gtk_css_provider_load_from_data(provider, ".pm-conversation { padding: 6px; } .pm-bubble { border-radius: 12px; padding: 7px 10px; } .pm-incoming-bubble { background-color: #d8dee9; border: 1px solid #b8c2d1; } .pm-incoming-text { color: #1f2937; } .pm-outgoing-bubble { background-color: @theme_selected_bg_color; } .pm-outgoing-text { color: @theme_selected_fg_color; } .pm-bubble-time { font-size: 9px; opacity: 0.65; padding: 0 5px; }", -1, nullptr);
+        gtk_css_provider_load_from_data(provider, ".pm-conversation { padding: 6px; } .pm-bubble { border-radius: 12px; padding: 7px 10px; } .pm-incoming-bubble { background-color: #d8dee9; border: 1px solid #b8c2d1; } .pm-incoming-text { color: #1f2937; } .pm-outgoing-bubble { background-color: @theme_selected_bg_color; } .pm-outgoing-text { color: @theme_selected_fg_color; } .pm-bubble-time { font-size: 9px; opacity: 0.65; padding: 0 5px; } #PrivateMessageActions { padding-top: 5px; padding-bottom: 4px; border-top: 1px solid alpha(@theme_fg_color, 0.18); box-shadow: inset 0 1px alpha(@theme_fg_color, 0.08), 0 -1px 2px alpha(@theme_fg_color, 0.08); }", -1, nullptr);
         gtk_style_context_add_provider_for_screen(gdk_screen_get_default(), GTK_STYLE_PROVIDER(provider), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION + 1);
         g_object_unref(provider);
     }
@@ -132,7 +133,8 @@ namespace {
 
     void appendPMConversationMessage(PMWindowData* data, const std::string& sender, const std::string& message, bool outgoing) {
         if (data == nullptr || data->received == nullptr || message.empty()) return;
-        const std::string body = formatPMCommaText(message);
+        const std::string body = stripPMLabel(formatPMCommaText(message));
+        if (body.empty()) return;
         GtkWidget* row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
         gtk_widget_set_margin_start(row, 8);
         gtk_widget_set_margin_end(row, 8);
@@ -213,6 +215,30 @@ namespace {
         return output.str();
     }
 
+    std::string stripPMLabel(const std::string& value) {
+        std::ostringstream output;
+        size_t start = 0;
+        bool first = true;
+        while (start <= value.size()) {
+            const size_t end = value.find('\n', start);
+            std::string line = value.substr(start, end == std::string::npos ? std::string::npos : end - start);
+            while (!line.empty() && (line.back() == '\r' || line.back() == ' ' || line.back() == '\t')) line.pop_back();
+            size_t firstCharacter = 0;
+            while (firstCharacter < line.size() && (line[firstCharacter] == ' ' || line[firstCharacter] == '\t')) ++firstCharacter;
+            const std::string trimmed = line.substr(firstCharacter);
+            std::string lowered = trimmed;
+            std::transform(lowered.begin(), lowered.end(), lowered.begin(), [](unsigned char character) { return static_cast<char>(std::tolower(character)); });
+            if (lowered != "private message:") {
+                if (!first) output << '\n';
+                output << line;
+                first = false;
+            }
+            if (end == std::string::npos) break;
+            start = end + 1;
+        }
+        return output.str();
+    }
+
     std::string pmHistoryTimestamp() {
         const std::time_t now = std::time(nullptr);
         std::tm localTime{};
@@ -230,7 +256,7 @@ namespace {
         if (account.empty() || sender.empty() || message == nullptr || *message == '\0') return;
         std::filesystem::create_directories(directory);
         std::ofstream output(directory / (account + ".txt"), std::ios::app | std::ios::binary);
-        output << sender << " (" << pmHistoryTimestamp() << "):\n" << formatPMCommaText(message) << "\n\n";
+        output << sender << " (" << pmHistoryTimestamp() << "):\n" << stripPMLabel(formatPMCommaText(message)) << "\n\n";
     }
 
     void onPMSend(GtkButton*, gpointer data) {
@@ -283,7 +309,8 @@ namespace {
         std::ifstream input(path, std::ios::binary);
         std::ostringstream content;
         content << input.rdbuf();
-        gchar* validContent = g_utf8_make_valid(content.str().c_str(), -1);
+        const std::string normalizedContent = stripPMLabel(content.str());
+        gchar* validContent = g_utf8_make_valid(normalizedContent.c_str(), -1);
         gtk_text_buffer_set_text(GTK_TEXT_BUFFER(sourceBuffer), validContent, -1);
         GtkTextTag* headerTag = gtk_text_buffer_create_tag(GTK_TEXT_BUFFER(sourceBuffer), "pm-history-header", "foreground", remoteControlDarkMode() ? "#ff00ff" : "#a000a0", "weight", PANGO_WEIGHT_BOLD, nullptr);
         GtkTextIter lineStart;
@@ -511,6 +538,29 @@ void TPlayerList::rebindConnection(void* nextConnection) {
     if (window != nullptr && gtk_widget_get_visible(window)) refresh();
 }
 void TPlayerList::setServerName(const std::string& server) { serverName = server; gtk_window_set_title(GTK_WINDOW(window), server.empty() ? "Player List" : ("Player List - " + server).c_str()); }
+std::string TPlayerList::privateMessageSourceServer(int playerId, const std::string& account, const std::string& nick) const {
+    auto matches = [playerId, &account, &nick](const std::vector<std::string>& players) {
+        for (const std::string& value : players) {
+            std::istringstream fields(value);
+            std::string idText;
+            std::string candidateAccount;
+            std::string candidateNick;
+            std::getline(fields, idText, '\t');
+            std::getline(fields, candidateAccount, '\t');
+            std::getline(fields, candidateNick, '\t');
+            int candidateId = 0;
+            try { candidateId = std::stoi(idText); } catch (...) { }
+            if (playerId > 0 && candidateId == playerId) return true;
+            if (!account.empty() && candidateAccount == account) return true;
+            if (!nick.empty() && candidateNick == nick) return true;
+        }
+        return false;
+    };
+    const auto current = serverPlayers.find(serverName);
+    if (current != serverPlayers.end() && matches(current->second)) return current->first;
+    for (const auto& [server, players] : serverPlayers) if (server != serverName && matches(players)) return server;
+    return "";
+}
 void TPlayerList::setStatusList(const char* statuses) {
     statusNames.clear();
     std::stringstream stream(statuses == nullptr ? "" : statuses);
@@ -1466,22 +1516,22 @@ void TPlayerList::openPrivateMessage(int playerId, const char* account, const ch
         return;
     }
     const auto unread = pmMessages.find(playerId);
-    PMWindowData* data = new PMWindowData{this, connection, applicationDirectory / "PMs", nullptr, nullptr, nullptr, playerId, account, nick == nullptr ? "" : nick, accountName, ""};
+    const std::string sourceServer = privateMessageSourceServer(playerId, account, nick == nullptr ? "" : nick);
+    PMWindowData* data = new PMWindowData{this, connection, applicationDirectory / "PMs", nullptr, nullptr, nullptr, playerId, account, nick == nullptr ? "" : nick, accountName, sourceServer};
     data->window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
     applyPMConversationStyle();
     gtk_widget_set_name(data->window, "PrivateMessage");
     const std::string display = data->nick.empty() ? data->account : data->nick;
-    gtk_window_set_title(GTK_WINDOW(data->window), (display + " - Private Message" + (serverName.empty() ? "" : " - " + serverName)).c_str());
+    const std::string identity = data->nick.empty() || data->nick == data->account ? display : display + " (" + data->account + ")";
+    std::string title = "PM: " + identity;
+    if (!data->sourceServer.empty() && !serverName.empty() && g_ascii_strcasecmp(data->sourceServer.c_str(), serverName.c_str()) != 0) title += " (on " + data->sourceServer + ")";
+    gtk_window_set_title(GTK_WINDOW(data->window), title.c_str());
     gtk_window_set_default_size(GTK_WINDOW(data->window), 380, 300);
     GtkWidget* root = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
     gtk_container_add(GTK_CONTAINER(data->window), root);
-    GtkWidget* label = gtk_label_new((display + (display == data->account ? "" : " (" + data->account + ")")).c_str());
-    gtk_label_set_xalign(GTK_LABEL(label), 0.0F);
-    gtk_widget_set_margin_start(label, 5);
-    gtk_widget_set_margin_end(label, 5);
-    gtk_box_pack_start(GTK_BOX(root), label, false, false, 5);
     GtkWidget* panes = gtk_paned_new(GTK_ORIENTATION_VERTICAL);
-    gtk_paned_set_position(GTK_PANED(panes), 120);
+    gtk_widget_set_name(panes, "PrivateMessagePanes");
+    gtk_paned_set_position(GTK_PANED(panes), 140);
     gtk_box_pack_start(GTK_BOX(root), panes, true, true, 0);
     GtkWidget* receivedScrolled = gtk_scrolled_window_new(nullptr, nullptr);
     gtk_scrolled_window_set_shadow_type(GTK_SCROLLED_WINDOW(receivedScrolled), GTK_SHADOW_IN);
@@ -1494,12 +1544,15 @@ void TPlayerList::openPrivateMessage(int playerId, const char* account, const ch
     gtk_scrolled_window_set_shadow_type(GTK_SCROLLED_WINDOW(replyScrolled), GTK_SHADOW_IN);
     data->reply = gtk_text_view_new();
     gtk_widget_set_name(data->reply, "PrivateMessageText");
+    gtk_text_view_set_editable(GTK_TEXT_VIEW(data->reply), true);
+    gtk_text_view_set_cursor_visible(GTK_TEXT_VIEW(data->reply), true);
     gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(data->reply), GTK_WRAP_WORD_CHAR);
     gtk_text_view_set_left_margin(GTK_TEXT_VIEW(data->reply), 5);
     gtk_text_view_set_right_margin(GTK_TEXT_VIEW(data->reply), 5);
     gtk_container_add(GTK_CONTAINER(replyScrolled), data->reply);
     gtk_paned_pack2(GTK_PANED(panes), replyScrolled, true, true);
     GtkWidget* buttons = gtk_button_box_new(GTK_ORIENTATION_HORIZONTAL);
+    gtk_widget_set_name(buttons, "PrivateMessageActions");
     gtk_button_box_set_layout(GTK_BUTTON_BOX(buttons), GTK_BUTTONBOX_END);
     GtkWidget* history = gtk_button_new_with_label("History");
     GtkWidget* send = gtk_button_new_with_label("Send");
