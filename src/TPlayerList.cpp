@@ -49,6 +49,18 @@ namespace {
         return leftOrder == rightOrder ? 0 : (leftOrder < rightOrder ? -1 : 1);
     }
 
+    bool isNpcServerPlayer(const RCPlayer& player) {
+        auto normalize = [](const char* value) {
+            std::string result = value == nullptr ? "" : value;
+            std::transform(result.begin(), result.end(), result.begin(), [](unsigned char character) { return static_cast<char>(std::tolower(character)); });
+            result.erase(std::remove_if(result.begin(), result.end(), [](unsigned char character) { return std::isspace(character) != 0; }), result.end());
+            return result;
+        };
+        const std::string account = normalize(player.account);
+        const std::string nick = normalize(player.nick);
+        return account == "npcserver" || account == "(npcserver)" || nick == "npc-server" || nick.rfind("npc-server(", 0) == 0;
+    }
+
     struct PMWindowData {
         TPlayerList* owner;
         void* connection;
@@ -110,7 +122,7 @@ namespace {
         if (applied) return;
         applied = true;
         GtkCssProvider* provider = gtk_css_provider_new();
-        gtk_css_provider_load_from_data(provider, ".pm-conversation { padding: 6px; } .pm-bubble { border-radius: 12px; padding: 7px 10px; } .pm-incoming-bubble { background-color: #d8dee9; color: #1f2937; border: 1px solid #b8c2d1; } .pm-outgoing-bubble { background-color: @theme_selected_bg_color; color: @theme_selected_fg_color; } .pm-bubble-time { font-size: 9px; opacity: 0.65; padding: 0 5px; }", -1, nullptr);
+        gtk_css_provider_load_from_data(provider, ".pm-conversation { padding: 6px; } .pm-bubble { border-radius: 12px; padding: 7px 10px; } .pm-incoming-bubble { background-color: #d8dee9; border: 1px solid #b8c2d1; } .pm-incoming-text { color: #1f2937; } .pm-outgoing-bubble { background-color: @theme_selected_bg_color; } .pm-outgoing-text { color: @theme_selected_fg_color; } .pm-bubble-time { font-size: 9px; opacity: 0.65; padding: 0 5px; }", -1, nullptr);
         gtk_style_context_add_provider_for_screen(gdk_screen_get_default(), GTK_STYLE_PROVIDER(provider), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION + 1);
         g_object_unref(provider);
     }
@@ -133,6 +145,7 @@ namespace {
         gtk_style_context_add_class(bubbleStyle, "pm-bubble");
         gtk_style_context_add_class(bubbleStyle, outgoing ? "pm-outgoing-bubble" : "pm-incoming-bubble");
         GtkWidget* bodyLabel = gtk_label_new(nullptr);
+        gtk_style_context_add_class(gtk_widget_get_style_context(bodyLabel), outgoing ? "pm-outgoing-text" : "pm-incoming-text");
         gtk_label_set_text(GTK_LABEL(bodyLabel), body.c_str());
         gtk_label_set_xalign(GTK_LABEL(bodyLabel), 0.0F);
         gtk_label_set_line_wrap(GTK_LABEL(bodyLabel), true);
@@ -1333,7 +1346,7 @@ void TPlayerList::refresh() {
         auto [player, inserted] = serverPlayersById.try_emplace(players[index].id, players[index].id);
         player->second.setIdentity(players[index].account, players[index].nick, players[index].level);
         GtkTreeIter row;
-        const bool admin = players[index].level == nullptr || *players[index].level == '\0';
+        const bool admin = players[index].level == nullptr || *players[index].level == '\0' || isNpcServerPlayer(players[index]);
         gtk_tree_store_append(store, &row, admin ? &admins : &playersGroup);
         const auto pm = pmTypes.find(players[index].id);
         gtk_tree_store_set(store, &row, PlayerIconColumn, pm != pmTypes.end() && pmIconsVisible ? pmIconFor(pm->second) : statusIconFor(player->second), PlayerNickColumn, players[index].nick == nullptr ? "" : players[index].nick, PlayerAccountColumn, players[index].account == nullptr ? "" : players[index].account, PlayerLevelColumn, players[index].level == nullptr ? "" : players[index].level, PlayerIdColumn, players[index].id, PlayerOrderColumn, static_cast<int>(index) + 2, -1);
