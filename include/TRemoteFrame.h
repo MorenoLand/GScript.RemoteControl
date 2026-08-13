@@ -216,6 +216,7 @@ private:
     std::filesystem::path applicationDirectory;
     std::unordered_map<std::string, GtkWidget*> channelFields;
     std::unordered_set<std::string> ircChannels;
+    std::unordered_set<std::string> joinedIrcChannels;
     std::unordered_map<int, std::string> playerCommunityNames;
     std::string findResultBase;
     GtkWidget* findResultsField = nullptr;

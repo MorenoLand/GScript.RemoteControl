@@ -717,6 +717,7 @@ TRemoteFrame::~TRemoteFrame() {
 }
 
 void TRemoteFrame::open(void* nextConnection, int serverIndex, const std::string& serverName, const std::string& nickname, const std::string& accountName) {
+    if (!this->serverName.empty() && this->serverName != serverName) joinedIrcChannels.clear();
     connection = nextConnection;
     ++connectionGeneration;
     if (playerList != nullptr) playerList->rebindConnection(connection);
@@ -1463,6 +1464,13 @@ void TRemoteFrame::onConnected(void* data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
     remoteControlDebugLog("connected to %s", frame->accountName.c_str());
     if (!frame->nickname.empty()) rc_set_nickname(frame->connection, frame->nickname.c_str());
+    if (!frame->joinedIrcChannels.empty()) {
+        if (!rc_irc_login(frame->connection)) remoteControlDebugLog("IRC login request failed during reconnect");
+        for (const std::string& channel : frame->joinedIrcChannels) {
+            if (rc_irc_join(frame->connection, channel.c_str())) remoteControlDebugLog("rejoining IRC channel %s", channel.c_str());
+            else remoteControlDebugLog("failed to rejoin IRC channel %s", channel.c_str());
+        }
+    }
     frame->updateMassPMAcceptance();
     rc_execute(frame->connection, (std::string("/npc newrc,") + remoteControlBuildDate()).c_str());
 }
@@ -1574,7 +1582,10 @@ bool TRemoteFrame::mcpSendChat(const std::string& text, std::string& error) {
 void TRemoteFrame::onIrcMessage(const char* channel, const char* line, void* data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
     const std::string channelName = channel == nullptr ? "" : channel;
-    if (!channelName.empty()) frame->ircChannels.insert(channelName);
+    if (!channelName.empty()) {
+        frame->ircChannels.insert(channelName);
+        frame->joinedIrcChannels.insert(channelName);
+    }
     std::string display = line == nullptr ? "" : line;
     const std::size_t close = display.find("> ");
     if (!display.empty() && display[0] == '<' && close != std::string::npos) display.insert(close + 1, ":");
@@ -2126,6 +2137,7 @@ void TRemoteFrame::appendChannelMessage(const std::string& channel, const std::s
         return;
     }
     if (message == "* Left " + channel) {
+        joinedIrcChannels.erase(channel);
         removeChannel(channel);
         return;
     }
@@ -2212,6 +2224,13 @@ void TRemoteFrame::appendChannelMessage(const std::string& channel, const std::s
 }
 
 void TRemoteFrame::removeChannel(const std::string& channel) {
+    if (joinedIrcChannels.find(channel) != joinedIrcChannels.end()) {
+        if (connection != nullptr) {
+            if (rc_irc_part(connection, channel.c_str())) remoteControlDebugLog("parting IRC channel %s", channel.c_str());
+            else remoteControlDebugLog("failed to part IRC channel %s", channel.c_str());
+        }
+        joinedIrcChannels.erase(channel);
+    }
     const auto found = channelFields.find(channel);
     if (found == channelFields.end()) return;
     GtkWidget* scrolled = gtk_widget_get_parent(found->second);
