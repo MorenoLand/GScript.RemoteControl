@@ -44,7 +44,7 @@ extern void remote_control_set_tray_label(const char* serverName, int playerCoun
 
 namespace {
 struct ChannelScrollRequest { GtkWidget* field = nullptr; double previousValue = 0.0; };
-struct CompletionPopupRequest { GtkWidget* entry = nullptr; GtkTreeModel* model = nullptr; GtkEntryCompletion* completion = nullptr; unsigned attempts = 0; };
+struct CompletionPopupRequest { GtkWidget* entry = nullptr; GtkTreeModel* model = nullptr; GtkEntryCompletion* completion = nullptr; unsigned attempts = 0; guint source = 0; };
 struct DisconnectDispatch { std::shared_ptr<bool> alive; TRemoteFrame* frame = nullptr; void* handle = nullptr; std::uint64_t generation = 0; std::string reason; };
 struct ChannelFieldLifetime { std::shared_ptr<bool> alive; TRemoteFrame* frame = nullptr; };
 struct ChannelTabLifetime { std::shared_ptr<bool> alive; TRemoteFrame* frame = nullptr; };
@@ -65,6 +65,8 @@ bool isInternalProtocolText(const std::string& value) {
 }
 void destroyCompletionPopupRequest(gpointer data) {
     CompletionPopupRequest* request = static_cast<CompletionPopupRequest*>(data);
+    if (request == nullptr) return;
+    if (request->entry != nullptr && request->source != 0 && g_object_get_data(G_OBJECT(request->entry), "rc-completion-constraint-source") == GUINT_TO_POINTER(request->source)) g_object_set_data(G_OBJECT(request->entry), "rc-completion-constraint-source", nullptr);
     g_object_unref(request->entry);
     g_object_unref(request->model);
     g_object_unref(request->completion);
@@ -1217,7 +1219,6 @@ gboolean TRemoteFrame::constrainMentionPopup(gpointer data) {
             gtk_tree_view_set_level_indentation(GTK_TREE_VIEW(tree), 0);
             g_object_set_data(G_OBJECT(popup), "rc-compact-completion", GINT_TO_POINTER(1));
         }
-        gtk_entry_completion_complete(request->completion);
         if (parent != nullptr) {
             gint minimumHeight = 0, naturalHeight = 0;
             gtk_widget_get_preferred_height(tree, &minimumHeight, &naturalHeight);
@@ -2009,8 +2010,14 @@ void TRemoteFrame::refreshMentionCompletion() {
         if (icon != nullptr) g_object_unref(icon);
     }
     const auto queuePopupConstraint = [this]() {
+        const guint previous = GPOINTER_TO_UINT(g_object_get_data(G_OBJECT(editField), "rc-completion-constraint-source"));
+        if (previous != 0) {
+            g_object_set_data(G_OBJECT(editField), "rc-completion-constraint-source", nullptr);
+            g_source_remove(previous);
+        }
         CompletionPopupRequest* request = new CompletionPopupRequest{GTK_WIDGET(g_object_ref(editField)), GTK_TREE_MODEL(g_object_ref(mentionStore)), GTK_ENTRY_COMPLETION(g_object_ref(mentionCompletion)), 0};
-        g_timeout_add_full(G_PRIORITY_DEFAULT, 16, constrainMentionPopup, request, destroyCompletionPopupRequest);
+        request->source = g_timeout_add_full(G_PRIORITY_DEFAULT, 16, constrainMentionPopup, request, destroyCompletionPopupRequest);
+        g_object_set_data(G_OBJECT(editField), "rc-completion-constraint-source", GUINT_TO_POINTER(request->source));
     };
     if (connection == nullptr) { gtk_entry_completion_complete(mentionCompletion); queuePopupConstraint(); return; }
     RCPlayer* players = nullptr;
