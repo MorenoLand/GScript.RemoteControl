@@ -115,6 +115,7 @@ private:
     void updateMassPMAcceptance();
     void updateNCUi(bool connected);
     void setNCChannelVisible(bool visible);
+    void trackChannelField(const std::string& channel, GtkWidget* field);
     void appendChannelMessage(const std::string& channel, const std::string& message);
     void beginFindResults(const std::string& base);
     bool appendFindResult(const std::string& message);

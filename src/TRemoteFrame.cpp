@@ -46,6 +46,16 @@ namespace {
 struct ChannelScrollRequest { GtkWidget* field = nullptr; double previousValue = 0.0; };
 struct CompletionPopupRequest { GtkWidget* entry = nullptr; GtkTreeModel* model = nullptr; GtkEntryCompletion* completion = nullptr; unsigned attempts = 0; };
 struct DisconnectDispatch { std::shared_ptr<bool> alive; TRemoteFrame* frame = nullptr; void* handle = nullptr; std::uint64_t generation = 0; std::string reason; };
+struct ChannelFieldLifetime { std::shared_ptr<bool> alive; TRemoteFrame* frame = nullptr; };
+struct ChannelTabLifetime { std::shared_ptr<bool> alive; TRemoteFrame* frame = nullptr; };
+GtkWidget* currentNotebookPage(GtkWidget* notebook) {
+    if (notebook == nullptr || !GTK_IS_NOTEBOOK(notebook)) return nullptr;
+    const gint page = gtk_notebook_get_current_page(GTK_NOTEBOOK(notebook));
+    return page < 0 ? nullptr : gtk_notebook_get_nth_page(GTK_NOTEBOOK(notebook), page);
+}
+GtkWidget* notebookPageChild(GtkWidget* page) {
+    return page != nullptr && GTK_IS_BIN(page) ? gtk_bin_get_child(GTK_BIN(page)) : nullptr;
+}
 bool isInternalProtocolText(const std::string& value) {
     if (value.rfind("GraalEngine", 0) == 0 || value.rfind("raalEngine", 0) == 0) return true;
     const std::size_t separator = value.find_first_of("\x01\n");
@@ -770,19 +780,6 @@ void TRemoteFrame::open(void* nextConnection, int serverIndex, const std::string
     applyOptionalTools();
     const int chatPage = chatScrolled == nullptr ? -1 : gtk_notebook_page_num(GTK_NOTEBOOK(notebook), chatScrolled);
     if (chatPage >= 0) gtk_notebook_set_current_page(GTK_NOTEBOOK(notebook), chatPage);
-    struct ChatSelection { GtkWidget* notebook; GtkWidget* chat; };
-    if (notebook != nullptr && chatScrolled != nullptr) {
-        auto* selection = new ChatSelection{GTK_WIDGET(g_object_ref(notebook)), GTK_WIDGET(g_object_ref(chatScrolled))};
-        g_idle_add_full(G_PRIORITY_LOW, +[](gpointer data) -> gboolean {
-            auto* selection = static_cast<ChatSelection*>(data);
-            const int page = gtk_notebook_page_num(GTK_NOTEBOOK(selection->notebook), selection->chat);
-            if (page >= 0) gtk_notebook_set_current_page(GTK_NOTEBOOK(selection->notebook), page);
-            g_object_unref(selection->chat);
-            g_object_unref(selection->notebook);
-            delete selection;
-            return G_SOURCE_REMOVE;
-        }, selection, nullptr);
-    }
     gtk_window_present(GTK_WINDOW(window));
     gtk_widget_grab_focus(editField);
 }
@@ -1338,8 +1335,7 @@ gboolean TRemoteFrame::onWindowKey(GtkWidget*, GdkEventKey* event, gpointer data
         return true;
     }
     if ((event->state & GDK_CONTROL_MASK) == 0 || (event->keyval != GDK_KEY_f && event->keyval != GDK_KEY_F)) return false;
-    GtkWidget* page = gtk_notebook_get_nth_page(GTK_NOTEBOOK(frame->notebook), gtk_notebook_get_current_page(GTK_NOTEBOOK(frame->notebook)));
-    GtkWidget* field = page == nullptr ? nullptr : gtk_bin_get_child(GTK_BIN(page));
+    GtkWidget* field = notebookPageChild(currentNotebookPage(frame->notebook));
     if (field == nullptr || !GTK_IS_TEXT_VIEW(field)) return false;
     openEditorFind(field);
     return true;
@@ -1581,6 +1577,7 @@ bool TRemoteFrame::mcpSendChat(const std::string& text, std::string& error) {
 
 void TRemoteFrame::onIrcMessage(const char* channel, const char* line, void* data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
+    if (frame == nullptr || frame->callbackAlive == nullptr || !*frame->callbackAlive) return;
     const std::string channelName = channel == nullptr ? "" : channel;
     if (!channelName.empty()) {
         frame->ircChannels.insert(channelName);
@@ -1926,15 +1923,33 @@ void TRemoteFrame::updateMassPMAcceptance() {
     rc_send_raw_packet(connection, PLI_PLAYERPROPS, state, sizeof(state));
 }
 
+void TRemoteFrame::trackChannelField(const std::string& channel, GtkWidget* field) {
+    if (field == nullptr) return;
+    g_object_set_data_full(G_OBJECT(field), "remote-channel-name", g_strdup(channel.c_str()), g_free);
+    auto* lifetime = new ChannelFieldLifetime{callbackAlive, this};
+    g_signal_connect_data(field, "destroy", G_CALLBACK(+[](GtkWidget* widget, gpointer data) {
+        auto* lifetime = static_cast<ChannelFieldLifetime*>(data);
+        if (lifetime == nullptr || lifetime->alive == nullptr || !*lifetime->alive || lifetime->frame == nullptr) return;
+        auto* frame = lifetime->frame;
+        const char* channelName = static_cast<const char*>(g_object_get_data(G_OBJECT(widget), "remote-channel-name"));
+        if (channelName == nullptr) return;
+        const auto found = frame->channelFields.find(channelName);
+        if (found != frame->channelFields.end() && found->second == widget) frame->channelFields.erase(found);
+        if (GTK_IS_TEXT_VIEW(widget)) frame->chatTags.erase(gtk_text_view_get_buffer(GTK_TEXT_VIEW(widget)));
+    }), lifetime, +[](gpointer data, GClosure*) { delete static_cast<ChannelFieldLifetime*>(data); }, static_cast<GConnectFlags>(0));
+}
+
 void TRemoteFrame::setNCChannelVisible(bool visible) {
+    if (notebook == nullptr || !GTK_IS_NOTEBOOK(notebook)) return;
     const auto found = channelFields.find("NC");
     if (!visible) {
         if (found == channelFields.end()) return;
-        GtkWidget* page = gtk_widget_get_parent(found->second);
+        GtkWidget* field = found->second;
+        GtkWidget* page = field == nullptr ? nullptr : gtk_widget_get_parent(field);
         const int pageNumber = gtk_notebook_page_num(GTK_NOTEBOOK(notebook), page);
-        if (pageNumber >= 0) gtk_notebook_remove_page(GTK_NOTEBOOK(notebook), pageNumber);
-        chatTags.erase(gtk_text_view_get_buffer(GTK_TEXT_VIEW(found->second)));
+        if (field != nullptr && GTK_IS_TEXT_VIEW(field)) chatTags.erase(gtk_text_view_get_buffer(GTK_TEXT_VIEW(field)));
         channelFields.erase(found);
+        if (pageNumber >= 0) gtk_notebook_remove_page(GTK_NOTEBOOK(notebook), pageNumber);
         return;
     }
     if (found != channelFields.end()) return;
@@ -1945,6 +1960,7 @@ void TRemoteFrame::setNCChannelVisible(bool visible) {
     gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(field), GTK_WRAP_WORD_CHAR);
     configureChatField(field);
     gtk_container_add(GTK_CONTAINER(scrolled), field);
+    trackChannelField("NC", field);
     channelFields.emplace("NC", field);
     gtk_notebook_append_page(GTK_NOTEBOOK(notebook), scrolled, gtk_label_new("NC"));
     gtk_notebook_set_tab_reorderable(GTK_NOTEBOOK(notebook), scrolled, true);
@@ -2141,15 +2157,16 @@ void TRemoteFrame::appendChannelMessage(const std::string& channel, const std::s
         removeChannel(channel);
         return;
     }
-    GtkWidget* existingScrolled = channelFields.count(channel) == 0 ? nullptr : gtk_widget_get_parent(channelFields[channel]);
+    if (notebook == nullptr || !GTK_IS_NOTEBOOK(notebook)) return;
+    GtkWidget* existingField = channelFields.count(channel) == 0 ? nullptr : channelFields[channel];
+    GtkWidget* existingScrolled = existingField == nullptr ? nullptr : gtk_widget_get_parent(existingField);
     GtkAdjustment* existingAdjustment = existingScrolled != nullptr && GTK_IS_SCROLLED_WINDOW(existingScrolled) ? gtk_scrolled_window_get_vadjustment(GTK_SCROLLED_WINDOW(existingScrolled)) : nullptr;
     const double previousValue = existingAdjustment == nullptr ? 0.0 : gtk_adjustment_get_value(existingAdjustment);
     const bool followBottom = existingAdjustment == nullptr || gtk_adjustment_get_upper(existingAdjustment) - gtk_adjustment_get_page_size(existingAdjustment) - previousValue <= 2.0;
     const bool colorAlert = message.rfind("#ALERT", 0) == 0;
     std::string display = message;
     const bool alert = applyAlertTag(display, true);
-    GtkWidget* selectedPage = gtk_notebook_get_nth_page(GTK_NOTEBOOK(notebook), gtk_notebook_get_current_page(GTK_NOTEBOOK(notebook)));
-    if (selectedPage == nullptr) selectedPage = chatScrolled;
+    const gint selectedIndex = gtk_notebook_get_current_page(GTK_NOTEBOOK(notebook));
     GtkWidget*& field = channelFields[channel];
     if (field == nullptr) {
         GtkWidget* scrolled = gtk_scrolled_window_new(nullptr, nullptr);
@@ -2159,30 +2176,41 @@ void TRemoteFrame::appendChannelMessage(const std::string& channel, const std::s
         gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(field), GTK_WRAP_WORD_CHAR);
         configureChatField(field);
         gtk_container_add(GTK_CONTAINER(scrolled), field);
+        trackChannelField(channel, field);
         GtkWidget* tab = gtk_event_box_new();
         gtk_container_add(GTK_CONTAINER(tab), gtk_label_new(channel.c_str()));
         gtk_widget_add_events(tab, GDK_BUTTON_PRESS_MASK);
-        g_object_set_data(G_OBJECT(tab), "remote-frame", this);
+        auto* tabLifetime = new ChannelTabLifetime{callbackAlive, this};
+        g_object_set_data_full(G_OBJECT(tab), "remote-channel-lifetime", tabLifetime, +[](gpointer data) { delete static_cast<ChannelTabLifetime*>(data); });
         g_object_set_data_full(G_OBJECT(tab), "remote-channel", g_strdup(channel.c_str()), g_free);
-        g_signal_connect(tab, "button-press-event", G_CALLBACK(+[](GtkWidget* widget, GdkEventButton* event, gpointer) -> gboolean { if (event->button != 3) return false; GtkWidget* menu = gtk_menu_new(); GtkWidget* close = gtk_menu_item_new_with_label("Close"); g_object_set_data(G_OBJECT(close), "remote-frame", g_object_get_data(G_OBJECT(widget), "remote-frame")); g_object_set_data_full(G_OBJECT(close), "remote-channel", g_strdup(static_cast<const char*>(g_object_get_data(G_OBJECT(widget), "remote-channel"))), g_free); g_signal_connect(close, "activate", G_CALLBACK(+[](GtkMenuItem* item, gpointer) { auto* frame = static_cast<TRemoteFrame*>(g_object_get_data(G_OBJECT(item), "remote-frame")); const char* channel = static_cast<const char*>(g_object_get_data(G_OBJECT(item), "remote-channel")); if (frame != nullptr && channel != nullptr) frame->removeChannel(channel); }), nullptr); gtk_menu_shell_append(GTK_MENU_SHELL(menu), close); gtk_widget_show_all(menu); gtk_menu_popup_at_pointer(GTK_MENU(menu), reinterpret_cast<GdkEvent*>(event)); return true; }), nullptr);
+        g_signal_connect(tab, "button-press-event", G_CALLBACK(+[](GtkWidget* widget, GdkEventButton* event, gpointer) -> gboolean {
+            if (event->button != 3) return false;
+            auto* sourceLifetime = static_cast<ChannelTabLifetime*>(g_object_get_data(G_OBJECT(widget), "remote-channel-lifetime"));
+            const char* sourceChannel = static_cast<const char*>(g_object_get_data(G_OBJECT(widget), "remote-channel"));
+            if (sourceLifetime == nullptr || sourceLifetime->alive == nullptr || sourceChannel == nullptr) return false;
+            GtkWidget* menu = gtk_menu_new();
+            GtkWidget* close = gtk_menu_item_new_with_label("Close");
+            auto* closeLifetime = new ChannelTabLifetime;
+            closeLifetime->alive = sourceLifetime->alive;
+            closeLifetime->frame = sourceLifetime->frame;
+            g_object_set_data_full(G_OBJECT(close), "remote-channel-lifetime", closeLifetime, +[](gpointer data) { delete static_cast<ChannelTabLifetime*>(data); });
+            g_object_set_data_full(G_OBJECT(close), "remote-channel", g_strdup(sourceChannel), g_free);
+            g_signal_connect(close, "activate", G_CALLBACK(+[](GtkMenuItem* item, gpointer) {
+                auto* lifetime = static_cast<ChannelTabLifetime*>(g_object_get_data(G_OBJECT(item), "remote-channel-lifetime"));
+                const char* channel = static_cast<const char*>(g_object_get_data(G_OBJECT(item), "remote-channel"));
+                if (lifetime != nullptr && lifetime->alive != nullptr && *lifetime->alive && lifetime->frame != nullptr && channel != nullptr) lifetime->frame->removeChannel(channel);
+            }), nullptr);
+            gtk_menu_shell_append(GTK_MENU_SHELL(menu), close);
+            gtk_widget_show_all(menu);
+            gtk_menu_popup_at_pointer(GTK_MENU(menu), reinterpret_cast<GdkEvent*>(event));
+            return true;
+        }), nullptr);
         gtk_notebook_append_page(GTK_NOTEBOOK(notebook), scrolled, tab);
         gtk_notebook_set_tab_detachable(GTK_NOTEBOOK(notebook), scrolled, false);
         gtk_notebook_set_tab_reorderable(GTK_NOTEBOOK(notebook), scrolled, true);
         gtk_widget_show_all(tab);
         gtk_widget_show_all(scrolled);
-        const int selectedIndex = gtk_notebook_page_num(GTK_NOTEBOOK(notebook), selectedPage);
         if (selectedIndex >= 0) gtk_notebook_set_current_page(GTK_NOTEBOOK(notebook), selectedIndex);
-        struct SelectionRestore { GtkWidget* notebook; GtkWidget* page; };
-        auto* restore = new SelectionRestore{GTK_WIDGET(g_object_ref(notebook)), GTK_WIDGET(g_object_ref(selectedPage))};
-        g_idle_add_full(G_PRIORITY_DEFAULT_IDLE, +[](gpointer data) -> gboolean {
-            auto* restore = static_cast<SelectionRestore*>(data);
-            const int page = gtk_notebook_page_num(GTK_NOTEBOOK(restore->notebook), restore->page);
-            if (page >= 0) gtk_notebook_set_current_page(GTK_NOTEBOOK(restore->notebook), page);
-            g_object_unref(restore->page);
-            g_object_unref(restore->notebook);
-            delete restore;
-            return G_SOURCE_REMOVE;
-        }, restore, nullptr);
     }
     if (message.empty()) return;
     GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(field));
@@ -2224,21 +2252,29 @@ void TRemoteFrame::appendChannelMessage(const std::string& channel, const std::s
 }
 
 void TRemoteFrame::removeChannel(const std::string& channel) {
-    if (joinedIrcChannels.find(channel) != joinedIrcChannels.end()) {
+    const bool wasJoined = joinedIrcChannels.erase(channel) != 0;
+    if (wasJoined) {
         if (connection != nullptr) {
             if (rc_irc_part(connection, channel.c_str())) remoteControlDebugLog("parting IRC channel %s", channel.c_str());
             else remoteControlDebugLog("failed to part IRC channel %s", channel.c_str());
         }
-        joinedIrcChannels.erase(channel);
     }
+    if (notebook == nullptr || !GTK_IS_NOTEBOOK(notebook)) return;
     const auto found = channelFields.find(channel);
     if (found == channelFields.end()) return;
-    GtkWidget* scrolled = gtk_widget_get_parent(found->second);
+    GtkWidget* field = found->second;
+    if (field == nullptr) {
+        channelFields.erase(found);
+        ircChannels.erase(channel);
+        return;
+    }
+    GtkTextBuffer* buffer = GTK_IS_TEXT_VIEW(field) ? gtk_text_view_get_buffer(GTK_TEXT_VIEW(field)) : nullptr;
+    GtkWidget* scrolled = gtk_widget_get_parent(field);
     const int page = scrolled == nullptr ? -1 : gtk_notebook_page_num(GTK_NOTEBOOK(notebook), scrolled);
-    if (page != -1) gtk_notebook_remove_page(GTK_NOTEBOOK(notebook), page);
-    chatTags.erase(gtk_text_view_get_buffer(GTK_TEXT_VIEW(found->second)));
+    if (buffer != nullptr) chatTags.erase(buffer);
     channelFields.erase(found);
     ircChannels.erase(channel);
+    if (page != -1) gtk_notebook_remove_page(GTK_NOTEBOOK(notebook), page);
 }
 
 void TRemoteFrame::beginFindResults(const std::string& base) {
@@ -2414,22 +2450,21 @@ void TRemoteFrame::send() {
     }
     if (options.separatefindresults && (message == "/find" || message.rfind("/find ", 0) == 0 || message == "/finddef" || message.rfind("/finddef ", 0) == 0)) beginFindResults("");
     if (message == "/clear") {
-        GtkWidget* page = gtk_notebook_get_nth_page(GTK_NOTEBOOK(notebook), gtk_notebook_get_current_page(GTK_NOTEBOOK(notebook)));
-        GtkWidget* field = page == nullptr ? nullptr : gtk_bin_get_child(GTK_BIN(page));
+        GtkWidget* field = notebookPageChild(currentNotebookPage(notebook));
         if (field != nullptr && GTK_IS_TEXT_VIEW(field)) gtk_text_buffer_set_text(gtk_text_view_get_buffer(GTK_TEXT_VIEW(field)), "", -1);
         gtk_entry_set_text(GTK_ENTRY(editField), "");
         return;
     }
     if (message == "/clear all") {
         gtk_text_buffer_set_text(gtk_text_view_get_buffer(GTK_TEXT_VIEW(chatField)), "", -1);
-        for (const auto& entry : channelFields) gtk_text_buffer_set_text(gtk_text_view_get_buffer(GTK_TEXT_VIEW(entry.second)), "", -1);
+        for (const auto& entry : channelFields) if (entry.second != nullptr && GTK_IS_TEXT_VIEW(entry.second)) gtk_text_buffer_set_text(gtk_text_view_get_buffer(GTK_TEXT_VIEW(entry.second)), "", -1);
         gtk_entry_set_text(GTK_ENTRY(editField), "");
         return;
     }
-    GtkWidget* selectedPage = gtk_notebook_get_nth_page(GTK_NOTEBOOK(notebook), gtk_notebook_get_current_page(GTK_NOTEBOOK(notebook)));
+    GtkWidget* selectedPage = currentNotebookPage(notebook);
     for (const std::string& channel : ircChannels) {
         const auto field = channelFields.find(channel);
-        if (field == channelFields.end() || gtk_widget_get_parent(field->second) != selectedPage) continue;
+        if (field == channelFields.end() || field->second == nullptr || gtk_widget_get_parent(field->second) != selectedPage) continue;
         if (!rc_send_irc_text(connection, "privmsg", channel.c_str(), message.c_str(), nullptr)) appendChannelMessage(channel, "* Failed to send message");
         gtk_entry_set_text(GTK_ENTRY(editField), "");
         return;

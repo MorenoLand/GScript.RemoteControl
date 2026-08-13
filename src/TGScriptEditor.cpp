@@ -74,6 +74,8 @@ namespace {
     std::vector<std::unique_ptr<EditorBulkInsertState>> bulkInsertStates;
     constexpr std::size_t bulkInsertBytes = 8192;
     constexpr std::size_t bulkInsertLines = 128;
+    constexpr gint completionPopupMinWidth = 260;
+    constexpr gint completionPopupMaxWidth = 320;
     struct CompletionPayload { unsigned int request; std::vector<ApiDefinition> definitions; };
     static gboolean refreshEditorScrollbars(gpointer data);
 
@@ -280,6 +282,7 @@ namespace {
             if (!gtk_text_iter_equal(&anchor, &caret)) continue;
             GdkRectangle location{};
             gtk_text_view_get_iter_location(GTK_TEXT_VIEW(editor), &caret, &location);
+            if (location.height <= 0) continue;
             gint x = 0;
             gint y = 0;
             gtk_text_view_buffer_to_window_coords(GTK_TEXT_VIEW(editor), GTK_TEXT_WINDOW_WIDGET, location.x, location.y, &x, &y);
@@ -1014,11 +1017,32 @@ namespace {
         return found;
     }
 
+    GtkSourceCompletionProposal* completionProposalAt(GtkTreeModel* model, GtkTreeIter* iter) {
+        if (model == nullptr || iter == nullptr) return nullptr;
+        for (gint column = 0; column < gtk_tree_model_get_n_columns(model); ++column) {
+            GValue value = G_VALUE_INIT;
+            gtk_tree_model_get_value(model, iter, column, &value);
+            GObject* object = G_VALUE_HOLDS_OBJECT(&value) ? static_cast<GObject*>(g_value_get_object(&value)) : nullptr;
+            GtkSourceCompletionProposal* proposal = object != nullptr && GTK_SOURCE_IS_COMPLETION_PROPOSAL(object) ? GTK_SOURCE_COMPLETION_PROPOSAL(object) : nullptr;
+            g_value_unset(&value);
+            if (proposal != nullptr) return proposal;
+        }
+        return nullptr;
+    }
+
     GtkWidget* completionDetailsButton(GtkWidget* widget) {
         if (widget == nullptr) return nullptr;
         if (GTK_IS_BUTTON(widget)) {
             const gchar* label = gtk_button_get_label(GTK_BUTTON(widget));
-            if (label != nullptr && g_ascii_strncasecmp(label, "Details", 7) == 0) return widget;
+            if ((label == nullptr || *label == '\0') && GTK_IS_BIN(widget)) {
+                GtkWidget* child = gtk_bin_get_child(GTK_BIN(widget));
+                if (GTK_IS_LABEL(child)) label = gtk_label_get_text(GTK_LABEL(child));
+            }
+            if (label != nullptr) {
+                std::string normalized;
+                for (const char* character = label; *character != '\0'; ++character) if (*character != '_') normalized.push_back(static_cast<char>(g_ascii_tolower(*character)));
+                if (normalized.find("details") != std::string::npos) return widget;
+            }
         }
         if (!GTK_IS_CONTAINER(widget)) return nullptr;
         GtkWidget* found = nullptr;
@@ -1028,41 +1052,88 @@ namespace {
         return found;
     }
 
+    GtkWidget* completionFirstButton(GtkWidget* widget) {
+        if (widget == nullptr) return nullptr;
+        if (GTK_IS_BUTTON(widget)) return widget;
+        if (!GTK_IS_CONTAINER(widget)) return nullptr;
+        GtkWidget* found = nullptr;
+        GList* children = gtk_container_get_children(GTK_CONTAINER(widget));
+        for (GList* iterator = children; iterator != nullptr && found == nullptr; iterator = iterator->next) found = completionFirstButton(GTK_WIDGET(iterator->data));
+        g_list_free(children);
+        return found;
+    }
+
+    GtkWidget* completionPopupContentBox(GtkWidget* popup, GtkWidget* tree) {
+        GtkWidget* widget = gtk_widget_get_parent(tree);
+        while (widget != nullptr && widget != popup) {
+            if (GTK_IS_BOX(widget)) return widget;
+            widget = gtk_widget_get_parent(widget);
+        }
+        return GTK_IS_BOX(popup) ? popup : nullptr;
+    }
+
     void updateCompletionPreview(GtkTreeSelection* selection, gpointer data) {
         GtkWidget* preview = GTK_WIDGET(data);
         GtkWidget* kindLabel = GTK_WIDGET(g_object_get_data(G_OBJECT(preview), "remote-completion-preview-kind"));
         GtkWidget* textLabel = GTK_WIDGET(g_object_get_data(G_OBJECT(preview), "remote-completion-preview-text"));
         GtkTreeModel* model = nullptr;
         GtkTreeIter iter;
-        if (!gtk_tree_selection_get_selected(selection, &model, &iter)) { gtk_widget_hide(preview); return; }
-        const gchar* kind = nullptr;
-        const gchar* text = nullptr;
-        for (gint column = 0; column < gtk_tree_model_get_n_columns(model) && text == nullptr; ++column) {
-            if (!g_type_is_a(gtk_tree_model_get_column_type(model, column), G_TYPE_OBJECT)) continue;
-            GValue value = G_VALUE_INIT;
-            gtk_tree_model_get_value(model, &iter, column, &value);
-            GObject* object = static_cast<GObject*>(g_value_get_object(&value));
-            if (object != nullptr && GTK_SOURCE_IS_COMPLETION_PROPOSAL(object)) {
-                kind = static_cast<const gchar*>(g_object_get_data(object, "remote-completion-kind"));
-                text = static_cast<const gchar*>(g_object_get_data(object, "remote-completion-description"));
-            }
-            g_value_unset(&value);
+        if (!gtk_tree_selection_get_selected(selection, &model, &iter)) {
+            GtkTreeView* tree = gtk_tree_selection_get_tree_view(selection);
+            GtkTreePath* path = nullptr;
+            gtk_tree_view_get_cursor(tree, &path, nullptr);
+            model = gtk_tree_view_get_model(tree);
+            const bool hasCursor = path != nullptr && model != nullptr && gtk_tree_model_get_iter(model, &iter, path);
+            if (path != nullptr) gtk_tree_path_free(path);
+            if (!hasCursor) { gtk_widget_hide(preview); return; }
         }
-        if (text == nullptr || *text == '\0') { gtk_widget_hide(preview); return; }
+        GtkSourceCompletionProposal* proposal = completionProposalAt(model, &iter);
+        const gchar* kind = proposal == nullptr ? nullptr : static_cast<const gchar*>(g_object_get_data(G_OBJECT(proposal), "remote-completion-kind"));
+        const gchar* text = proposal == nullptr ? nullptr : static_cast<const gchar*>(g_object_get_data(G_OBJECT(proposal), "remote-completion-description"));
         gtk_label_set_text(GTK_LABEL(kindLabel), kind == nullptr || *kind == '\0' ? "Info" : kind);
-        gtk_label_set_text(GTK_LABEL(textLabel), text);
+        gtk_label_set_text(GTK_LABEL(textLabel), text == nullptr ? "" : text);
         gtk_widget_show_all(preview);
     }
 
-    void installCompletionPreview(GtkWidget* popup) {
-        if (popup == nullptr || g_object_get_data(G_OBJECT(popup), "remote-completion-preview") != nullptr) return;
+    void updateCompletionPreviewCursor(GtkTreeView* tree, gpointer data) { updateCompletionPreview(gtk_tree_view_get_selection(tree), data); }
+
+    bool attachCompletionPreview(GtkWidget* parent, GtkWidget* details, GtkWidget* preview) {
+        if (GTK_IS_BOX(parent)) {
+            gint position = -1;
+            GList* children = gtk_container_get_children(GTK_CONTAINER(parent));
+            gint index = 0;
+            for (GList* iterator = children; iterator != nullptr; iterator = iterator->next, ++index) if (iterator->data == details) { position = index; break; }
+            g_list_free(children);
+            gtk_box_pack_start(GTK_BOX(parent), preview, true, true, 0);
+            if (position >= 0) gtk_box_reorder_child(GTK_BOX(parent), preview, position);
+            return true;
+        }
+        if (GTK_IS_GRID(parent) && details != nullptr) {
+            gint left = 0;
+            gint top = 0;
+            gint width = 1;
+            gint height = 1;
+            gtk_container_child_get(GTK_CONTAINER(parent), details, "left-attach", &left, "top-attach", &top, "width", &width, "height", &height, nullptr);
+            gtk_grid_attach(GTK_GRID(parent), preview, left, top, width, height);
+            return true;
+        }
+        return false;
+    }
+
+    bool installCompletionPreview(GtkWidget* popup) {
+        if (popup == nullptr) return false;
         GtkWidget* tree = completionPopupTreeView(popup);
         GtkWidget* details = completionDetailsButton(popup);
-        if (tree == nullptr || details == nullptr) return;
-        GtkWidget* parent = gtk_widget_get_parent(details);
-        if (!GTK_IS_BOX(parent)) return;
-        gtk_widget_set_no_show_all(details, true);
-        gtk_widget_hide(details);
+        if (details == nullptr) details = completionFirstButton(popup);
+        GtkWidget* existing = GTK_WIDGET(g_object_get_data(G_OBJECT(popup), "remote-completion-preview"));
+        if (tree == nullptr) return false;
+        if (existing != nullptr) {
+            if (details != nullptr) { gtk_widget_set_no_show_all(details, true); gtk_widget_hide(details); }
+            updateCompletionPreview(gtk_tree_view_get_selection(GTK_TREE_VIEW(tree)), existing);
+            return true;
+        }
+        GtkWidget* parent = details == nullptr ? completionPopupContentBox(popup, tree) : gtk_widget_get_parent(details);
+        if (parent == nullptr) return false;
         GtkWidget* preview = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 7);
         GtkWidget* kind = gtk_label_new(nullptr);
         GtkWidget* text = gtk_label_new(nullptr);
@@ -1073,41 +1144,73 @@ namespace {
         gtk_label_set_xalign(GTK_LABEL(text), 0.0F);
         gtk_label_set_ellipsize(GTK_LABEL(text), PANGO_ELLIPSIZE_END);
         gtk_label_set_single_line_mode(GTK_LABEL(text), true);
+        gtk_widget_set_hexpand(preview, true);
         gtk_widget_set_hexpand(text, true);
         gtk_box_pack_start(GTK_BOX(preview), kind, false, false, 0);
         gtk_box_pack_start(GTK_BOX(preview), text, true, true, 0);
-        gtk_box_pack_start(GTK_BOX(parent), preview, true, true, 0);
+        if (!attachCompletionPreview(parent, details, preview)) {
+            GtkWidget* fallback = completionPopupContentBox(popup, tree);
+            if (!GTK_IS_BOX(fallback)) { gtk_widget_destroy(preview); return false; }
+            gtk_box_pack_end(GTK_BOX(fallback), preview, false, false, 0);
+        }
+        if (details != nullptr) { gtk_widget_set_no_show_all(details, true); gtk_widget_hide(details); }
         g_object_set_data(G_OBJECT(preview), "remote-completion-preview-kind", kind);
         g_object_set_data(G_OBJECT(preview), "remote-completion-preview-text", text);
         g_object_set_data(G_OBJECT(popup), "remote-completion-preview", preview);
         GtkTreeSelection* selection = gtk_tree_view_get_selection(GTK_TREE_VIEW(tree));
+        gtk_tree_selection_set_mode(selection, GTK_SELECTION_SINGLE);
         g_signal_connect(selection, "changed", G_CALLBACK(updateCompletionPreview), preview);
+        g_signal_connect(tree, "cursor-changed", G_CALLBACK(updateCompletionPreviewCursor), preview);
         updateCompletionPreview(selection, preview);
+        return true;
+    }
+
+    void renderCompletionScope(GtkTreeViewColumn*, GtkCellRenderer* renderer, GtkTreeModel* model, GtkTreeIter* iter, gpointer) {
+        GtkSourceCompletionProposal* proposal = completionProposalAt(model, iter);
+        const gchar* scope = proposal == nullptr ? nullptr : static_cast<const gchar*>(g_object_get_data(G_OBJECT(proposal), "remote-completion-scope"));
+        g_object_set(renderer, "text", scope == nullptr ? "" : scope, "xalign", 1.0F, "visible", scope != nullptr && *scope != '\0', nullptr);
     }
 
     void constrainCompletionPopupContents(GtkWidget* widget) {
         if (widget == nullptr) return;
         if (GTK_IS_SCROLLED_WINDOW(widget)) {
-            gtk_scrolled_window_set_max_content_width(GTK_SCROLLED_WINDOW(widget), 500);
+            gtk_scrolled_window_set_max_content_width(GTK_SCROLLED_WINDOW(widget), completionPopupMaxWidth);
             gtk_scrolled_window_set_propagate_natural_width(GTK_SCROLLED_WINDOW(widget), false);
         }
         if (GTK_IS_TREE_VIEW(widget)) {
             GtkTreeView* tree = GTK_TREE_VIEW(widget);
             GList* columns = gtk_tree_view_get_columns(tree);
-            const gint columnCount = g_list_length(columns);
-            gint index = 0;
-            for (GList* iterator = columns; iterator != nullptr; iterator = iterator->next, ++index) {
+            struct TextRenderer { GtkTreeViewColumn* column; GtkCellRenderer* renderer; };
+            std::vector<TextRenderer> textRenderers;
+            for (GList* iterator = columns; iterator != nullptr; iterator = iterator->next) {
                 GtkTreeViewColumn* column = GTK_TREE_VIEW_COLUMN(iterator->data);
                 GList* cells = gtk_cell_layout_get_cells(GTK_CELL_LAYOUT(column));
-                bool hasText = false;
                 for (GList* cell = cells; cell != nullptr; cell = cell->next) {
                     if (!GTK_IS_CELL_RENDERER_TEXT(cell->data)) continue;
-                    hasText = true;
+                    textRenderers.push_back({column, GTK_CELL_RENDERER(cell->data)});
                     g_object_set(cell->data, "ellipsize", PANGO_ELLIPSIZE_END, "ellipsize-set", TRUE, "max-width-chars", 46, nullptr);
                 }
                 g_list_free(cells);
+            }
+            GtkTreeViewColumn* scopeColumn = nullptr;
+            GtkCellRenderer* scopeRenderer = nullptr;
+            if (textRenderers.size() > 1) {
+                scopeColumn = textRenderers.back().column;
+                scopeRenderer = textRenderers.back().renderer;
+                if (g_object_get_data(G_OBJECT(scopeRenderer), "remote-completion-scope-renderer") == nullptr) {
+                    gtk_tree_view_column_set_cell_data_func(scopeColumn, scopeRenderer, renderCompletionScope, nullptr, nullptr);
+                    gtk_cell_renderer_set_fixed_size(scopeRenderer, 96, -1);
+                    g_object_set(scopeRenderer, "xalign", 1.0F, "ellipsize", PANGO_ELLIPSIZE_END, "ellipsize-set", TRUE, "max-width-chars", 14, nullptr);
+                    g_object_set_data(G_OBJECT(scopeRenderer), "remote-completion-scope-renderer", GINT_TO_POINTER(1));
+                }
+            }
+            for (GList* iterator = columns; iterator != nullptr; iterator = iterator->next) {
+                GtkTreeViewColumn* column = GTK_TREE_VIEW_COLUMN(iterator->data);
+                std::size_t textCount = 0;
+                for (const TextRenderer& entry : textRenderers) if (entry.column == column) ++textCount;
+                const bool scopeOnly = scopeColumn == column && textCount == 1;
                 gtk_tree_view_column_set_sizing(column, GTK_TREE_VIEW_COLUMN_FIXED);
-                gtk_tree_view_column_set_fixed_width(column, hasText ? (columnCount > 1 && index == columnCount - 1 ? 40 : 430) : 24);
+                gtk_tree_view_column_set_fixed_width(column, textCount == 0 ? 24 : (scopeOnly ? 78 : (scopeColumn == column ? 78 : 218)));
                 gtk_tree_view_column_set_expand(column, false);
             }
             g_list_free(columns);
@@ -1130,8 +1233,8 @@ namespace {
             if (!GTK_IS_WINDOW(window)) continue;
             const gchar* typeName = G_OBJECT_TYPE_NAME(window);
             GtkWindow* transient = gtk_window_get_transient_for(window);
-            const bool namedCompletion = typeName != nullptr && g_str_has_prefix(typeName, "GtkSourceCompletionWindow");
-            const bool attachedCompletion = owner != nullptr && transient == owner && completionPopupTreeView(GTK_WIDGET(window)) != nullptr;
+            const bool namedCompletion = typeName != nullptr && (g_str_has_prefix(typeName, "GtkSourceCompletionWindow") || g_strrstr(typeName, "Completion") != nullptr);
+            const bool attachedCompletion = owner != nullptr && window != owner && transient == owner && completionPopupTreeView(GTK_WIDGET(window)) != nullptr;
             if (!namedCompletion && !attachedCompletion) continue;
             if (attachedCompletion) { fallback = window; break; }
             if (gtk_widget_get_visible(GTK_WIDGET(window))) fallback = fallback == nullptr ? window : fallback;
@@ -1140,41 +1243,83 @@ namespace {
         return fallback;
     }
 
+    void enforceCompletionPopupGeometry(GtkWindow* popup) {
+        if (popup == nullptr || g_object_get_data(G_OBJECT(popup), "remote-completion-resizing") != nullptr) return;
+        g_object_set_data(G_OBJECT(popup), "remote-completion-resizing", GINT_TO_POINTER(1));
+        gint width = 0;
+        gint height = 0;
+        gtk_window_get_size(popup, &width, &height);
+        width = std::clamp(width, completionPopupMinWidth, completionPopupMaxWidth);
+        height = std::max(height, 1);
+        GdkWindow* native = gtk_widget_get_window(GTK_WIDGET(popup));
+        if (native != nullptr) {
+            GdkDisplay* display = gdk_window_get_display(native);
+            GdkMonitor* monitor = gdk_display_get_monitor_at_window(display, native);
+            if (monitor != nullptr) {
+                GdkRectangle workarea;
+                gdk_monitor_get_workarea(monitor, &workarea);
+                gint x = 0;
+                gint y = 0;
+                gtk_window_get_position(popup, &x, &y);
+                x = std::clamp(x, workarea.x, std::max(workarea.x, workarea.x + workarea.width - width));
+                y = std::clamp(y, workarea.y, std::max(workarea.y, workarea.y + workarea.height - height));
+                gtk_window_move(popup, x, y);
+            }
+        }
+        gtk_window_resize(popup, width, height);
+        g_object_set_data(G_OBJECT(popup), "remote-completion-resizing", nullptr);
+    }
+
+    void installCompletionPopupGeometry(GtkWindow* popup) {
+        if (popup == nullptr || g_object_get_data(G_OBJECT(popup), "remote-completion-geometry") != nullptr) return;
+        g_object_set_data(G_OBJECT(popup), "remote-completion-geometry", GINT_TO_POINTER(1));
+        GdkGeometry geometry{};
+        geometry.min_width = completionPopupMinWidth;
+        geometry.max_width = completionPopupMaxWidth;
+        gtk_window_set_geometry_hints(popup, nullptr, &geometry, static_cast<GdkWindowHints>(GDK_HINT_MIN_SIZE | GDK_HINT_MAX_SIZE));
+        gtk_window_set_resizable(popup, false);
+        gtk_widget_set_size_request(GTK_WIDGET(popup), completionPopupMinWidth, -1);
+        g_signal_connect(popup, "size-allocate", G_CALLBACK(+[](GtkWidget* widget, GtkAllocation*, gpointer) {
+            enforceCompletionPopupGeometry(GTK_WINDOW(widget));
+        }), nullptr);
+        g_signal_connect(popup, "configure-event", G_CALLBACK(+[](GtkWidget* widget, GdkEventConfigure*, gpointer) -> gboolean {
+            enforceCompletionPopupGeometry(GTK_WINDOW(widget));
+            return false;
+        }), nullptr);
+        enforceCompletionPopupGeometry(popup);
+    }
+
+    void installCompletionToplevelGeometry(GtkWidget* widget) {
+        if (widget == nullptr) return;
+        if (!GTK_IS_WINDOW(widget)) return;
+        GtkWidget* toplevel = gtk_widget_get_toplevel(widget);
+        if (toplevel == widget) installCompletionPopupGeometry(GTK_WINDOW(widget));
+    }
+
     gboolean clampCompletionPopup(gpointer data) {
         CompletionPopupClampRequest* request = static_cast<CompletionPopupClampRequest*>(data);
         GtkWindow* popup = completionPopupWindow(request->completion);
-        if (popup == nullptr && request->attempts++ < 30) return G_SOURCE_CONTINUE;
+        if (popup == nullptr && request->attempts++ < 240) return G_SOURCE_CONTINUE;
         if (popup != nullptr) {
-            constexpr gint maxWidth = 520;
             gtk_style_context_add_class(gtk_widget_get_style_context(GTK_WIDGET(popup)), "remote-completion-popup");
             constrainCompletionPopupContents(GTK_WIDGET(popup));
-            installCompletionPreview(GTK_WIDGET(popup));
-            if (g_object_get_data(G_OBJECT(popup), "remote-completion-width-clamp") == nullptr) {
-                g_object_set_data(G_OBJECT(popup), "remote-completion-width-clamp", GINT_TO_POINTER(1));
-                GdkGeometry geometry{};
-                geometry.max_width = maxWidth;
-                gtk_window_set_geometry_hints(popup, nullptr, &geometry, GDK_HINT_MAX_SIZE);
-                g_signal_connect(popup, "size-allocate", G_CALLBACK(+[](GtkWidget* widget, GtkAllocation*, gpointer) {
-                    constexpr gint maxWidth = 520;
-                    GtkAllocation allocation;
-                    gtk_widget_get_allocation(widget, &allocation);
-                    if (allocation.width <= maxWidth || g_object_get_data(G_OBJECT(widget), "remote-completion-width-resize") != nullptr) return;
-                    g_object_set_data(G_OBJECT(widget), "remote-completion-width-resize", GINT_TO_POINTER(1));
-                    gtk_window_resize(GTK_WINDOW(widget), maxWidth, allocation.height > 0 ? allocation.height : 1);
-                    g_object_set_data(G_OBJECT(widget), "remote-completion-width-resize", nullptr);
-                }), nullptr);
-            }
-            GtkAllocation allocation;
-            gtk_widget_get_allocation(GTK_WIDGET(popup), &allocation);
-            const gint targetWidth = allocation.width <= 0 ? maxWidth : std::min(allocation.width, maxWidth);
-            if (allocation.width != targetWidth) {
-                gtk_window_set_resizable(popup, false);
-                const gint targetHeight = allocation.height > 0 ? allocation.height : 1;
-                gtk_window_set_default_size(popup, targetWidth, targetHeight);
-                gtk_window_resize(popup, targetWidth, targetHeight);
-            }
+            const bool previewInstalled = installCompletionPreview(GTK_WIDGET(popup));
+            installCompletionPopupGeometry(popup);
+            if (!previewInstalled && request->attempts++ < 240) return G_SOURCE_CONTINUE;
         }
-        return G_SOURCE_REMOVE;
+        GtkWidget* view = GTK_WIDGET(gtk_source_completion_get_view(request->completion));
+        GtkWindow* owner = view != nullptr && GTK_IS_WINDOW(gtk_widget_get_toplevel(view)) ? GTK_WINDOW(gtk_widget_get_toplevel(view)) : nullptr;
+        GList* windows = gtk_window_list_toplevels();
+        for (GList* iterator = windows; iterator != nullptr; iterator = iterator->next) {
+            GtkWindow* window = GTK_WINDOW(iterator->data);
+            const gchar* typeName = G_OBJECT_TYPE_NAME(window);
+            GtkWindow* transient = gtk_window_get_transient_for(window);
+            const bool namedCompletion = typeName != nullptr && g_strrstr(typeName, "Completion") != nullptr;
+            const bool attachedCompletion = owner != nullptr && window != owner && transient == owner && completionPopupTreeView(GTK_WIDGET(window)) != nullptr;
+            if ((namedCompletion || attachedCompletion) && window != owner) installCompletionPopupGeometry(window);
+        }
+        g_list_free(windows);
+        return ++request->attempts < 240 ? G_SOURCE_CONTINUE : G_SOURCE_REMOVE;
     }
 
     void scheduleCompletionPopupClamp(GtkSourceCompletion* completion) {
@@ -1186,9 +1331,10 @@ namespace {
         });
     }
 
-    void setCompletionPreview(GtkSourceCompletionItem* item, const char* kind, const std::string& description) {
+    void setCompletionPreview(GtkSourceCompletionItem* item, const char* kind, const std::string& description, const std::string& scope = {}) {
         g_object_set_data_full(G_OBJECT(item), "remote-completion-kind", g_strdup(kind), g_free);
         g_object_set_data_full(G_OBJECT(item), "remote-completion-description", g_strdup(description.c_str()), g_free);
+        g_object_set_data_full(G_OBJECT(item), "remote-completion-scope", g_strdup(scope.c_str()), g_free);
     }
 
     bool findEditorDefinition(GtkWidget* editor, const std::string& name, ApiDefinition& result) {
@@ -1235,6 +1381,21 @@ namespace {
         std::string result = definition.name + "(";
         for (std::size_t index = 0; index < definition.params.size(); ++index) { if (index != 0) result += ", "; result += definition.params[index]; }
         return result + ')';
+    }
+
+    std::string completionScopeLabel(const ApiDefinition& definition) {
+        const std::string scope = lowerText(definition.scope);
+        if (scope == "script") return "GLOBAL";
+        if (scope == "client") return "CLIENTSIDE";
+        if (scope == "server") return "SERVERSIDE";
+        return upperCase(definition.scope);
+    }
+
+    std::string completionSummary(const ApiDefinition& definition) {
+        std::string result = definitionSignature(definition);
+        if (!definition.returns.empty()) result += " - returns " + definition.returns;
+        if (!definition.description.empty()) result += " - " + definition.description;
+        return result;
     }
 
     std::vector<std::string> formatScriptHelp(const std::vector<ApiDefinition>& definitions, const std::string& query) {
@@ -1286,6 +1447,8 @@ namespace {
 
     GtkSourceCompletionActivation remoteCompletionProviderGetActivation(GtkSourceCompletionProvider*) { return static_cast<GtkSourceCompletionActivation>(GTK_SOURCE_COMPLETION_ACTIVATION_INTERACTIVE | GTK_SOURCE_COMPLETION_ACTIVATION_USER_REQUESTED); }
 
+    bool hasActiveSignatureContext(GtkWidget* editor);
+
     gboolean remoteCompletionProviderGetStartIter(GtkSourceCompletionProvider*, GtkSourceCompletionContext* context, GtkSourceCompletionProposal*, GtkTextIter* iter) {
         if (!gtk_source_completion_context_get_iter(context, iter)) return false;
         while (!gtk_text_iter_starts_line(iter)) {
@@ -1299,6 +1462,7 @@ namespace {
     void remoteCompletionProviderPopulate(GtkSourceCompletionProvider* provider, GtkSourceCompletionContext* context) {
         auto* remote = REMOTE_COMPLETION_PROVIDER(provider);
         if (remote->editor == nullptr || !lspEnabled) { gtk_source_completion_context_add_proposals(context, provider, nullptr, true); return; }
+        if (hasActiveSignatureContext(remote->editor)) { gtk_source_completion_context_add_proposals(context, provider, nullptr, true); return; }
         GtkTextIter iter;
         if (!gtk_source_completion_context_get_iter(context, &iter)) { gtk_source_completion_context_add_proposals(context, provider, nullptr, true); return; }
         const std::string prefix = lowerText(completionPrefix(iter));
@@ -1345,7 +1509,8 @@ namespace {
             }
             GdkPixbuf* icon = completionIcon(definition.type);
             GtkSourceCompletionItem* item = gtk_source_completion_item_new(label.c_str(), definition.name.c_str(), icon, definitionInfo(definition).c_str());
-            setCompletionPreview(item, "Function", definition.description.empty() ? "Script API function" : definition.description);
+            const std::string kind = definition.type.empty() ? "Function" : definition.type;
+            setCompletionPreview(item, kind.c_str(), completionSummary(definition), completionScopeLabel(definition));
             if (icon != nullptr) g_object_unref(icon);
             proposals = g_list_prepend(proposals, item);
         }
@@ -1398,16 +1563,17 @@ namespace {
     GtkWidget* remoteCompletionProviderGetInfoWidget(GtkSourceCompletionProvider*, GtkSourceCompletionProposal*) {
         GtkWidget* box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 3);
         gtk_style_context_add_class(gtk_widget_get_style_context(box), "remote-completion-info");
-        gtk_widget_set_size_request(box, 300, -1);
+        gtk_widget_set_size_request(box, completionPopupMaxWidth - 16, -1);
         GtkWidget* signature = gtk_label_new(nullptr);
         gtk_style_context_add_class(gtk_widget_get_style_context(signature), "remote-completion-signature");
         gtk_label_set_xalign(GTK_LABEL(signature), 0.0F);
         gtk_label_set_line_wrap(GTK_LABEL(signature), true);
+        gtk_label_set_max_width_chars(GTK_LABEL(signature), 38);
         GtkWidget* details = gtk_label_new(nullptr);
         gtk_style_context_add_class(gtk_widget_get_style_context(details), "remote-completion-details");
         gtk_label_set_xalign(GTK_LABEL(details), 0.0F);
         gtk_label_set_line_wrap(GTK_LABEL(details), true);
-        gtk_label_set_max_width_chars(GTK_LABEL(details), 48);
+        gtk_label_set_max_width_chars(GTK_LABEL(details), 38);
         gtk_box_pack_start(GTK_BOX(box), signature, false, false, 0);
         gtk_box_pack_start(GTK_BOX(box), details, false, false, 0);
         g_object_set_data(G_OBJECT(box), "remote-completion-signature", signature);
@@ -1506,9 +1672,26 @@ namespace {
         return !result.name.empty();
     }
 
+    bool hasActiveSignatureContext(GtkWidget* editor) {
+        if (editor == nullptr || !GTK_IS_TEXT_VIEW(editor)) return false;
+        GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(editor));
+        GtkTextIter iter;
+        gtk_text_buffer_get_iter_at_mark(buffer, &iter, gtk_text_buffer_get_insert(buffer));
+        GtkTextIter lineStart = iter;
+        gtk_text_iter_set_line_offset(&lineStart, 0);
+        gchar* lineValue = gtk_text_iter_get_text(&lineStart, &iter);
+        const std::string line = lineValue == nullptr ? "" : lineValue;
+        g_free(lineValue);
+        ActiveCallContext call;
+        if (!findActiveCallContext(line, call)) return false;
+        ApiDefinition definition;
+        return findEditorDefinition(editor, call.name, definition) && !(definition.params.empty() && definition.returns.empty() && definition.description.empty() && definition.example.empty());
+    }
+
     void updateSignatureHint(GtkWidget* editor) {
         const auto state = std::find_if(editorCompletionStates.begin(), editorCompletionStates.end(), [editor](const EditorCompletionState& value) { return value.editor == editor; });
         if (state == editorCompletionStates.end() || state->signaturePopover == nullptr || state->signatureLabel == nullptr || !lspEnabled || !state->completionArmed) return;
+        GtkSourceCompletion* completion = GTK_SOURCE_IS_VIEW(editor) ? gtk_source_view_get_completion(GTK_SOURCE_VIEW(editor)) : nullptr;
         GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(editor));
         GtkTextIter iter;
         gtk_text_buffer_get_iter_at_mark(buffer, &iter, gtk_text_buffer_get_insert(buffer));
@@ -1521,6 +1704,7 @@ namespace {
         if (!findActiveCallContext(line, call)) { gtk_widget_hide(state->signaturePopover); return; }
         ApiDefinition definition;
         if (!findEditorDefinition(editor, call.name, definition) || (definition.params.empty() && definition.returns.empty() && definition.description.empty() && definition.example.empty())) { gtk_widget_hide(state->signaturePopover); return; }
+        if (completion != nullptr) gtk_source_completion_hide(completion);
         const auto escaped = [](const std::string& value) {
             gchar* text = g_markup_escape_text(value.c_str(), -1);
             std::string result = text == nullptr ? "" : text;
@@ -1898,13 +2082,18 @@ void configureGScriptEditor(GtkWidget* editor, bool script) {
         GtkWidget* signatureLabel = gtk_label_new(nullptr);
         gtk_label_set_line_wrap(GTK_LABEL(signatureLabel), true);
         gtk_label_set_line_wrap_mode(GTK_LABEL(signatureLabel), PANGO_WRAP_WORD_CHAR);
-        gtk_label_set_max_width_chars(GTK_LABEL(signatureLabel), 48);
+        gtk_label_set_max_width_chars(GTK_LABEL(signatureLabel), 38);
+        gtk_widget_set_size_request(signatureLabel, completionPopupMaxWidth - 16, -1);
+        gtk_widget_set_hexpand(signatureLabel, FALSE);
         gtk_label_set_xalign(GTK_LABEL(signatureLabel), 0.0F);
         gtk_widget_set_margin_start(signatureLabel, 8);
         gtk_widget_set_margin_end(signatureLabel, 8);
         gtk_widget_set_margin_top(signatureLabel, 6);
         gtk_widget_set_margin_bottom(signatureLabel, 6);
         gtk_container_add(GTK_CONTAINER(signaturePopover), signatureLabel);
+        gtk_widget_set_size_request(signaturePopover, completionPopupMaxWidth - 16, -1);
+        gtk_widget_set_halign(signaturePopover, GTK_ALIGN_START);
+        gtk_popover_set_constrain_to(GTK_POPOVER(signaturePopover), GTK_POPOVER_CONSTRAINT_WINDOW);
         editorCompletionStates.push_back({editor, provider, signaturePopover, signatureLabel, nullptr});
         g_signal_connect(editor, "destroy", G_CALLBACK(+[](GtkWidget* widget, gpointer) {
             const auto state = std::find_if(editorCompletionStates.begin(), editorCompletionStates.end(), [widget](const EditorCompletionState& value) { return value.editor == widget; });
@@ -1933,8 +2122,21 @@ void configureGScriptEditor(GtkWidget* editor, bool script) {
     }
     GtkSourceCompletion* completion = gtk_source_view_get_completion(GTK_SOURCE_VIEW(editor));
     GtkSourceCompletionInfo* infoWindow = gtk_source_completion_get_info_window(completion);
-    if (infoWindow != nullptr) gtk_style_context_add_class(gtk_widget_get_style_context(GTK_WIDGET(infoWindow)), "remote-completion-info-window");
-    g_signal_connect(completion, "show", G_CALLBACK(+[](GtkSourceCompletion* completion, gpointer) { scheduleCompletionPopupClamp(completion); }), nullptr);
+    if (infoWindow != nullptr) {
+        gtk_style_context_add_class(gtk_widget_get_style_context(GTK_WIDGET(infoWindow)), "remote-completion-info-window");
+        installCompletionToplevelGeometry(GTK_WIDGET(infoWindow));
+        if (GTK_IS_WINDOW(infoWindow)) installCompletionPopupGeometry(GTK_WINDOW(infoWindow));
+        else gtk_widget_set_size_request(GTK_WIDGET(infoWindow), completionPopupMaxWidth, -1);
+    }
+    g_signal_connect(completion, "show", G_CALLBACK(+[](GtkSourceCompletion* completion, gpointer data) {
+        if (hasActiveSignatureContext(GTK_WIDGET(data))) {
+            gtk_source_completion_hide(completion);
+            scheduleSignatureHint(GTK_WIDGET(data));
+            return;
+        }
+        scheduleCompletionPopupClamp(completion);
+    }), editor);
+    g_signal_connect(completion, "hide", G_CALLBACK(+[](GtkSourceCompletion*, gpointer data) { scheduleSignatureHint(GTK_WIDGET(data)); }), editor);
     g_object_set(completion, "auto-complete-delay", 120, "show-headers", FALSE, nullptr);
     if (lspEnabled) setCompletionProvider(editor, true);
     gtk_widget_set_has_tooltip(editor, true);

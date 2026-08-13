@@ -49,16 +49,8 @@ namespace {
         return leftOrder == rightOrder ? 0 : (leftOrder < rightOrder ? -1 : 1);
     }
 
-    bool isNpcServerPlayer(const RCPlayer& player) {
-        auto normalize = [](const char* value) {
-            std::string result = value == nullptr ? "" : value;
-            std::transform(result.begin(), result.end(), result.begin(), [](unsigned char character) { return static_cast<char>(std::tolower(character)); });
-            result.erase(std::remove_if(result.begin(), result.end(), [](unsigned char character) { return std::isspace(character) != 0; }), result.end());
-            return result;
-        };
-        const std::string account = normalize(player.account);
-        const std::string nick = normalize(player.nick);
-        return account == "npcserver" || account == "(npcserver)" || nick == "npc-server" || nick.rfind("npc-server(", 0) == 0;
+    bool isAdminPlayer(const RCPlayer& player) {
+        return player.level == nullptr || *player.level == '\0';
     }
 
     struct PMWindowData {
@@ -1396,7 +1388,7 @@ void TPlayerList::refresh() {
         auto [player, inserted] = serverPlayersById.try_emplace(players[index].id, players[index].id);
         player->second.setIdentity(players[index].account, players[index].nick, players[index].level);
         GtkTreeIter row;
-        const bool admin = players[index].level == nullptr || *players[index].level == '\0' || isNpcServerPlayer(players[index]);
+        const bool admin = isAdminPlayer(players[index]);
         gtk_tree_store_append(store, &row, admin ? &admins : &playersGroup);
         const auto pm = pmTypes.find(players[index].id);
         gtk_tree_store_set(store, &row, PlayerIconColumn, pm != pmTypes.end() && pmIconsVisible ? pmIconFor(pm->second) : statusIconFor(player->second), PlayerNickColumn, players[index].nick == nullptr ? "" : players[index].nick, PlayerAccountColumn, players[index].account == nullptr ? "" : players[index].account, PlayerLevelColumn, players[index].level == nullptr ? "" : players[index].level, PlayerIdColumn, players[index].id, PlayerOrderColumn, static_cast<int>(index) + 2, -1);
