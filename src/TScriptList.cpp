@@ -188,11 +188,9 @@ void TScriptList::onWeaponListReceived(int, void* data) {
         const int count = rc_get_weapons(list->connection, &entries);
         bool deleted = !list->pendingDeleteName.empty();
         for (int index = 0; index < count; ++index) if (entries[index].name != nullptr && list->pendingCreateName == entries[index].name) {
-            list->pendingScriptName = list->pendingCreateName;
-            list->pendingScriptRequestAt = std::chrono::steady_clock::now();
-            const int result = rc_request_weapon_script(list->connection, list->pendingCreateName.c_str());
-            remoteControlDebugLog("script create: type=weapons name=%s request result=%d", list->pendingCreateName.c_str(), result);
+            const std::string createdName = list->pendingCreateName;
             list->pendingCreateName.clear();
+            list->showEditor(createdName.c_str(), "");
             break;
         }
         if (deleted) for (int index = 0; index < count; ++index) if (entries[index].name != nullptr && list->pendingDeleteName == entries[index].name) { deleted = false; break; }
@@ -211,11 +209,9 @@ void TScriptList::onWeaponAdded(const char* name, void* data) {
     if (list == nullptr || list->type != "weapons") return;
     list->refresh();
     if (name == nullptr || list->pendingCreateName != name) return;
-    list->pendingScriptName = name;
-    list->pendingScriptRequestAt = std::chrono::steady_clock::now();
-    const int result = rc_request_weapon_script(list->connection, name);
-    remoteControlDebugLog("script create: type=weapons name=%s callback request result=%d", name, result);
-    if (result > 0) list->pendingCreateName.clear();
+    list->pendingCreateName.clear();
+    if (list->pendingCreateTimer != 0) { g_source_remove(list->pendingCreateTimer); list->pendingCreateTimer = 0; }
+    list->showEditor(name, "");
 }
 
 void TScriptList::onWeaponDeleted(const char* name, void* data) {
@@ -233,11 +229,8 @@ void TScriptList::onClassAdded(const char* name, void* data) {
     if (list == nullptr || list->type != "classes") return;
     list->refresh();
     if (name == nullptr || list->pendingCreateName != name) return;
-    list->pendingScriptName = name;
-    list->pendingScriptRequestAt = std::chrono::steady_clock::now();
-    const int result = rc_request_class_script(list->connection, name);
-    remoteControlDebugLog("script create: type=classes name=%s callback request result=%d", name, result);
-    if (result > 0) list->pendingCreateName.clear();
+    list->pendingCreateName.clear();
+    list->showEditor(name, "");
 }
 
 void TScriptList::onClassDeleted(const char*, void* data) { auto* list = static_cast<TScriptList*>(data); if (list != nullptr) list->refresh(); }
