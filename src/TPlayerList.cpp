@@ -49,9 +49,7 @@ namespace {
         return leftOrder == rightOrder ? 0 : (leftOrder < rightOrder ? -1 : 1);
     }
 
-    bool isAdminPlayer(const RCPlayer& player) {
-        return player.level == nullptr || *player.level == '\0';
-    }
+    bool isAdminPlayer(const RCPlayer& player) { if (player.level == nullptr) return true; for (const unsigned char* value = reinterpret_cast<const unsigned char*>(player.level); *value != '\0'; ++value) if (std::isspace(*value) == 0) return false; return true; }
 
     struct PMWindowData {
         TPlayerList* owner;
