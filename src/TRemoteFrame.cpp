@@ -1806,10 +1806,6 @@ void TRemoteFrame::applyOptions(const RC::RCOptions& previous) {
     if (options.backgroundtint != previous.backgroundtint && backgroundImage != nullptr) gtk_widget_queue_draw(backgroundImage);
     refreshTheme();
     if (options.chatfontfamily != previous.chatfontfamily || options.chatfontsize != previous.chatfontsize) for (const auto& entry : channelFields) configureChatField(entry.second);
-    for (const auto& entry : chatTags) {
-        g_object_set(entry.second.alert, "foreground", options.coloralert.c_str(), nullptr);
-        g_object_set(entry.second.bold, "foreground", options.colorchatbold.c_str(), nullptr);
-    }
     if (serverLabel != nullptr && (options.labelservers != previous.labelservers || options.colorlabel != previous.colorlabel || options.colorlabelback != previous.colorlabelback)) {
         const std::string text = options.labelservers.empty() ? serverName : options.labelservers + " " + serverName;
         GdkColor foreground;
@@ -1890,6 +1886,11 @@ void TRemoteFrame::refreshTheme() {
     refreshNotebookTheme();
     if (chatField != nullptr) configureChatField(chatField);
     for (const auto& entry : channelFields) if (entry.second != nullptr) configureChatField(entry.second);
+    for (const auto& entry : chatTags) {
+        g_object_set(entry.second.alert, "foreground", options.coloralert.c_str(), nullptr);
+        g_object_set(entry.second.bold, "foreground", options.colorchatbold.c_str(), nullptr);
+        g_object_set(entry.second.timestamp, "foreground", options.colorchatbold.c_str(), nullptr);
+    }
     refreshGScriptEditorTheme();
 }
 void TRemoteFrame::updateThemeOptions(const RC::RCOptions& nextOptions) {

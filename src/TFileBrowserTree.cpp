@@ -452,6 +452,9 @@ TFileBrowserTree::TFileBrowserTree(const std::filesystem::path& nextApplicationD
     gtk_text_view_set_cursor_visible(GTK_TEXT_VIEW(log), false);
     gtk_container_add(GTK_CONTAINER(logScrolled), log);
     gtk_paned_pack2(GTK_PANED(panes), logScrolled, true, true);
+    statusLabel = gtk_label_new("0 files");
+    gtk_misc_set_alignment(GTK_MISC(statusLabel), 0.0f, 0.5f);
+    gtk_box_pack_start(GTK_BOX(root), statusLabel, false, false, 0);
     GtkWidget* buttons = gtk_button_box_new(GTK_ORIENTATION_HORIZONTAL);
     gtk_button_box_set_layout(GTK_BUTTON_BOX(buttons), GTK_BUTTONBOX_END);
     gtk_container_set_border_width(GTK_CONTAINER(buttons), 5);
@@ -474,11 +477,13 @@ TFileBrowserTree::TFileBrowserTree(const std::filesystem::path& nextApplicationD
     configFileIcon = loadImage(applicationDirectory, "rcfiles_conf.png");
     unknownFileIcon = loadImage(applicationDirectory, "rcfiles_unknown.png");
     g_signal_connect(gtk_tree_view_get_selection(GTK_TREE_VIEW(folderView)), "changed", G_CALLBACK(onFolderSelected), this);
+    g_signal_connect(gtk_tree_view_get_selection(GTK_TREE_VIEW(fileView)), "changed", G_CALLBACK(onFileSelectionChanged), this);
     g_signal_connect(folderView, "row-expanded", G_CALLBACK(onFolderStateChanged), this);
     g_signal_connect(folderView, "row-collapsed", G_CALLBACK(onFolderStateChanged), this);
     g_signal_connect(folderView, "button-press-event", G_CALLBACK(onFolderButtonPress), this);
     g_signal_connect(fileView, "button-press-event", G_CALLBACK(onFileButtonPress), this);
     g_signal_connect(modernView, "button-press-event", G_CALLBACK(onModernButtonPress), this);
+    g_signal_connect(modernView, "selection-changed", G_CALLBACK(onModernSelectionChanged), this);
     g_signal_connect(modernView, "key-press-event", G_CALLBACK(onModernKeyPress), this);
     g_signal_connect(modernSearchEntry, "search-changed", G_CALLBACK(onModernSearchChanged), this);
     g_signal_connect(addressEntry, "activate", G_CALLBACK(onAddressActivate), this);
@@ -599,7 +604,7 @@ void TFileBrowserTree::openFolder(void* nextConnection, const std::string& folde
     open(nextConnection);
     navigateTo(folder);
 }
-void TFileBrowserTree::hide() { hidePreview(); gtk_widget_hide(window); }
+void TFileBrowserTree::hide() { resetState(); gtk_widget_hide(window); }
 
 void TFileBrowserTree::setDownloadFolder(const std::string& folder) { downloadFolder = folder; }
 void TFileBrowserTree::setDownloadServer(const std::string& server) { downloadServer = server; }
@@ -619,6 +624,7 @@ void TFileBrowserTree::setModernFileBrowser(bool enabled) {
     gtk_stack_set_visible_child_name(GTK_STACK(fileViewStack), enabled ? "modern" : "classic");
     gtk_entry_set_text(GTK_ENTRY(addressEntry), currentFolder.c_str());
     if (enabled) rebuildModernItems();
+    updateFileStatus();
 }
 void TFileBrowserTree::setHoverPreviews(bool enabled) {
     hoverPreviews = enabled;
@@ -643,11 +649,84 @@ std::string TFileBrowserTree::downloadDestinationDirectory() const {
     return destination;
 }
 
-void TFileBrowserTree::onRefresh(GtkButton*, gpointer data) { TFileBrowserTree* browser = static_cast<TFileBrowserTree*>(data); browser->hidePreview(); gtk_widget_hide(browser->window); }
+void TFileBrowserTree::onRefresh(GtkButton*, gpointer data) { static_cast<TFileBrowserTree*>(data)->hide(); }
 void TFileBrowserTree::onFolders(int, void* data) { static_cast<TFileBrowserTree*>(data)->refreshFolders(); }
 void TFileBrowserTree::onFiles(const char* folder, int count, void* data) { static_cast<TFileBrowserTree*>(data)->refreshFiles(folder, count); }
 void TFileBrowserTree::onMessage(const char* message, void* data) { TFileBrowserTree* browser = static_cast<TFileBrowserTree*>(data); if (browser->isPreviewTransferMessage(message)) return; browser->appendLog(message == nullptr ? "" : message); }
-gboolean TFileBrowserTree::onDelete(GtkWidget*, GdkEvent*, gpointer data) { TFileBrowserTree* browser = static_cast<TFileBrowserTree*>(data); browser->hidePreview(); gtk_widget_hide(browser->window); return true; }
+gboolean TFileBrowserTree::onDelete(GtkWidget*, GdkEvent*, gpointer data) { static_cast<TFileBrowserTree*>(data)->hide(); return true; }
+void TFileBrowserTree::onFileSelectionChanged(GtkTreeSelection*, gpointer data) { static_cast<TFileBrowserTree*>(data)->updateFileStatus(); }
+void TFileBrowserTree::onModernSelectionChanged(GtkIconView*, gpointer data) { static_cast<TFileBrowserTree*>(data)->updateFileStatus(); }
+
+void TFileBrowserTree::updateFileStatus() {
+    if (statusLabel == nullptr) return;
+    const int fileCount = files == nullptr ? 0 : gtk_tree_model_iter_n_children(GTK_TREE_MODEL(files), nullptr);
+    int selectedCount = 0;
+    if (modernFileBrowser && modernView != nullptr) {
+        GtkTreeModel* model = gtk_icon_view_get_model(GTK_ICON_VIEW(modernView));
+        GList* selected = gtk_icon_view_get_selected_items(GTK_ICON_VIEW(modernView));
+        for (GList* node = selected; node != nullptr; node = node->next) {
+            GtkTreeIter row;
+            gboolean folder = false;
+            if (model != nullptr && gtk_tree_model_get_iter(model, &row, static_cast<GtkTreePath*>(node->data))) gtk_tree_model_get(model, &row, ModernFolderColumn, &folder, -1);
+            if (!folder) ++selectedCount;
+            gtk_tree_path_free(static_cast<GtkTreePath*>(node->data));
+        }
+        g_list_free(selected);
+    } else if (fileView != nullptr) {
+        GList* selected = gtk_tree_selection_get_selected_rows(gtk_tree_view_get_selection(GTK_TREE_VIEW(fileView)), nullptr);
+        selectedCount = g_list_length(selected);
+        for (GList* node = selected; node != nullptr; node = node->next) gtk_tree_path_free(static_cast<GtkTreePath*>(node->data));
+        g_list_free(selected);
+    }
+    std::string text = std::to_string(fileCount) + (fileCount == 1 ? " file" : " files");
+    if (selectedCount > 0) text += "  |  " + std::to_string(selectedCount) + " selected";
+    gtk_label_set_text(GTK_LABEL(statusLabel), text.c_str());
+}
+
+void TFileBrowserTree::resetState() {
+    if (inlineRenameId != 0) { g_source_remove(inlineRenameId); inlineRenameId = 0; }
+    pendingInlineRenamePath.clear();
+    if (mutationRefreshId != 0) { g_source_remove(mutationRefreshId); mutationRefreshId = 0; }
+    ++previewAsyncState->generation;
+    clearModernBuild();
+    {
+        std::lock_guard<std::mutex> lock(previewWorkerMutex);
+        previewWorkerJobs.clear();
+    }
+    if (thumbnailLoadId != 0) { g_source_remove(thumbnailLoadId); thumbnailLoadId = 0; }
+    queuedPreviewDownloads.clear();
+    visiblePreviewPaths.clear();
+    pendingPreviewDownloads.clear();
+    previewTransferPaths.clear();
+    pendingDragSelectionPaths.clear();
+    pendingDragDownloads.clear();
+    pendingUserDownloads.clear();
+    pendingEditPath.clear();
+    pendingExternalPath.clear();
+    watchExternalPath.clear();
+    watchExternalFolder.clear();
+    watchExternalRemotePath.clear();
+    watchExternalModified = 0;
+    watchExternalWritable = false;
+    currentFolder.clear();
+    previewFolder.clear();
+    folderPaths.clear();
+    remoteModifiedTimes.clear();
+    previewFileSizes.clear();
+    clearPreviewCache();
+    hideDragPreview();
+    gtk_list_store_clear(files);
+    gtk_list_store_clear(modernItems);
+    gtk_tree_store_clear(folders);
+    gtk_tree_selection_unselect_all(gtk_tree_view_get_selection(GTK_TREE_VIEW(fileView)));
+    gtk_icon_view_unselect_all(GTK_ICON_VIEW(modernView));
+    gtk_entry_set_text(GTK_ENTRY(addressEntry), "");
+    gtk_entry_set_text(GTK_ENTRY(modernSearchEntry), "");
+    gtk_label_set_text(GTK_LABEL(folderPath), "Current Folder:");
+    gtk_text_buffer_set_text(gtk_text_view_get_buffer(GTK_TEXT_VIEW(log)), "", -1);
+    updateFolderIcons();
+    updateFileStatus();
+}
 
 void TFileBrowserTree::onFolderSelected(GtkTreeSelection* selection, gpointer data) {
     TFileBrowserTree* browser = static_cast<TFileBrowserTree*>(data);
@@ -681,6 +760,7 @@ void TFileBrowserTree::navigateTo(const std::string& folder) {
     currentFolder = normalized;
     gtk_list_store_clear(files);
     gtk_list_store_clear(modernItems);
+    updateFileStatus();
     queuedPreviewDownloads.clear();
     visiblePreviewPaths.clear();
     if (thumbnailLoadId != 0) { g_source_remove(thumbnailLoadId); thumbnailLoadId = 0; }
@@ -2185,6 +2265,7 @@ void TFileBrowserTree::refreshFiles(const char* folder, int count) {
     gtk_tree_sortable_set_sort_column_id(GTK_TREE_SORTABLE(files), FilePathColumn, GTK_SORT_ASCENDING);
     rc_free_filebrowser_files(entries, entryCount);
     if (!modernFileBrowser) startNextPreviewDownload();
+    updateFileStatus();
     if (modernFileBrowser) rebuildModernItems();
 }
 

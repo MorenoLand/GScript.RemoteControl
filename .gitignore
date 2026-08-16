@@ -5,6 +5,7 @@ bin/
 cmake-build/
 cmake-build-mingw/
 cmake-build-*/
+build/
 dependencies/
 research/
 tools/

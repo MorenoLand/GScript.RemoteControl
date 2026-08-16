@@ -41,6 +41,8 @@ public:
 private:
     static void onRefresh(GtkButton*, gpointer data);
     static void onFolderSelected(GtkTreeSelection*, gpointer data);
+    static void onFileSelectionChanged(GtkTreeSelection*, gpointer data);
+    static void onModernSelectionChanged(GtkIconView*, gpointer data);
     static void onFolderStateChanged(GtkTreeView*, GtkTreeIter*, GtkTreePath*, gpointer data);
     static gboolean onFolderButtonPress(GtkWidget*, GdkEventButton*, gpointer data);
     static gboolean onFileButtonPress(GtkWidget*, GdkEventButton*, gpointer data);
@@ -79,10 +81,12 @@ private:
     static gboolean watchExternalFile(gpointer data);
     static gboolean beginInlineRename(gpointer data);
     void refresh();
+    void resetState();
     void refreshFolders();
     void refreshFiles(const char* folder, int count);
     void addFolder(const char* pattern, const char* rights);
     void appendLog(const char* message);
+    void updateFileStatus();
     bool isPreviewTransferMessage(const char* message) const;
     void showTextEditor(const char* path, const void* content, int length);
     void showItemMenu(GtkWidget* view, GdkEventButton* event, bool folder);
@@ -125,6 +129,7 @@ private:
     GtkWidget* dragPreviewImage = nullptr;
     GtkWidget* dragPreviewLabel = nullptr;
     GtkWidget* log = nullptr;
+    GtkWidget* statusLabel = nullptr;
     GdkPixbuf* closedFolderIcon = nullptr;
     GdkPixbuf* openFolderIcon = nullptr;
     GdkPixbuf* closedFolderLargeIcon = nullptr;

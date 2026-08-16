@@ -596,8 +596,8 @@ gboolean TServerList::onTreeButtonPress(GtkWidget* widget, GdkEventButton* event
     }
     if (event->button != GDK_BUTTON_SECONDARY) return false;
     GtkTreePath* path = nullptr;
-    if (!gtk_tree_view_get_path_at_pos(GTK_TREE_VIEW(widget), static_cast<int>(event->x), static_cast<int>(event->y), &path, nullptr, nullptr, nullptr)) return false;
-    gtk_tree_view_set_cursor(GTK_TREE_VIEW(widget), path, nullptr, false);
+    gtk_tree_view_get_path_at_pos(GTK_TREE_VIEW(widget), static_cast<int>(event->x), static_cast<int>(event->y), &path, nullptr, nullptr, nullptr);
+    if (path != nullptr) gtk_tree_view_set_cursor(GTK_TREE_VIEW(widget), path, nullptr, false);
     GtkWidget* menu = gtk_menu_new();
     GtkWidget* anotherList = gtk_menu_item_new_with_label("Open another server list");
     GtkWidget* additional = gtk_menu_item_new_with_label("Open additional connection");
