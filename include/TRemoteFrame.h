@@ -169,6 +169,7 @@ private:
     unsigned int backgroundAnimationSource = 0;
     int graphicalBackgroundWidth = 500;
     void* connection = nullptr;
+    void* detachedConnection = nullptr;
     std::uint64_t connectionGeneration = 0;
     int currentServerIndex = -1;
     std::string serverName;

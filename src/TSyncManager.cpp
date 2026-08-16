@@ -2083,7 +2083,7 @@ void TSyncManager::onChooseFileFolders(GtkButton*, gpointer data) {
 
 void TSyncManager::showFileRoots(const std::vector<std::string>& roots) {
     if (fileRootsDialog != nullptr) { fileRootsStore = nullptr; gtk_widget_destroy(fileRootsDialog); }
-    fileRootsDialog = gtk_dialog_new_with_buttons("Select server folders", GTK_WINDOW(window), GTK_DIALOG_DESTROY_WITH_PARENT, "_Close", GTK_RESPONSE_CLOSE, "_Apply", GTK_RESPONSE_APPLY, nullptr);
+    fileRootsDialog = gtk_dialog_new_with_buttons("Select server folders", GTK_WINDOW(window), static_cast<GtkDialogFlags>(0), "_Close", GTK_RESPONSE_CLOSE, "_Apply", GTK_RESPONSE_APPLY, nullptr);
     g_object_add_weak_pointer(G_OBJECT(fileRootsDialog), reinterpret_cast<gpointer*>(&fileRootsDialog));
     gtk_window_set_modal(GTK_WINDOW(fileRootsDialog), false);
     gtk_window_set_default_size(GTK_WINDOW(fileRootsDialog), 430, 380);
@@ -2289,7 +2289,7 @@ bool TSyncManager::findFileRoot(const std::string& path, GtkTreeIter& result) co
 }
 
 void TSyncManager::showResult(const std::string& title, const std::string& message, GtkMessageType type) const {
-    GtkWidget* dialog = gtk_message_dialog_new(GTK_WINDOW(parent), GTK_DIALOG_DESTROY_WITH_PARENT, type, GTK_BUTTONS_CLOSE, "%s", message.empty() ? title.c_str() : message.c_str());
+    GtkWidget* dialog = gtk_message_dialog_new(GTK_WINDOW(parent), static_cast<GtkDialogFlags>(0), type, GTK_BUTTONS_CLOSE, "%s", message.empty() ? title.c_str() : message.c_str());
     gtk_window_set_title(GTK_WINDOW(dialog), title.c_str());
     gtk_window_set_modal(GTK_WINDOW(dialog), false);
     g_signal_connect_swapped(dialog, "response", G_CALLBACK(gtk_widget_destroy), dialog);

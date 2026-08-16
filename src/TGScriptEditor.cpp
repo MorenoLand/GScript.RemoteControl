@@ -62,7 +62,7 @@ namespace {
     }
     typedef struct _RemoteCompletionProvider { GObject parent; GtkWidget* editor; } RemoteCompletionProvider;
     typedef struct _RemoteCompletionProviderClass { GObjectClass parentClass; } RemoteCompletionProviderClass;
-    struct EditorCompletionState { GtkWidget* editor; RemoteCompletionProvider* provider; GtkWidget* signaturePopover; GtkWidget* signatureLabel; void* connection; bool completionArmed = false; bool restoreSignature = false; guint restoreTimer = 0; guint signatureTimer = 0; };
+    struct EditorCompletionState { GtkWidget* editor; RemoteCompletionProvider* provider; GtkWidget* signaturePopover; GtkWidget* signatureLabel; void* connection; bool connectionDetached = false; bool completionArmed = false; bool restoreSignature = false; guint restoreTimer = 0; guint signatureTimer = 0; };
     std::vector<EditorCompletionState> editorCompletionStates;
     std::unordered_map<void*, std::unordered_map<int, std::string>> playerCommunityNames;
     struct EditorSelection { GtkTextMark* anchor; GtkTextMark* caret; };
@@ -1514,7 +1514,7 @@ namespace {
             if (icon != nullptr) g_object_unref(icon);
             proposals = g_list_prepend(proposals, item);
         }
-        if (state != editorCompletionStates.end() && state->connection != nullptr && completionInsideString(iter)) {
+        if (state != editorCompletionStates.end() && state->connection != nullptr && !state->connectionDetached && completionInsideString(iter)) {
             RCPlayer* players = nullptr;
             const int count = rc_get_players(state->connection, &players);
             const auto communities = playerCommunityNames.find(state->connection);
@@ -1845,10 +1845,10 @@ namespace {
 void setGScriptEditorCacheDirectory(const std::filesystem::path& directory) { completionCacheFile = directory / "scriptapi.json"; }
 void setGScriptEditorConnection(GtkWidget* editor, void* connection) {
     const auto state = std::find_if(editorCompletionStates.begin(), editorCompletionStates.end(), [editor](const EditorCompletionState& value) { return value.editor == editor; });
-    if (state != editorCompletionStates.end()) state->connection = connection;
+    if (state != editorCompletionStates.end()) { state->connection = connection; state->connectionDetached = false; }
 }
-void detachGScriptEditorConnections(void* connection) { if (connection == nullptr) return; for (auto& state : editorCompletionStates) if (state.connection == connection) state.connection = nullptr; }
-void rebindGScriptEditorConnections(void* disconnectedConnection, void* connection) { for (auto& state : editorCompletionStates) if (state.connection == disconnectedConnection) state.connection = connection; }
+void detachGScriptEditorConnections(void* connection) { if (connection == nullptr) return; for (auto& state : editorCompletionStates) if (state.connection == connection) state.connectionDetached = true; }
+void rebindGScriptEditorConnections(void* disconnectedConnection, void* connection) { for (auto& state : editorCompletionStates) if (state.connection == disconnectedConnection) { state.connection = connection; state.connectionDetached = false; } }
 void updateGScriptEditorPlayerProperty(void* connection, int playerId, const char* property, const char* value) {
     if (connection == nullptr || property == nullptr) return;
     if (g_ascii_strcasecmp(property, "account") == 0) playerCommunityNames[connection].erase(playerId);
@@ -2094,7 +2094,7 @@ void configureGScriptEditor(GtkWidget* editor, bool script) {
         gtk_widget_set_size_request(signaturePopover, completionPopupMaxWidth - 16, -1);
         gtk_widget_set_halign(signaturePopover, GTK_ALIGN_START);
         gtk_popover_set_constrain_to(GTK_POPOVER(signaturePopover), GTK_POPOVER_CONSTRAINT_WINDOW);
-        editorCompletionStates.push_back({editor, provider, signaturePopover, signatureLabel, nullptr});
+        editorCompletionStates.push_back({editor, provider, signaturePopover, signatureLabel, nullptr, false});
         g_signal_connect(editor, "destroy", G_CALLBACK(+[](GtkWidget* widget, gpointer) {
             const auto state = std::find_if(editorCompletionStates.begin(), editorCompletionStates.end(), [widget](const EditorCompletionState& value) { return value.editor == widget; });
             if (state != editorCompletionStates.end()) {

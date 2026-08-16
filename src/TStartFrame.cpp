@@ -377,7 +377,7 @@ void TStartFrame::refreshAccountMenu() {
 }
 
 bool TStartFrame::editAccount(const std::string& accountName, GtkWindow* parent, int accountIndex) {
-    GtkWidget* dialog = gtk_dialog_new_with_buttons(accountName.empty() ? "Add Account" : "Edit Account", parent == nullptr ? GTK_WINDOW(window) : parent, GTK_DIALOG_DESTROY_WITH_PARENT, "Close", GTK_RESPONSE_CANCEL, "Save", GTK_RESPONSE_OK, nullptr);
+    GtkWidget* dialog = gtk_dialog_new_with_buttons(accountName.empty() ? "Add Account" : "Edit Account", parent == nullptr ? GTK_WINDOW(window) : parent, static_cast<GtkDialogFlags>(0), "Close", GTK_RESPONSE_CANCEL, "Save", GTK_RESPONSE_OK, nullptr);
     applyGtkButtonIcon(gtk_dialog_get_widget_for_response(GTK_DIALOG(dialog), GTK_RESPONSE_CANCEL), GTK_STOCK_CLOSE);
     applyGtkButtonIcon(gtk_dialog_get_widget_for_response(GTK_DIALOG(dialog), GTK_RESPONSE_OK), GTK_STOCK_SAVE);
     gtk_window_set_position(GTK_WINDOW(dialog), GTK_WIN_POS_CENTER_ON_PARENT);
@@ -442,7 +442,7 @@ bool TStartFrame::editAccount(const std::string& accountName, GtkWindow* parent,
 }
 
 void TStartFrame::openAccountManager() {
-    GtkWidget* dialog = gtk_dialog_new_with_buttons("Accounts", GTK_WINDOW(window), GTK_DIALOG_DESTROY_WITH_PARENT, "Add Account", 100, "Edit", 101, "Delete", 102, "Close", GTK_RESPONSE_CLOSE, "Select", GTK_RESPONSE_OK, nullptr);
+    GtkWidget* dialog = gtk_dialog_new_with_buttons("Accounts", GTK_WINDOW(window), static_cast<GtkDialogFlags>(0), "Add Account", 100, "Edit", 101, "Delete", 102, "Close", GTK_RESPONSE_CLOSE, "Select", GTK_RESPONSE_OK, nullptr);
     applyGtkButtonIcon(gtk_dialog_get_widget_for_response(GTK_DIALOG(dialog), 100), GTK_STOCK_ADD);
     applyGtkButtonIcon(gtk_dialog_get_widget_for_response(GTK_DIALOG(dialog), 101), GTK_STOCK_EDIT);
     applyGtkButtonIcon(gtk_dialog_get_widget_for_response(GTK_DIALOG(dialog), 102), GTK_STOCK_DELETE);

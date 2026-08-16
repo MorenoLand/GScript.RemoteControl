@@ -274,7 +274,7 @@ namespace {
 
     void onPMHistory(GtkButton*, gpointer data) {
         PMWindowData* windowData = static_cast<PMWindowData*>(data);
-        GtkWidget* history = gtk_dialog_new_with_buttons(("History: " + windowData->account + " - " + windowData->nick).c_str(), GTK_WINDOW(windowData->window), GTK_DIALOG_DESTROY_WITH_PARENT, "Close", GTK_RESPONSE_CLOSE, nullptr);
+        GtkWidget* history = gtk_dialog_new_with_buttons(("History: " + windowData->account + " - " + windowData->nick).c_str(), GTK_WINDOW(windowData->window), static_cast<GtkDialogFlags>(0), "Close", GTK_RESPONSE_CLOSE, nullptr);
         gtk_widget_set_name(history, "PrivateMessageHistory");
         gtk_window_set_default_size(GTK_WINDOW(history), 540, 475);
         GtkWidget* scrolled = gtk_scrolled_window_new(nullptr, nullptr);
@@ -685,7 +685,7 @@ void TPlayerList::handleBanListData(const char* type, const char* account, const
         return;
     }
     if (listType != "banhistory" && listType != "staffactivity") return;
-    GtkWidget* dialog = gtk_dialog_new_with_buttons((std::string(listType == "banhistory" ? "Ban History of " : "Staff Activity of ") + (account == nullptr ? "" : account)).c_str(), GTK_WINDOW(window), GTK_DIALOG_DESTROY_WITH_PARENT, "Close", GTK_RESPONSE_CLOSE, nullptr);
+    GtkWidget* dialog = gtk_dialog_new_with_buttons((std::string(listType == "banhistory" ? "Ban History of " : "Staff Activity of ") + (account == nullptr ? "" : account)).c_str(), GTK_WINDOW(window), static_cast<GtkDialogFlags>(0), "Close", GTK_RESPONSE_CLOSE, nullptr);
     gtk_window_set_default_size(GTK_WINDOW(dialog), 440, 300);
     GtkWidget* scrolled = gtk_scrolled_window_new(nullptr, nullptr);
     GtkSourceBuffer* sourceBuffer = gtk_source_buffer_new(nullptr);
@@ -742,7 +742,7 @@ void TPlayerList::handleBanListData(const char* type, const char* account, const
 void TPlayerList::handlePlayerRights(const char* account, int rights, const char* ipRange, const char* folderAccess) {
     if (account == nullptr || *account == '\0') return;
     struct RightsState { TPlayerList* list; std::string account; GtkWidget* ipRange; GtkWidget* folderAccess; GtkWidget* checks[20]{}; };
-    GtkWidget* dialog = gtk_dialog_new_with_buttons(("Edit Rights of " + std::string(account)).c_str(), GTK_WINDOW(window), GTK_DIALOG_DESTROY_WITH_PARENT, "Close", GTK_RESPONSE_CANCEL, "Apply", GTK_RESPONSE_ACCEPT, nullptr);
+    GtkWidget* dialog = gtk_dialog_new_with_buttons(("Edit Rights of " + std::string(account)).c_str(), GTK_WINDOW(window), static_cast<GtkDialogFlags>(0), "Close", GTK_RESPONSE_CANCEL, "Apply", GTK_RESPONSE_ACCEPT, nullptr);
     gtk_widget_set_name(dialog, "EditRightsWindow");
     gtk_window_set_default_size(GTK_WINDOW(dialog), 460, 420);
     GtkWidget* notebook = gtk_notebook_new();
@@ -807,8 +807,12 @@ void TPlayerList::handlePlayerRights(const char* account, int rights, const char
     gtk_text_buffer_set_text(gtk_text_view_get_buffer(GTK_TEXT_VIEW(folderField)), folderAccess == nullptr ? "" : folderAccess, -1);
     gtk_container_add(GTK_CONTAINER(folderScroll), folderField);
     state->folderAccess = folderField;
-    gtk_notebook_append_page(GTK_NOTEBOOK(notebook), flags, gtk_label_new("IP Range and Right flags"));
-    gtk_notebook_append_page(GTK_NOTEBOOK(notebook), folderScroll, gtk_label_new("Folder rights"));
+    GtkWidget* flagsFrame = gtk_frame_new(nullptr);
+    gtk_container_add(GTK_CONTAINER(flagsFrame), flags);
+    GtkWidget* folderFrame = gtk_frame_new(nullptr);
+    gtk_container_add(GTK_CONTAINER(folderFrame), folderScroll);
+    gtk_notebook_append_page(GTK_NOTEBOOK(notebook), flagsFrame, gtk_label_new("IP Range and Right flags"));
+    gtk_notebook_append_page(GTK_NOTEBOOK(notebook), folderFrame, gtk_label_new("Folder rights"));
     gtk_box_pack_start(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), notebook, true, true, 0);
     GtkWidget* actionArea = gtk_dialog_get_action_area(GTK_DIALOG(dialog));
     gtk_widget_set_hexpand(presets, true);
@@ -1032,7 +1036,7 @@ void TPlayerList::handlePlayerText(const char* type, const char* account, const 
         std::istringstream input(content == nullptr ? "" : content);
         for (std::string value; std::getline(input, value);) values.push_back(value);
         while (values.size() < 11) values.emplace_back();
-        GtkWidget* dialog = gtk_dialog_new_with_buttons(("Profile of " + std::string(account)).c_str(), GTK_WINDOW(window), GTK_DIALOG_DESTROY_WITH_PARENT, "Apply", GTK_RESPONSE_ACCEPT, "Close", GTK_RESPONSE_CANCEL, nullptr);
+        GtkWidget* dialog = gtk_dialog_new_with_buttons(("Profile of " + std::string(account)).c_str(), GTK_WINDOW(window), static_cast<GtkDialogFlags>(0), "Apply", GTK_RESPONSE_ACCEPT, "Close", GTK_RESPONSE_CANCEL, nullptr);
         gtk_widget_set_name(dialog, "ProfileWindow");
         gtk_window_set_default_size(GTK_WINDOW(dialog), 520, 400);
         GtkWidget* root = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
@@ -1149,7 +1153,7 @@ void TPlayerList::handlePlayerText(const char* type, const char* account, const 
     }
     struct TextState { TPlayerList* list; std::string account; std::string type; GtkWidget* text; };
     const std::string title = (dataType == "profile" ? "Profile of " : "Edit Comments of ") + std::string(account);
-    GtkWidget* dialog = gtk_dialog_new_with_buttons(title.c_str(), GTK_WINDOW(window), GTK_DIALOG_DESTROY_WITH_PARENT, "Close", GTK_RESPONSE_CANCEL, "Save", GTK_RESPONSE_ACCEPT, nullptr);
+        GtkWidget* dialog = gtk_dialog_new_with_buttons(title.c_str(), GTK_WINDOW(window), static_cast<GtkDialogFlags>(0), "Close", GTK_RESPONSE_CANCEL, "Save", GTK_RESPONSE_ACCEPT, nullptr);
     gtk_window_set_default_size(GTK_WINDOW(dialog), 420, 280);
     GtkWidget* scrolled = gtk_scrolled_window_new(nullptr, nullptr);
     GtkWidget* text = gtk_text_view_new();
@@ -1807,7 +1811,7 @@ void TPlayerList::resetSelectedPlayer() {
     gtk_tree_model_get(model, &row, PlayerAccountColumn, &account, -1);
     if (account != nullptr && *account != '\0') {
         const std::string prompt = "Do you really want to reset the attributes of " + std::string(account) + " ?";
-        GtkWidget* dialog = gtk_message_dialog_new(GTK_WINDOW(window), GTK_DIALOG_DESTROY_WITH_PARENT, GTK_MESSAGE_QUESTION, GTK_BUTTONS_CANCEL, "%s", prompt.c_str());
+        GtkWidget* dialog = gtk_message_dialog_new(GTK_WINDOW(window), static_cast<GtkDialogFlags>(0), GTK_MESSAGE_QUESTION, GTK_BUTTONS_CANCEL, "%s", prompt.c_str());
         gtk_window_set_title(GTK_WINDOW(dialog), "Question");
         gtk_dialog_add_button(GTK_DIALOG(dialog), "OK", GTK_RESPONSE_ACCEPT);
         g_object_set_data_full(G_OBJECT(dialog), "player-account", g_strdup(account), g_free);

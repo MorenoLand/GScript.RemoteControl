@@ -731,6 +731,11 @@ TRemoteFrame::~TRemoteFrame() {
 void TRemoteFrame::open(void* nextConnection, int serverIndex, const std::string& serverName, const std::string& nickname, const std::string& accountName) {
     if (!this->serverName.empty() && this->serverName != serverName) joinedIrcChannels.clear();
     connection = nextConnection;
+    if (detachedConnection != nullptr) {
+        rebindScriptEditorConnection(detachedConnection, connection);
+        rebindGScriptEditorConnections(detachedConnection, connection);
+        detachedConnection = nullptr;
+    }
     ++connectionGeneration;
     if (playerList != nullptr) playerList->rebindConnection(connection);
     if (classList != nullptr) classList->setConnection(connection);
@@ -793,6 +798,7 @@ void TRemoteFrame::disconnect() {
     }
     if (connection == nullptr) return;
     void* disconnectedConnection = connection;
+    detachedConnection = disconnectedConnection;
     detachScriptEditorConnection(disconnectedConnection);
     detachGScriptEditorConnections(disconnectedConnection);
     if (playerList != nullptr) playerList->setConnection(nullptr);
@@ -1015,7 +1021,7 @@ void TRemoteFrame::onLocalNPCData(const char*, const char* content, void* data) 
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
     if (content == nullptr || content[0] == '\0') return;
     const std::string title = frame->serverName.empty() ? "Local NPCs" : "Local NPCs - " + frame->serverName;
-    GtkWidget* dialog = gtk_dialog_new_with_buttons(title.c_str(), GTK_WINDOW(frame->window), GTK_DIALOG_DESTROY_WITH_PARENT, "Close", GTK_RESPONSE_CLOSE, nullptr);
+    GtkWidget* dialog = gtk_dialog_new_with_buttons(title.c_str(), GTK_WINDOW(frame->window), static_cast<GtkDialogFlags>(0), "Close", GTK_RESPONSE_CLOSE, nullptr);
     gtk_window_set_default_size(GTK_WINDOW(dialog), 520, 380);
     GtkWidget* scrolled = gtk_scrolled_window_new(nullptr, nullptr);
     GtkSourceLanguage* language = gtk_source_language_manager_get_language(gtk_source_language_manager_get_default(), "ini");
@@ -1495,6 +1501,7 @@ void TRemoteFrame::onDisconnectedEx(void* handle, const char* reason, void* data
 
 void TRemoteFrame::handleDisconnected(void* disconnectedConnection, std::uint64_t generation, const char* reason) {
     if (connection != disconnectedConnection || connectionGeneration != generation) return;
+    detachedConnection = disconnectedConnection;
     detachScriptEditorConnection(disconnectedConnection);
     detachGScriptEditorConnections(disconnectedConnection);
     if (playerList != nullptr) playerList->setConnection(nullptr);
