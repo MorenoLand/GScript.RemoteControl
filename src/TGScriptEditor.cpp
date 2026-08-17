@@ -76,6 +76,8 @@ namespace {
     constexpr std::size_t bulkInsertLines = 128;
     constexpr gint completionPopupMinWidth = 260;
     constexpr gint completionPopupMaxWidth = 320;
+    constexpr std::size_t completionMaxProposals = 80;
+    std::unordered_map<std::string, GdkPixbuf*> completionIconCache;
     struct CompletionPayload { unsigned int request; std::vector<ApiDefinition> definitions; };
     static gboolean refreshEditorScrollbars(gpointer data);
 
@@ -952,6 +954,12 @@ namespace {
 
     GdkPixbuf* completionIcon(const std::string& type) {
         const std::string lowerType = lowerText(type);
+        const auto cached = completionIconCache.find(lowerType);
+        if (cached != completionIconCache.end()) return GDK_PIXBUF(g_object_ref(cached->second));
+        const auto cache = [&lowerType](GdkPixbuf* pixbuf) {
+            if (pixbuf != nullptr) completionIconCache.emplace(lowerType, GDK_PIXBUF(g_object_ref(pixbuf)));
+            return pixbuf;
+        };
         const char* names[] = {
             lowerType == "class" ? "applications-development-symbolic" : lowerType == "property" ? "emblem-system-symbolic" : "system-run-symbolic",
             lowerType == "class" ? "applications-development" : lowerType == "property" ? "emblem-system" : "system-run",
@@ -968,7 +976,7 @@ namespace {
                     GdkPixbuf* pixbuf = gtk_icon_info_load_symbolic(iconInfo, &foreground, nullptr, nullptr, nullptr, &wasSymbolic, &symbolicError);
                     gtk_icon_info_free(iconInfo);
                     if (symbolicError != nullptr) g_error_free(symbolicError);
-                    if (pixbuf != nullptr && wasSymbolic) return pixbuf;
+                    if (pixbuf != nullptr && wasSymbolic) return cache(pixbuf);
                     if (pixbuf != nullptr) g_object_unref(pixbuf);
                 }
             }
@@ -995,10 +1003,10 @@ namespace {
                             }
                         }
                         g_object_unref(pixbuf);
-                        return contrast;
+                        return cache(contrast);
                     }
                 }
-                return pixbuf;
+                return cache(pixbuf);
             }
         }
         return nullptr;
@@ -1481,26 +1489,33 @@ namespace {
         if (state != editorCompletionStates.end() && !state->completionArmed && gtk_source_completion_context_get_activation(context) == GTK_SOURCE_COMPLETION_ACTIVATION_INTERACTIVE) { gtk_source_completion_context_add_proposals(context, provider, nullptr, true); return; }
         const std::size_t dot = completionContext.rfind('.');
         const std::string objectPrefix = dot == std::string::npos ? "" : completionContext.substr(0, dot + 1);
-        if (prefix.empty() && gtk_source_completion_context_get_activation(context) == GTK_SOURCE_COMPLETION_ACTIVATION_INTERACTIVE) { gtk_source_completion_context_add_proposals(context, provider, nullptr, true); return; }
+        if (prefix.size() < 2 && gtk_source_completion_context_get_activation(context) == GTK_SOURCE_COMPLETION_ACTIVATION_INTERACTIVE) { gtk_source_completion_context_add_proposals(context, provider, nullptr, true); return; }
         std::set<std::string> seen;
         GList* proposals = nullptr;
-        std::vector<ApiDefinition> definitions = apiDefinitions;
         const std::vector<ApiDefinition> localDefinitions = localFunctionDefinitions(remote->editor);
-        definitions.insert(definitions.end(), localDefinitions.begin(), localDefinitions.end());
-        struct RankedDefinition { int score; ApiDefinition definition; };
+        struct RankedDefinition { int score; const ApiDefinition* definition; };
         std::vector<RankedDefinition> rankedDefinitions;
-        for (const ApiDefinition& definition : definitions) {
-            if (!seen.insert(lowerText(definition.name)).second) continue;
-            const int score = completionMatchScore(definition.name, prefix);
-            if (score < 0) continue;
-            rankedDefinitions.push_back({score, definition});
-        }
-        std::sort(rankedDefinitions.begin(), rankedDefinitions.end(), [](const RankedDefinition& left, const RankedDefinition& right) {
+        auto rankDefinitions = [&rankedDefinitions, &seen, &prefix](const std::vector<ApiDefinition>& definitions) {
+            for (const ApiDefinition& definition : definitions) {
+                if (!seen.insert(lowerText(definition.name)).second) continue;
+                const int score = completionMatchScore(definition.name, prefix);
+                if (score < 0) continue;
+                rankedDefinitions.push_back({score, &definition});
+            }
+        };
+        rankDefinitions(apiDefinitions);
+        rankDefinitions(localDefinitions);
+        const auto rankedDefinitionOrder = [](const RankedDefinition& left, const RankedDefinition& right) {
             if (left.score != right.score) return left.score < right.score;
-            return lowerText(left.definition.name) < lowerText(right.definition.name);
-        });
+            return lowerText(left.definition->name) < lowerText(right.definition->name);
+        };
+        const std::size_t rankedLimit = std::min(completionMaxProposals, rankedDefinitions.size());
+        if (rankedDefinitions.size() > rankedLimit) std::partial_sort(rankedDefinitions.begin(), rankedDefinitions.begin() + rankedLimit, rankedDefinitions.end(), rankedDefinitionOrder);
+        else std::sort(rankedDefinitions.begin(), rankedDefinitions.end(), rankedDefinitionOrder);
+        rankedDefinitions.resize(rankedLimit);
+        std::size_t proposalCount = 0;
         for (const RankedDefinition& ranked : rankedDefinitions) {
-            const ApiDefinition& definition = ranked.definition;
+            const ApiDefinition& definition = *ranked.definition;
             std::string label = definition.name;
             if (!definition.params.empty()) {
                 label += '(';
@@ -1513,8 +1528,9 @@ namespace {
             setCompletionPreview(item, kind.c_str(), completionSummary(definition), completionScopeLabel(definition));
             if (icon != nullptr) g_object_unref(icon);
             proposals = g_list_prepend(proposals, item);
+            ++proposalCount;
         }
-        if (state != editorCompletionStates.end() && state->connection != nullptr && !state->connectionDetached && completionInsideString(iter)) {
+        if (proposalCount < completionMaxProposals && state != editorCompletionStates.end() && state->connection != nullptr && !state->connectionDetached && completionInsideString(iter)) {
             RCPlayer* players = nullptr;
             const int count = rc_get_players(state->connection, &players);
             const auto communities = playerCommunityNames.find(state->connection);
@@ -1529,6 +1545,7 @@ namespace {
                 const std::pair<std::string, const char*> aliases[] = {{account, "ACCOUNT"}, {nick, "NICK"}, {communityName, "COMMUNITY"}};
                 std::set<std::string> aliasesSeen;
                 for (const auto& [alias, kind] : aliases) {
+                    if (proposalCount >= completionMaxProposals) break;
                     const std::string lowerAlias = lowerText(alias);
                     if (alias.empty() || prefix.empty() || !aliasesSeen.insert(lowerAlias).second || completionMatchScore(alias, prefix) < 0) continue;
                     if (!seen.insert("player:" + lowerAlias).second) continue;
@@ -1539,10 +1556,11 @@ namespace {
                     setCompletionPreview(item, "Player", detail);
                     if (icon != nullptr) g_object_unref(icon);
                     proposals = g_list_prepend(proposals, item);
+                    ++proposalCount;
                 }
             }
         }
-        for (const std::string& name : localIdentifiers(remote->editor)) {
+        if (proposalCount < completionMaxProposals) for (const std::string& name : localIdentifiers(remote->editor)) {
             const std::string lowerName = lowerText(name);
             std::string insertText = name;
             if (!objectPrefix.empty()) {
@@ -1555,6 +1573,7 @@ namespace {
             setCompletionPreview(item, "Identifier", "Current script identifier");
             if (icon != nullptr) g_object_unref(icon);
             proposals = g_list_prepend(proposals, item);
+            if (++proposalCount >= completionMaxProposals) break;
         }
         gtk_source_completion_context_add_proposals(context, provider, g_list_reverse(proposals), true);
         g_list_free_full(proposals, g_object_unref);

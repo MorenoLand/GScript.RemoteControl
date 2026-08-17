@@ -19,28 +19,34 @@ namespace {
     GtkWidget* addCheckGrid(GtkGrid* grid, const char* label, bool value, int index) {
         GtkWidget* field = gtk_check_button_new_with_label(label);
         gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(field), value);
-        gtk_widget_set_size_request(field, 195, -1);
+        gtk_widget_set_size_request(field, 150, -1);
         GtkWidget* text = gtk_bin_get_child(GTK_BIN(field));
         gtk_label_set_line_wrap(GTK_LABEL(text), true);
-        gtk_label_set_max_width_chars(GTK_LABEL(text), 25);
-        gtk_grid_attach(grid, field, index % 2, index / 2, 1, 1);
+        gtk_label_set_max_width_chars(GTK_LABEL(text), 21);
+        gtk_grid_attach(grid, field, index % 3, index / 3, 1, 1);
         return field;
     }
-    GtkWidget* addEntry(GtkGrid* grid, const char* label, const std::string& value, int row) {
+    GtkWidget* addEntry(GtkGrid* grid, const char* label, const std::string& value, int row, int column = 0) {
         GtkWidget* field = gtk_entry_new();
         gtk_entry_set_text(GTK_ENTRY(field), value.c_str());
-        gtk_grid_attach(grid, gtk_label_new(label), 0, row, 1, 1);
-        gtk_grid_attach(grid, field, 1, row, 1, 1);
+        gtk_entry_set_width_chars(GTK_ENTRY(field), 16);
+        const int base = column * 3;
+        gtk_widget_set_hexpand(field, true);
+        gtk_grid_attach(grid, gtk_label_new(label), base, row, 1, 1);
+        gtk_grid_attach(grid, field, base + 1, row, 1, 1);
         return field;
     }
-    GtkWidget* addFontButton(GtkGrid* grid, const char* label, const std::string& value, int size, int row) {
+    GtkWidget* addFontButton(GtkGrid* grid, const char* label, const std::string& value, int size, int row, int column = 0) {
         GtkWidget* field = gtk_font_button_new_with_font((value + " " + std::to_string(size)).c_str());
         gtk_font_button_set_use_font(GTK_FONT_BUTTON(field), true);
         gtk_font_button_set_use_size(GTK_FONT_BUTTON(field), true);
         gtk_font_button_set_show_style(GTK_FONT_BUTTON(field), true);
         gtk_font_button_set_show_size(GTK_FONT_BUTTON(field), true);
-        gtk_grid_attach(grid, gtk_label_new(label), 0, row, 1, 1);
-        gtk_grid_attach(grid, field, 1, row, 1, 1);
+        gtk_widget_set_size_request(field, 165, -1);
+        const int base = column * 3;
+        gtk_widget_set_hexpand(field, true);
+        gtk_grid_attach(grid, gtk_label_new(label), base, row, 1, 1);
+        gtk_grid_attach(grid, field, base + 1, row, 1, 1);
         return field;
     }
     void readFontButton(GtkWidget* field, std::string& value, int& size) {
@@ -56,13 +62,14 @@ namespace {
         g_free(face);
         pango_font_description_free(description);
     }
-    GtkWidget* addColorEntry(GtkGrid* grid, const char* label, const std::string& value, int row) {
+    GtkWidget* addColorEntry(GtkGrid* grid, const char* label, const std::string& value, int row, int column = 0) {
         GtkWidget* field = gtk_color_button_new();
         GdkRGBA color{};
         if (!gdk_rgba_parse(&color, value.c_str())) gdk_rgba_parse(&color, "#000000");
         gtk_color_chooser_set_rgba(GTK_COLOR_CHOOSER(field), &color);
-        gtk_grid_attach(grid, gtk_label_new(label), 0, row, 1, 1);
-        gtk_grid_attach(grid, field, 1, row, 1, 1);
+        const int base = column * 3;
+        gtk_grid_attach(grid, gtk_label_new(label), base, row, 1, 1);
+        gtk_grid_attach(grid, field, base + 1, row, 1, 1);
         return field;
     }
     std::string colorValue(GtkWidget* field) {
@@ -112,7 +119,7 @@ TOptionsWindow::TOptionsWindow(RC::RCOptions& nextOptions, const std::filesystem
     window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
     gtk_widget_set_name(window, "OptionsWindow");
     gtk_window_set_title(GTK_WINDOW(window), "Options");
-    gtk_window_set_default_size(GTK_WINDOW(window), 460, 400);
+    gtk_window_set_default_size(GTK_WINDOW(window), 580, 420);
     gtk_window_set_resizable(GTK_WINDOW(window), false);
     GtkWidget* root = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
     gtk_container_add(GTK_CONTAINER(window), root);
@@ -143,24 +150,11 @@ TOptionsWindow::TOptionsWindow(RC::RCOptions& nextOptions, const std::filesystem
     gtk_box_pack_start(GTK_BOX(general), generalChecks, false, false, 0);
     GtkWidget* generalGrid = gtk_grid_new();
     gtk_grid_set_row_spacing(GTK_GRID(generalGrid), 5);
-    gtk_grid_set_column_spacing(GTK_GRID(generalGrid), 5);
-    nickname = addEntry(GTK_GRID(generalGrid), "Nickname:", options.nickname, 0);
-    downloadFolder = addEntry(GTK_GRID(generalGrid), "Downloadfolder:", options.downloadfolder, 1);
+    gtk_grid_set_column_spacing(GTK_GRID(generalGrid), 12);
+    nickname = addEntry(GTK_GRID(generalGrid), "Nickname:", options.nickname, 0, 0);
+    downloadFolder = addEntry(GTK_GRID(generalGrid), "Downloadfolder:", options.downloadfolder, 1, 0);
     GtkWidget* downloadBrowse = gtk_button_new_with_label("Browse");
     gtk_grid_attach(GTK_GRID(generalGrid), downloadBrowse, 2, 1, 1, 1);
-    externalEditorWorkspace = addEntry(GTK_GRID(generalGrid), "External workspace:", options.externaleditorworkspace, 8);
-    externalEditorCommand = addEntry(GTK_GRID(generalGrid), "External editor command:", options.externaleditorcommand, 9);
-    GtkWidget* externalWorkspaceBrowse = gtk_button_new_with_label("Browse");
-    GtkWidget* externalEditorBrowse = gtk_button_new_with_label("Browse");
-    gtk_grid_attach(GTK_GRID(generalGrid), externalWorkspaceBrowse, 2, 8, 1, 1);
-    gtk_grid_attach(GTK_GRID(generalGrid), externalEditorBrowse, 2, 9, 1, 1);
-    externalEditorScope = gtk_combo_box_text_new();
-    gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(externalEditorScope), "off", "Disabled");
-    gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(externalEditorScope), "scripts", "Scripts only");
-    gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(externalEditorScope), "text", "Scripts + RC text editors");
-    gtk_combo_box_set_active_id(GTK_COMBO_BOX(externalEditorScope), options.externaleditorscope.c_str());
-    gtk_grid_attach(GTK_GRID(generalGrid), gtk_label_new("External editor mode:"), 0, 10, 1, 1);
-    gtk_grid_attach(GTK_GRID(generalGrid), externalEditorScope, 1, 10, 2, 1);
     logChat = gtk_check_button_new_with_label("Log RC Chat");
     gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(logChat), options.logrcchat);
     gtk_grid_attach(GTK_GRID(generalGrid), logChat, 0, 2, 1, 1);
@@ -178,12 +172,12 @@ TOptionsWindow::TOptionsWindow(RC::RCOptions& nextOptions, const std::filesystem
     gtk_combo_box_set_active_id(GTK_COMBO_BOX(afkTimeout), std::to_string(options.afktimeout).c_str());
     gtk_grid_attach(GTK_GRID(generalGrid), gtk_label_new("Away timeout:"), 0, 4, 1, 1);
     gtk_grid_attach(GTK_GRID(generalGrid), afkTimeout, 1, 4, 1, 1);
-    gtk_grid_attach(GTK_GRID(generalGrid), gtk_label_new("Global show/hide hotkey:"), 0, 6, 1, 1);
+    gtk_grid_attach(GTK_GRID(generalGrid), gtk_label_new("Global show/hide hotkey:"), 3, 0, 1, 1);
     GtkWidget* hotkeyOverlay = gtk_overlay_new();
     globalHotkey = gtk_entry_new();
     gtk_entry_set_text(GTK_ENTRY(globalHotkey), options.globalhotkey.c_str());
     gtk_editable_set_editable(GTK_EDITABLE(globalHotkey), false);
-    gtk_entry_set_width_chars(GTK_ENTRY(globalHotkey), 20);
+    gtk_entry_set_width_chars(GTK_ENTRY(globalHotkey), 16);
     gtk_widget_set_tooltip_text(globalHotkey, "Focus and press a key combination");
     gtk_container_add(GTK_CONTAINER(hotkeyOverlay), globalHotkey);
     GtkWidget* hotkeyConfirm = gtk_button_new_with_label("OK");
@@ -196,7 +190,20 @@ TOptionsWindow::TOptionsWindow(RC::RCOptions& nextOptions, const std::filesystem
     gtk_widget_set_valign(hotkeyConfirm, GTK_ALIGN_CENTER);
     gtk_widget_set_tooltip_text(hotkeyConfirm, "Save global show/hide hotkey");
     gtk_overlay_add_overlay(GTK_OVERLAY(hotkeyOverlay), hotkeyConfirm);
-    gtk_grid_attach(GTK_GRID(generalGrid), hotkeyOverlay, 1, 6, 1, 1);
+    gtk_grid_attach(GTK_GRID(generalGrid), hotkeyOverlay, 4, 0, 2, 1);
+    externalEditorWorkspace = addEntry(GTK_GRID(generalGrid), "External workspace:", options.externaleditorworkspace, 1, 1);
+    externalEditorCommand = addEntry(GTK_GRID(generalGrid), "External editor command:", options.externaleditorcommand, 2, 1);
+    GtkWidget* externalWorkspaceBrowse = gtk_button_new_with_label("Browse");
+    GtkWidget* externalEditorBrowse = gtk_button_new_with_label("Browse");
+    gtk_grid_attach(GTK_GRID(generalGrid), externalWorkspaceBrowse, 5, 1, 1, 1);
+    gtk_grid_attach(GTK_GRID(generalGrid), externalEditorBrowse, 5, 2, 1, 1);
+    externalEditorScope = gtk_combo_box_text_new();
+    gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(externalEditorScope), "off", "Disabled");
+    gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(externalEditorScope), "scripts", "Scripts only");
+    gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(externalEditorScope), "text", "Scripts + RC text editors");
+    gtk_combo_box_set_active_id(GTK_COMBO_BOX(externalEditorScope), options.externaleditorscope.c_str());
+    gtk_grid_attach(GTK_GRID(generalGrid), gtk_label_new("External editor mode:"), 3, 3, 1, 1);
+    gtk_grid_attach(GTK_GRID(generalGrid), externalEditorScope, 4, 3, 2, 1);
     g_signal_connect(globalHotkey, "key-press-event", G_CALLBACK(onGlobalHotkeyKeyPress), this);
     g_signal_connect(hotkeyConfirm, "clicked", G_CALLBACK(onGlobalHotkeyConfirm), this);
     gtk_box_pack_start(GTK_BOX(general), generalGrid, false, false, 4);
@@ -213,14 +220,14 @@ TOptionsWindow::TOptionsWindow(RC::RCOptions& nextOptions, const std::filesystem
     minimap = addCheckGrid(GTK_GRID(scriptChecks), "Show minimap (WIP)", options.minimap, 5);
     lsp = addCheckGrid(GTK_GRID(scriptChecks), "LSP / autocomplete", options.lsp, 6);
     scriptDiagnostics = addCheckGrid(GTK_GRID(scriptChecks), "Script analysis", options.scriptdiagnostics, 7);
+    scriptUseTabs = addCheckGrid(GTK_GRID(scriptChecks), "Use real tabs for indentation", options.scriptusetabs, 8);
     gtk_box_pack_start(GTK_BOX(script), scriptChecks, false, false, 0);
     GtkWidget* scriptGrid = gtk_grid_new();
     gtk_grid_set_row_spacing(GTK_GRID(scriptGrid), 5);
-    gtk_grid_set_column_spacing(GTK_GRID(scriptGrid), 5);
-    scriptTabWidth = addEntry(GTK_GRID(scriptGrid), "Script tab width:", std::to_string(options.scripttabwidth), 0);
-    scriptUseTabs = addCheck(GTK_BOX(script), "Use real tabs for indentation", options.scriptusetabs);
-    scriptFontFamily = addFontButton(GTK_GRID(scriptGrid), "Script font:", options.scriptfontfamily, options.scriptfontsize, 1);
-    autocompleteSource = addEntry(GTK_GRID(scriptGrid), "Autocomplete source:", options.autocompletesource, 2);
+    gtk_grid_set_column_spacing(GTK_GRID(scriptGrid), 12);
+    scriptTabWidth = addEntry(GTK_GRID(scriptGrid), "Script tab width:", std::to_string(options.scripttabwidth), 0, 0);
+    scriptFontFamily = addFontButton(GTK_GRID(scriptGrid), "Script font:", options.scriptfontfamily, options.scriptfontsize, 1, 0);
+    autocompleteSource = addEntry(GTK_GRID(scriptGrid), "Autocomplete source:", options.autocompletesource, 2, 0);
     GtkWidget* autocompleteBrowse = gtk_button_new_with_label("Browse");
     gtk_grid_attach(GTK_GRID(scriptGrid), autocompleteBrowse, 2, 2, 1, 1);
     syntaxTheme = gtk_combo_box_text_new();
@@ -237,11 +244,11 @@ TOptionsWindow::TOptionsWindow(RC::RCOptions& nextOptions, const std::filesystem
     gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(syntaxTheme), "catppuccin", "Catppuccin Mocha");
     gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(syntaxTheme), "light", "Light");
     gtk_combo_box_set_active_id(GTK_COMBO_BOX(syntaxTheme), options.syntaxtheme.c_str());
-    gtk_grid_attach(GTK_GRID(scriptGrid), gtk_label_new("Syntax theme:"), 0, 4, 1, 1);
-    gtk_grid_attach(GTK_GRID(scriptGrid), syntaxTheme, 1, 4, 1, 1);
+    gtk_grid_attach(GTK_GRID(scriptGrid), gtk_label_new("Syntax theme:"), 3, 0, 1, 1);
+    gtk_grid_attach(GTK_GRID(scriptGrid), syntaxTheme, 4, 0, 2, 1);
     syncSyntaxTheme = gtk_check_button_new_with_label("Sync syntax theme with UI theme");
     gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(syncSyntaxTheme), options.syncsyntaxtheme);
-    gtk_grid_attach(GTK_GRID(scriptGrid), syncSyntaxTheme, 1, 5, 2, 1);
+    gtk_grid_attach(GTK_GRID(scriptGrid), syncSyntaxTheme, 4, 1, 2, 1);
     gtk_widget_set_sensitive(syntaxTheme, !options.syncsyntaxtheme);
     gtk_box_pack_start(GTK_BOX(script), scriptGrid, false, false, 4);
     GtkWidget* formatter = gtk_box_new(GTK_ORIENTATION_VERTICAL, 5);
@@ -264,28 +271,28 @@ TOptionsWindow::TOptionsWindow(RC::RCOptions& nextOptions, const std::filesystem
     gtk_container_set_border_width(GTK_CONTAINER(customization), 5);
     GtkWidget* customizationGrid = gtk_grid_new();
     gtk_grid_set_row_spacing(GTK_GRID(customizationGrid), 5);
-    gtk_grid_set_column_spacing(GTK_GRID(customizationGrid), 5);
-    chatbarTextColor = addColorEntry(GTK_GRID(customizationGrid), "Chatbar text color:", options.coloredit, 0);
-    chatbarBackgroundColor = addColorEntry(GTK_GRID(customizationGrid), "Chatbar background color:", options.coloreditback, 1);
-    chatTextColor = addColorEntry(GTK_GRID(customizationGrid), "Chat text color:", options.colorchat, 2);
-    chatBoldColor = addColorEntry(GTK_GRID(customizationGrid), "Chat bold color:", options.colorchatbold, 3);
-    chatBackgroundColor = addColorEntry(GTK_GRID(customizationGrid), "Chat background color:", options.colorchatback, 4);
-    labelColor = addColorEntry(GTK_GRID(customizationGrid), "Label color:", options.colorlabel, 5);
-    labelBackgroundColor = addColorEntry(GTK_GRID(customizationGrid), "Label background color:", options.colorlabelback, 6);
-    serverLabel = addEntry(GTK_GRID(customizationGrid), "Server label:", options.labelservers, 7);
-    playersLabel = addEntry(GTK_GRID(customizationGrid), "Players label:", options.labelplayers, 8);
-    npcServerLabel = addEntry(GTK_GRID(customizationGrid), "NPC server label:", options.labelnpcserver, 9);
-    backgroundImage = addEntry(GTK_GRID(customizationGrid), "Background image:", options.background, 10);
+    gtk_grid_set_column_spacing(GTK_GRID(customizationGrid), 12);
+    chatbarTextColor = addColorEntry(GTK_GRID(customizationGrid), "Chatbar text color:", options.coloredit, 0, 0);
+    chatbarBackgroundColor = addColorEntry(GTK_GRID(customizationGrid), "Chatbar background color:", options.coloreditback, 1, 0);
+    chatTextColor = addColorEntry(GTK_GRID(customizationGrid), "Chat text color:", options.colorchat, 2, 0);
+    chatBoldColor = addColorEntry(GTK_GRID(customizationGrid), "Chat bold color:", options.colorchatbold, 3, 0);
+    chatBackgroundColor = addColorEntry(GTK_GRID(customizationGrid), "Chat background color:", options.colorchatback, 4, 0);
+    labelColor = addColorEntry(GTK_GRID(customizationGrid), "Label color:", options.colorlabel, 5, 0);
+    labelBackgroundColor = addColorEntry(GTK_GRID(customizationGrid), "Label background color:", options.colorlabelback, 6, 0);
+    serverLabel = addEntry(GTK_GRID(customizationGrid), "Server label:", options.labelservers, 0, 1);
+    playersLabel = addEntry(GTK_GRID(customizationGrid), "Players label:", options.labelplayers, 1, 1);
+    npcServerLabel = addEntry(GTK_GRID(customizationGrid), "NPC server label:", options.labelnpcserver, 2, 1);
+    backgroundImage = addEntry(GTK_GRID(customizationGrid), "Background image:", options.background, 3, 1);
     GtkWidget* backgroundBrowse = gtk_button_new_with_label("Browse");
-    gtk_grid_attach(GTK_GRID(customizationGrid), backgroundBrowse, 2, 10, 1, 1);
-    backgroundTint = addColorEntry(GTK_GRID(customizationGrid), "Background image tint:", options.backgroundtint, 11);
+    gtk_grid_attach(GTK_GRID(customizationGrid), backgroundBrowse, 5, 3, 1, 1);
+    backgroundTint = addColorEntry(GTK_GRID(customizationGrid), "Background image tint:", options.backgroundtint, 4, 1);
     gtk_color_chooser_set_use_alpha(GTK_COLOR_CHOOSER(backgroundTint), true);
     backgroundTintSolid = gtk_check_button_new_with_label("Solid fill");
     gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(backgroundTintSolid), options.backgroundtintsolid);
-    gtk_grid_attach(GTK_GRID(customizationGrid), backgroundTintSolid, 2, 11, 1, 1);
+    gtk_grid_attach(GTK_GRID(customizationGrid), backgroundTintSolid, 5, 4, 1, 1);
     syncBackgroundTint = gtk_check_button_new_with_label("Sync background tint with theme");
     gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(syncBackgroundTint), options.syncbackgroundtint);
-    gtk_grid_attach(GTK_GRID(customizationGrid), syncBackgroundTint, 1, 12, 2, 1);
+    gtk_grid_attach(GTK_GRID(customizationGrid), syncBackgroundTint, 4, 6, 2, 1);
     g_signal_connect(backgroundTint, "color-set", G_CALLBACK(+[](GtkColorButton*, gpointer data) { static_cast<TOptionsWindow*>(data)->save(); }), this);
     theme = gtk_combo_box_text_new();
     gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(theme), "system", "System (OS theme)");
@@ -302,11 +309,14 @@ TOptionsWindow::TOptionsWindow(RC::RCOptions& nextOptions, const std::filesystem
     gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(theme), "catppuccin", "Catppuccin Mocha");
     gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(theme), "light", "Light");
     gtk_combo_box_set_active_id(GTK_COMBO_BOX(theme), options.theme.c_str());
-    gtk_grid_attach(GTK_GRID(customizationGrid), gtk_label_new("Theme:"), 0, 13, 1, 1);
-    gtk_grid_attach(GTK_GRID(customizationGrid), theme, 1, 13, 1, 1);
+    gtk_grid_attach(GTK_GRID(customizationGrid), gtk_label_new("Theme:"), 3, 5, 1, 1);
+    gtk_grid_attach(GTK_GRID(customizationGrid), theme, 4, 5, 2, 1);
     gtk_box_pack_start(GTK_BOX(customization), customizationGrid, false, false, 4);
-    syncColors = addCheck(GTK_BOX(customization), "Sync colors with theme", options.synccolors);
-    roundedCorners = addCheck(GTK_BOX(customization), "Rounded app corners", options.roundedcorners);
+    GtkWidget* customizationChecks = gtk_grid_new();
+    gtk_grid_set_column_spacing(GTK_GRID(customizationChecks), 8);
+    syncColors = addCheckGrid(GTK_GRID(customizationChecks), "Sync colors with theme", options.synccolors, 0);
+    roundedCorners = addCheckGrid(GTK_GRID(customizationChecks), "Rounded app corners", options.roundedcorners, 1);
+    gtk_box_pack_start(GTK_BOX(customization), customizationChecks, false, false, 0);
     GtkWidget* mcp = gtk_box_new(GTK_ORIENTATION_VERTICAL, 5);
     gtk_container_set_border_width(GTK_CONTAINER(mcp), 5);
     GtkWidget* mcpChecks = gtk_grid_new();
@@ -339,9 +349,9 @@ TOptionsWindow::TOptionsWindow(RC::RCOptions& nextOptions, const std::filesystem
     gtk_box_pack_start(GTK_BOX(mcp), approvalFrame, false, false, 4);
     GtkWidget* mcpGrid = gtk_grid_new();
     gtk_grid_set_row_spacing(GTK_GRID(mcpGrid), 5);
-    gtk_grid_set_column_spacing(GTK_GRID(mcpGrid), 5);
-    mcpFileRoots = addEntry(GTK_GRID(mcpGrid), "Allowed file roots:", options.mcpfileroots, 0);
-    mcpServerScope = addEntry(GTK_GRID(mcpGrid), "Allowed server scope:", options.mcpserverscope, 1);
+    gtk_grid_set_column_spacing(GTK_GRID(mcpGrid), 12);
+    mcpFileRoots = addEntry(GTK_GRID(mcpGrid), "Allowed file roots:", options.mcpfileroots, 0, 0);
+    mcpServerScope = addEntry(GTK_GRID(mcpGrid), "Allowed server scope:", options.mcpserverscope, 0, 1);
     gtk_box_pack_start(GTK_BOX(mcp), mcpGrid, false, false, 4);
     GtkWidget* mcpLaunch = gtk_entry_new();
 #ifdef _WIN32

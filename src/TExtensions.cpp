@@ -15,6 +15,7 @@
 #include <fcntl.h>
 #include <io.h>
 #include <windows.h>
+#include <shellapi.h>
 #else
 #include <signal.h>
 #include <unistd.h>
@@ -662,7 +663,31 @@ bool TExtensionsManager::invokeWindowAction(const RC::ExtensionWindowActionBindi
 }
 
 void TExtensionsManager::onEnable(GtkToggleButton* button, gpointer data) { auto* manager = static_cast<TExtensionsManager*>(data); const std::size_t index = GPOINTER_TO_SIZE(g_object_get_data(G_OBJECT(button), "extension-index")); manager->setEnabled(index, gtk_toggle_button_get_active(button)); }
-void TExtensionsManager::onOpen(GtkButton* button, gpointer data) { auto* manager = static_cast<TExtensionsManager*>(data); const std::size_t index = GPOINTER_TO_SIZE(g_object_get_data(G_OBJECT(button), "extension-index")); if (index >= manager->extensions.size()) return; const auto& manifest = manager->extensions[index].manifest; const auto path = manifest.autoDiscover || manifest.entry.empty() ? manifest.directory : manifest.directory / manifest.entry; gchar* uri = g_filename_to_uri(path.string().c_str(), nullptr, nullptr); if (uri != nullptr) { gtk_show_uri_on_window(manager->window == nullptr ? nullptr : GTK_WINDOW(manager->window), uri, GDK_CURRENT_TIME, nullptr); g_free(uri); } }
+void TExtensionsManager::onOpen(GtkButton* button, gpointer data) {
+    auto* manager = static_cast<TExtensionsManager*>(data);
+    const std::size_t index = GPOINTER_TO_SIZE(g_object_get_data(G_OBJECT(button), "extension-index"));
+    if (index >= manager->extensions.size()) return;
+    const auto& manifest = manager->extensions[index].manifest;
+    const auto path = manifest.autoDiscover || manifest.entry.empty() ? manifest.directory : manifest.directory / manifest.entry;
+    GtkWindow* parent = manager->window == nullptr ? nullptr : GTK_WINDOW(manager->window);
+    const auto showFailure = [&](const char* detail) {
+        GtkWidget* dialog = gtk_message_dialog_new(parent, GTK_DIALOG_MODAL, GTK_MESSAGE_WARNING, GTK_BUTTONS_CLOSE, "Unable to open extension path");
+        gtk_message_dialog_format_secondary_text(GTK_MESSAGE_DIALOG(dialog), "%s\n%s", detail, path.string().c_str());
+        gtk_dialog_run(GTK_DIALOG(dialog));
+        gtk_widget_destroy(dialog);
+    };
+    if (!std::filesystem::exists(path)) { showFailure("The target path does not exist:"); return; }
+#ifdef _WIN32
+    if (reinterpret_cast<std::intptr_t>(ShellExecuteW(nullptr, L"open", path.wstring().c_str(), nullptr, nullptr, SW_SHOWNORMAL)) <= 32) showFailure("Windows could not open the target:");
+#else
+    GError* error = nullptr;
+    gchar* uri = g_filename_to_uri(path.string().c_str(), nullptr, &error);
+    const gboolean opened = uri != nullptr && gtk_show_uri_on_window(parent, uri, GDK_CURRENT_TIME, &error);
+    if (!opened) showFailure(error == nullptr ? "No file manager is available:" : error->message);
+    if (error != nullptr) g_error_free(error);
+    g_free(uri);
+#endif
+}
 void TExtensionsManager::onLog(GtkButton* button, gpointer data) { auto* manager = static_cast<TExtensionsManager*>(data); const std::size_t index = GPOINTER_TO_SIZE(g_object_get_data(G_OBJECT(button), "extension-index")); manager->showLog(index); }
 void TExtensionsManager::onOutputTab(GtkButton* button, gpointer data) { auto* manager = static_cast<TExtensionsManager*>(data); const std::size_t index = GPOINTER_TO_SIZE(g_object_get_data(G_OBJECT(button), "extension-index")); if (index < manager->extensions.size()) manager->setOutputTab(index, !manager->extensions[index].outputToTab); }
 void TExtensionsManager::onDetails(GtkButton* button, gpointer data) { auto* manager = static_cast<TExtensionsManager*>(data); const std::size_t index = GPOINTER_TO_SIZE(g_object_get_data(G_OBJECT(button), "extension-index")); manager->showDetails(index); }

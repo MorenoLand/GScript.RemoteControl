@@ -744,6 +744,8 @@ void TPlayerList::handlePlayerRights(const char* account, int rights, const char
     struct RightsState { TPlayerList* list; std::string account; GtkWidget* ipRange; GtkWidget* folderAccess; GtkWidget* checks[20]{}; };
     GtkWidget* dialog = gtk_dialog_new_with_buttons(("Edit Rights of " + std::string(account)).c_str(), GTK_WINDOW(window), static_cast<GtkDialogFlags>(0), "Close", GTK_RESPONSE_CANCEL, "Apply", GTK_RESPONSE_ACCEPT, nullptr);
     gtk_widget_set_name(dialog, "EditRightsWindow");
+    gtk_window_set_transient_for(GTK_WINDOW(dialog), nullptr);
+    gtk_window_set_destroy_with_parent(GTK_WINDOW(dialog), false);
     gtk_window_set_default_size(GTK_WINDOW(dialog), 460, 420);
     GtkWidget* notebook = gtk_notebook_new();
     gtk_container_set_border_width(GTK_CONTAINER(notebook), 5);
@@ -807,12 +809,12 @@ void TPlayerList::handlePlayerRights(const char* account, int rights, const char
     gtk_text_buffer_set_text(gtk_text_view_get_buffer(GTK_TEXT_VIEW(folderField)), folderAccess == nullptr ? "" : folderAccess, -1);
     gtk_container_add(GTK_CONTAINER(folderScroll), folderField);
     state->folderAccess = folderField;
-    GtkWidget* flagsFrame = gtk_frame_new(nullptr);
-    gtk_container_add(GTK_CONTAINER(flagsFrame), flags);
-    GtkWidget* folderFrame = gtk_frame_new(nullptr);
-    gtk_container_add(GTK_CONTAINER(folderFrame), folderScroll);
-    gtk_notebook_append_page(GTK_NOTEBOOK(notebook), flagsFrame, gtk_label_new("IP Range and Right flags"));
-    gtk_notebook_append_page(GTK_NOTEBOOK(notebook), folderFrame, gtk_label_new("Folder rights"));
+    gtk_notebook_append_page(GTK_NOTEBOOK(notebook), flags, gtk_label_new("IP Range and Right flags"));
+    gtk_notebook_append_page(GTK_NOTEBOOK(notebook), folderScroll, gtk_label_new("Folder rights"));
+    GtkCssProvider* rightsTabs = gtk_css_provider_new();
+    gtk_css_provider_load_from_data(rightsTabs, "#EditRightsWindow notebook > header { border-bottom: 1px solid #777777; } #EditRightsWindow notebook > header > tabs > tab { border: 1px solid #777777; border-bottom: 0; border-radius: 4px 4px 0 0; margin-right: 3px; padding: 4px 8px; } #EditRightsWindow notebook > header > tabs > tab:checked { border-color: #aaaaaa; margin-bottom: -1px; } #EditRightsWindow notebook > stack { border: 1px solid #777777; border-top: 0; }", -1, nullptr);
+    gtk_style_context_add_provider_for_screen(gdk_screen_get_default(), GTK_STYLE_PROVIDER(rightsTabs), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION + 1);
+    g_object_unref(rightsTabs);
     gtk_box_pack_start(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), notebook, true, true, 0);
     GtkWidget* actionArea = gtk_dialog_get_action_area(GTK_DIALOG(dialog));
     gtk_widget_set_hexpand(presets, true);
