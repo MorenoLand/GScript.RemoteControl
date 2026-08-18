@@ -196,6 +196,16 @@ std::string completionMarkupEscape(const char* value) {
     g_free(escaped);
     return result;
 }
+GtkWidget* findScrolledWindow(GtkWidget* widget) {
+    if (widget == nullptr) return nullptr;
+    if (GTK_IS_SCROLLED_WINDOW(widget)) return widget;
+    if (!GTK_IS_CONTAINER(widget)) return nullptr;
+    GList* children = gtk_container_get_children(GTK_CONTAINER(widget));
+    GtkWidget* result = nullptr;
+    for (GList* child = children; child != nullptr && result == nullptr; child = child->next) result = findScrolledWindow(GTK_WIDGET(child->data));
+    g_list_free(children);
+    return result;
+}
 std::string commandCompletionMarkup(const char* command) {
     const std::string name = completionMarkupEscape(commandCompletionName(command));
     const std::string description = completionMarkupEscape(commandCompletionDescription(command));
@@ -603,6 +613,7 @@ TRemoteFrame::TRemoteFrame(const RC::RCOptions& nextOptions, const std::filesyst
     g_signal_connect(mentionCompletion, "match-selected", G_CALLBACK(onMentionSelected), this);
     g_signal_connect(editField, "changed", G_CALLBACK(onMentionChanged), this);
     g_signal_connect(editField, "key-press-event", G_CALLBACK(onEditKey), this);
+    g_signal_connect(editField, "populate-popup", G_CALLBACK(onEditPopup), this);
     gtk_widget_add_events(window, GDK_BUTTON_PRESS_MASK | GDK_POINTER_MOTION_MASK);
     gtk_widget_add_events(chatField, GDK_POINTER_MOTION_MASK);
     gtk_widget_add_events(notebook, GDK_POINTER_MOTION_MASK);
@@ -621,6 +632,7 @@ TRemoteFrame::TRemoteFrame(const RC::RCOptions& nextOptions, const std::filesyst
 gboolean TRemoteFrame::onConfigure(GtkWidget*, GdkEventConfigure* event, gpointer data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
     frame->repositionGraphicalButtons(event->width);
+    frame->adjustEmojiPopover();
     GdkWindow* nativeWindow = gtk_widget_get_window(frame->window);
     const bool maximized = nativeWindow != nullptr && (gdk_window_get_state(nativeWindow) & GDK_WINDOW_STATE_MAXIMIZED) != 0;
     if (!frame->windowMaximized && !maximized && event->width > 0 && event->height > 0) {
@@ -698,6 +710,7 @@ gboolean TRemoteFrame::onGraphicalDraw(GtkWidget* widget, cairo_t* context, gpoi
 TRemoteFrame::~TRemoteFrame() {
     *callbackAlive = false;
     if (eventSource != 0) g_source_remove(eventSource);
+    if (emojiPopoverResizeSource != 0) g_source_remove(emojiPopoverResizeSource);
     if (backgroundAnimationSource != 0) g_source_remove(backgroundAnimationSource);
     GList* toplevels = gtk_window_list_toplevels();
     for (GList* current = toplevels; current != nullptr; current = current->next) {
@@ -1151,6 +1164,48 @@ gboolean TRemoteFrame::onEditKey(GtkWidget*, GdkEventKey* event, gpointer data) 
     if (completionSelected) return false;
     frame->send();
     return true;
+}
+
+void TRemoteFrame::onEditPopup(GtkEntry*, GtkMenu* menu, gpointer data) {
+    TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
+    if (menu == nullptr) return;
+    GList* children = gtk_container_get_children(GTK_CONTAINER(menu));
+    for (GList* child = children; child != nullptr; child = child->next) {
+        GtkWidget* item = GTK_WIDGET(child->data);
+        if (!GTK_IS_MENU_ITEM(item)) continue;
+        const char* label = gtk_menu_item_get_label(GTK_MENU_ITEM(item));
+        if (label == nullptr || std::strstr(label, "Emoji") == nullptr) continue;
+        g_signal_connect_after(item, "activate", G_CALLBACK(onEmojiMenuActivate), frame);
+    }
+    g_list_free(children);
+}
+
+void TRemoteFrame::onEmojiMenuActivate(GtkMenuItem*, gpointer data) {
+    TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
+    if (frame->emojiPopoverResizeSource != 0) g_source_remove(frame->emojiPopoverResizeSource);
+    frame->emojiPopoverResizeSource = g_idle_add(adjustEmojiPopoverLater, frame);
+}
+
+gboolean TRemoteFrame::adjustEmojiPopoverLater(gpointer data) {
+    TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
+    frame->emojiPopoverResizeSource = 0;
+    frame->adjustEmojiPopover();
+    return G_SOURCE_REMOVE;
+}
+
+void TRemoteFrame::adjustEmojiPopover() {
+    if (editField == nullptr) return;
+    GtkWidget* chooser = static_cast<GtkWidget*>(g_object_get_data(G_OBJECT(editField), "gtk-emoji-chooser"));
+    if (chooser == nullptr || !gtk_widget_get_visible(chooser)) return;
+    GtkWidget* scrolled = findScrolledWindow(chooser);
+    if (scrolled == nullptr) return;
+    GtkAllocation allocation;
+    gtk_widget_get_allocation(window, &allocation);
+    const int windowHeight = allocation.height > 0 ? allocation.height : normalWindowHeight;
+    const int contentHeight = std::max(140, std::min(250, windowHeight - 200));
+    gtk_scrolled_window_set_min_content_height(GTK_SCROLLED_WINDOW(scrolled), contentHeight);
+    gtk_scrolled_window_set_max_content_height(GTK_SCROLLED_WINDOW(scrolled), contentHeight);
+    gtk_widget_queue_resize(chooser);
 }
 
 void TRemoteFrame::onExtensions(GtkMenuItem*, gpointer data) { TRemoteFrame* frame = static_cast<TRemoteFrame*>(data); if (frame->extensionsManager != nullptr) frame->extensionsManager->showWindow(); }
@@ -1912,9 +1967,9 @@ void TRemoteFrame::refreshNotebookTheme() {
     notebookTabProvider = gtk_css_provider_new();
     const std::string tabBackground = options.darkmode ? "#3d3d3d" : "#f5f5f5";
     const std::string tabBorder = options.darkmode ? "#707070" : "#c4c4c4";
-    const std::string activeTabBackground = options.darkmode ? "#454545" : "#ffffff";
+    const std::string activeTabBackground = options.colorchatback;
     const std::string activeTabBorder = options.darkmode ? "#909090" : "#9a9a9a";
-    const std::string notebookCss = "#RemoteFrame notebook, #RemoteFrame notebook > header, #RemoteFrame notebook > header.top, #RemoteFrame notebook > header.top > tabs { margin: 0; padding: 0; border: 0; background-color: transparent; background-image: none; box-shadow: none; } #RemoteFrame notebook > header.top > tabs { padding-left: 6px; } #RemoteFrame notebook > header, #RemoteFrame notebook > header.top, #RemoteFrame notebook > header.top > tabs { min-height: 0; } #RemoteFrame notebook > stack, #RemoteFrame notebook > stack > scrolledwindow, #RemoteFrame notebook > stack > scrolledwindow > viewport { margin: 0; padding: 0; border: 0; background-color: " + options.colorchatback + "; } #RemoteFrame notebook > header.top > tabs > tab { min-height: 0; min-width: 0; margin: 0 1px 0 0; padding: 3px 7px; background-image: none; background-color: " + tabBackground + "; border: 1px solid " + tabBorder + "; border-bottom: none; border-radius: 3px 3px 0 0; } #RemoteFrame notebook > header.top > tabs > tab:checked { background-color: " + activeTabBackground + "; border-color: " + activeTabBorder + "; } #RemoteFrame notebook > header.top > tabs > tab label { min-width: 0; margin: 0; padding: 0; font-size: 12px; }";
+    const std::string notebookCss = "#RemoteFrame notebook, #RemoteFrame notebook > header, #RemoteFrame notebook > header.top, #RemoteFrame notebook > header.top > tabs { margin: 0; padding: 0; border: 0; background-color: transparent; background-image: none; box-shadow: none; } #RemoteFrame notebook > header.top > tabs { padding-left: 6px; background-color: " + tabBackground + "; } #RemoteFrame notebook > header, #RemoteFrame notebook > header.top, #RemoteFrame notebook > header.top > tabs { min-height: 0; } #RemoteFrame notebook > header.top { border-bottom: 1px solid " + tabBorder + "; } #RemoteFrame notebook > stack, #RemoteFrame notebook > stack > scrolledwindow, #RemoteFrame notebook > stack > scrolledwindow > viewport { margin: 0; padding: 0; border: 1px solid " + tabBorder + "; border-top: 0; background-color: " + options.colorchatback + "; } #RemoteFrame notebook > header.top > tabs > tab { min-height: 0; min-width: 0; margin: 0 1px 0 0; padding: 3px 7px; background-image: none; background-color: " + tabBackground + "; border: 1px solid " + tabBorder + "; border-radius: 3px 3px 0 0; } #RemoteFrame notebook > header.top > tabs > tab:checked { background-color: " + activeTabBackground + "; border-color: " + activeTabBorder + "; border-bottom-color: " + options.colorchatback + "; margin-bottom: -1px; } #RemoteFrame notebook > header.top > tabs > tab label { min-width: 0; margin: 0; padding: 0; font-size: 12px; }";
     gtk_css_provider_load_from_data(notebookTabProvider, notebookCss.c_str(), -1, nullptr);
     gtk_style_context_add_provider_for_screen(screen, GTK_STYLE_PROVIDER(notebookTabProvider), GTK_STYLE_PROVIDER_PRIORITY_USER + 1);
 }

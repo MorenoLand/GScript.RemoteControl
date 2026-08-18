@@ -77,6 +77,9 @@ private:
     static void onLocalNPCSubmit(GtkDialog*, gint response, gpointer data);
     static void onLocalNPCData(const char* level, const char* content, void* data);
     static gboolean onEditKey(GtkWidget*, GdkEventKey*, gpointer data);
+    static void onEditPopup(GtkEntry*, GtkMenu*, gpointer data);
+    static void onEmojiMenuActivate(GtkMenuItem*, gpointer data);
+    static gboolean adjustEmojiPopoverLater(gpointer data);
     static void onMentionChanged(GtkEditable*, gpointer data);
     static gboolean constrainMentionPopup(gpointer data);
     static gboolean onMentionMatch(GtkEntryCompletion*, const gchar*, GtkTreeIter*, gpointer data);
@@ -121,6 +124,7 @@ private:
     bool appendFindResult(const std::string& message);
     void removeChannel(const std::string& channel);
     void configureChatField(GtkWidget* field);
+    void adjustEmojiPopover();
     void refreshMentionCompletion();
     struct ChatTags { GtkTextTag* alert = nullptr; GtkTextTag* bold = nullptr; GtkTextTag* timestamp = nullptr; GtkTextTag* invisible = nullptr; };
     ChatTags& chatTagsFor(GtkTextBuffer* buffer);
@@ -190,6 +194,7 @@ private:
     std::vector<std::string> chatHistory;
     int chatHistoryIndex = -1;
     guint eventSource = 0;
+    guint emojiPopoverResizeSource = 0;
     gint64 nextNcConnectAttempt = 0;
     bool ncConnectionAttempted = false;
     bool ncManuallyDisconnected = false;
