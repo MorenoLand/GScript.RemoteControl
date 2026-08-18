@@ -160,6 +160,7 @@ private:
     std::string downloadServer;
     std::vector<std::string> pendingDragSelectionPaths;
     std::unordered_map<std::string, std::string> pendingDragDownloads;
+    std::unordered_map<std::string, std::vector<guint8>> pendingNativeDragContents;
     std::unordered_map<std::string, std::string> pendingPreviewDownloads;
     std::vector<std::string> queuedPreviewDownloads;
     std::vector<std::string> visiblePreviewPaths;

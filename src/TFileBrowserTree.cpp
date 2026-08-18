@@ -1368,6 +1368,7 @@ void TFileBrowserTree::startNativeDrag(GtkWidget* widget) {
     for (const std::string& path : completedDragDownloads) g_remove(path.c_str());
     if (!dragStagingFolder.empty()) { g_rmdir(dragStagingFolder.c_str()); dragStagingFolder.clear(); }
     pendingDragDownloads.clear();
+    pendingNativeDragContents.clear();
     completedDragDownloads.clear();
     pendingDragLocalPaths.clear();
     pendingExternalPath.clear();
@@ -1380,10 +1381,6 @@ void TFileBrowserTree::startNativeDrag(GtkWidget* widget) {
     pendingDragSelectionPaths.clear();
     if (rows == nullptr) rows = selectedRows(widget, nullptr);
     if (rows == nullptr) return;
-    gchar* temp = g_get_tmp_dir() == nullptr ? nullptr : g_build_filename(g_get_tmp_dir(), "RemoteControl-filebrowser-drag", nullptr);
-    dragStagingFolder = temp == nullptr ? "" : temp;
-    g_free(temp);
-    if (!dragStagingFolder.empty()) g_mkdir_with_parents(dragStagingFolder.c_str(), 0755);
     std::vector<std::string> remotePaths;
     std::vector<std::wstring> names;
     for (GList* node = rows; node != nullptr; node = node->next) {
@@ -1393,44 +1390,34 @@ void TFileBrowserTree::startNativeDrag(GtkWidget* widget) {
         gboolean folder = false;
         if (GTK_IS_ICON_VIEW(widget)) gtk_tree_model_get(model, &row, ModernPathColumn, &remotePath, ModernFolderColumn, &folder, -1);
         else gtk_tree_model_get(model, &row, FilePathColumn, &remotePath, -1);
-        if (folder || remotePath == nullptr || *remotePath == '\0' || dragStagingFolder.empty()) { g_free(remotePath); continue; }
+        if (folder || remotePath == nullptr || *remotePath == '\0') { g_free(remotePath); continue; }
         gchar* basename = g_path_get_basename(remotePath);
         const std::string fileName = basename == nullptr ? "download" : basename;
-        std::string localPath = dragStagingFolder + G_DIR_SEPARATOR_S + fileName;
         g_free(basename);
-        int suffix = 2;
-        while (g_file_test(localPath.c_str(), G_FILE_TEST_EXISTS)) localPath = dragStagingFolder + G_DIR_SEPARATOR_S + std::to_string(suffix++) + "-" + fileName;
         gunichar2* wideName = g_utf8_to_utf16(fileName.c_str(), -1, nullptr, nullptr, nullptr);
         if (wideName != nullptr) names.emplace_back(reinterpret_cast<wchar_t*>(wideName));
         g_free(wideName);
         remotePaths.emplace_back(remotePath);
-        pendingDragLocalPaths.push_back(localPath);
         g_free(remotePath);
     }
+    pendingNativeDragContents.clear();
     const auto dropAccepted = std::make_shared<bool>(false);
     GdkWindow* previewSurface = dragPreviewWindow == nullptr ? nullptr : gtk_widget_get_window(dragPreviewWindow);
     HWND previewHandle = previewSurface == nullptr ? nullptr : reinterpret_cast<HWND>(GDK_WINDOW_HWND(previewSurface));
     const HRESULT dragResult = nativeFileDrag(names, [this, remotePaths](size_t index, std::vector<guint8>& content) {
-        if (index >= remotePaths.size() || index >= pendingDragLocalPaths.size()) return false;
+        if (index >= remotePaths.size()) return false;
         const std::string& remotePath = remotePaths[index];
-        const std::string& localPath = pendingDragLocalPaths[index];
-        if (!g_file_test(localPath.c_str(), G_FILE_TEST_EXISTS)) {
-            pendingDragDownloads[remotePath] = localPath;
-            if (!rc_filebrowser_download(connection, remotePath.c_str())) { pendingDragDownloads.erase(remotePath); return false; }
+        if (!pendingNativeDragContents.contains(remotePath)) {
+            if (!rc_filebrowser_download(connection, remotePath.c_str())) { appendLog(rc_last_error(connection)); return false; }
             const gint64 deadline = g_get_monotonic_time() + 10 * G_TIME_SPAN_SECOND;
-            while (pendingDragDownloads.contains(remotePath) && g_get_monotonic_time() < deadline) {
+            while (!pendingNativeDragContents.contains(remotePath) && g_get_monotonic_time() < deadline) {
                 while (gtk_events_pending()) gtk_main_iteration();
                 g_usleep(10000);
             }
-            if (g_file_test(localPath.c_str(), G_FILE_TEST_EXISTS)) appendLog((std::string("Downloaded file ") + remotePath).c_str());
         }
-        if (!g_file_test(localPath.c_str(), G_FILE_TEST_EXISTS)) return false;
-        gchar* bytes = nullptr;
-        gsize length = 0;
-        GError* error = nullptr;
-        if (!g_file_get_contents(localPath.c_str(), &bytes, &length, &error)) { if (error != nullptr) g_error_free(error); return false; }
-        content.assign(reinterpret_cast<guint8*>(bytes), reinterpret_cast<guint8*>(bytes) + length);
-        g_free(bytes);
+        const auto received = pendingNativeDragContents.find(remotePath);
+        if (received == pendingNativeDragContents.end()) { appendLog((std::string("Timed out downloading dragged file ") + remotePath).c_str()); return false; }
+        content = received->second;
         return true;
     }, dropAccepted, previewHandle);
     if (FAILED(dragResult)) {
@@ -1442,6 +1429,7 @@ void TFileBrowserTree::startNativeDrag(GtkWidget* widget) {
     for (const std::string& path : pendingDragLocalPaths) g_remove(path.c_str());
     if (!dragStagingFolder.empty()) g_rmdir(dragStagingFolder.c_str());
     pendingDragDownloads.clear();
+    pendingNativeDragContents.clear();
     completedDragDownloads.clear();
     pendingDragLocalPaths.clear();
     dragStagingFolder.clear();
@@ -1862,6 +1850,11 @@ void TFileBrowserTree::onFileReceived(const char* path, const void* content, int
     TFileBrowserTree* browser = static_cast<TFileBrowserTree*>(data);
     if (path == nullptr || content == nullptr || length < 0) return;
     const std::string receivedPath(path);
+    for (auto iterator = browser->pendingNativeDragContents.begin(); iterator != browser->pendingNativeDragContents.end(); ++iterator) {
+        if (!pathMatches(iterator->first, receivedPath)) continue;
+        iterator->second.assign(static_cast<const guint8*>(content), static_cast<const guint8*>(content) + length);
+        return;
+    }
     bool previewResponse = false;
     for (auto iterator = browser->pendingPreviewDownloads.begin(); iterator != browser->pendingPreviewDownloads.end(); ++iterator) {
         if (!pathMatches(iterator->first, receivedPath)) continue;

@@ -221,7 +221,9 @@ gboolean TAccountsWindow::onAccountContext(GtkWidget* widget, GdkEventButton* ev
     GtkTreeView* tree = GTK_TREE_VIEW(widget);
     GtkTreePath* path = nullptr;
     if (!gtk_tree_view_get_path_at_pos(tree, static_cast<gint>(event->x), static_cast<gint>(event->y), &path, nullptr, nullptr, nullptr)) return FALSE;
-    gtk_tree_selection_select_path(gtk_tree_view_get_selection(tree), path);
+    GtkTreeSelection* selection = gtk_tree_view_get_selection(tree);
+    gtk_tree_selection_unselect_all(selection);
+    gtk_tree_selection_select_path(selection, path);
     gtk_tree_path_free(path);
     GtkWidget* menu = gtk_menu_new();
     GtkWidget* attributes = gtk_menu_item_new_with_label("Edit Attributes");
@@ -253,7 +255,14 @@ gboolean TAccountsWindow::onAccountContext(GtkWidget* widget, GdkEventButton* ev
     g_signal_connect(staffActivity, "activate", G_CALLBACK(onStaffActivity), data);
     g_signal_connect(reset, "activate", G_CALLBACK(onReset), data);
     g_signal_connect(remove, "activate", G_CALLBACK(onDeleteAccount), data);
-    g_signal_connect(menu, "deactivate", G_CALLBACK(+[](GtkWidget* menuWidget, gpointer) { gtk_widget_destroy(menuWidget); }), nullptr);
+    g_signal_connect(menu, "deactivate", G_CALLBACK(+[](GtkWidget* menuWidget, gpointer) {
+        g_object_ref(menuWidget);
+        g_idle_add_full(G_PRIORITY_DEFAULT_IDLE, +[](gpointer menuData) {
+            gtk_widget_destroy(GTK_WIDGET(menuData));
+            g_object_unref(menuData);
+            return G_SOURCE_REMOVE;
+        }, menuWidget, nullptr);
+    }), nullptr);
     gtk_widget_show_all(menu);
     gtk_menu_popup_at_pointer(GTK_MENU(menu), reinterpret_cast<GdkEvent*>(event));
     return TRUE;
