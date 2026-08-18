@@ -31,6 +31,10 @@ TLocalBanWindow::TLocalBanWindow(const std::filesystem::path& nextApplicationDir
     gtk_widget_set_name(window, "BanWindow");
     gtk_window_set_title(GTK_WINDOW(window), "Edit Access");
     gtk_window_set_default_size(GTK_WINDOW(window), 500, 240);
+    GdkGeometry banGeometry{};
+    banGeometry.max_width = 600;
+    banGeometry.max_height = G_MAXINT;
+    gtk_window_set_geometry_hints(GTK_WINDOW(window), nullptr, &banGeometry, static_cast<GdkWindowHints>(GDK_HINT_MAX_SIZE));
     GtkWidget* root = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
     gtk_container_add(GTK_CONTAINER(window), root);
     GtkWidget* notebook = gtk_notebook_new();
@@ -81,6 +85,10 @@ TLocalBanWindow::TLocalBanWindow(const std::filesystem::path& nextApplicationDir
         gtk_notebook_append_page(GTK_NOTEBOOK(notebook), page, tab);
         gtk_widget_show_all(tab);
     }
+    GtkCssProvider* banTabs = gtk_css_provider_new();
+    gtk_css_provider_load_from_data(banTabs, "#BanWindow notebook > header { border-bottom: 1px solid #777777; } #BanWindow notebook > header > tabs > tab { border: 1px solid #777777; border-bottom: 0; border-radius: 4px 4px 0 0; margin-right: 3px; padding: 4px 8px; } #BanWindow notebook > header > tabs > tab:checked { border-color: #aaaaaa; margin-bottom: -1px; } #BanWindow notebook > stack { border: 1px solid #777777; border-top: 0; }", -1, nullptr);
+    gtk_style_context_add_provider_for_screen(gdk_screen_get_default(), GTK_STYLE_PROVIDER(banTabs), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION + 1);
+    g_object_unref(banTabs);
     gtk_box_pack_start(GTK_BOX(root), notebook, true, true, 0);
     GtkWidget* buttons = gtk_button_box_new(GTK_ORIENTATION_HORIZONTAL);
     gtk_container_set_border_width(GTK_CONTAINER(buttons), 5);
@@ -112,7 +120,10 @@ void TLocalBanWindow::setBanTypes(const char* types) {
     }
     for (int index = 0; index < 4; ++index) {
         gtk_combo_box_text_remove_all(GTK_COMBO_BOX_TEXT(scopes[index].type));
-        for (const std::string& type : banTypes) gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(scopes[index].type), type.c_str());
+        for (size_t type = 0; type < banTypes.size(); ++type) {
+            const std::string label = banTypes[type] + " (" + banTimeText(banDurations[type]) + ")";
+            gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(scopes[index].type), banTypes[type].c_str(), label.c_str());
+        }
         gtk_combo_box_set_active(GTK_COMBO_BOX(scopes[index].type), banTypes.empty() ? -1 : 0);
     }
 }
@@ -193,10 +204,9 @@ void TLocalBanWindow::onApply(GtkButton* button, gpointer data) {
     if (scope.target.empty()) return;
     const bool banned = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(scope.banned));
     const bool reset = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(scope.reset));
-    gchar* type = gtk_combo_box_text_get_active_text(GTK_COMBO_BOX_TEXT(scope.type));
+    const char* type = gtk_combo_box_get_active_id(GTK_COMBO_BOX(scope.type));
     const char* world = (index & 1) == 0 ? "local" : "all";
     rc_set_ban(editor->connection, scope.target.c_str(), world, banned, type == nullptr ? "" : type, reset ? "" : scope.releaseTime.c_str(), gtk_entry_get_text(GTK_ENTRY(scope.reason)));
-    g_free(type);
     gtk_widget_hide(editor->window);
 }
 
