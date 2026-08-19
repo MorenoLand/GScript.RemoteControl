@@ -81,7 +81,7 @@ target_include_directories(ExtensionsTests PRIVATE include)
 target_link_libraries(ExtensionsTests PRIVATE PkgConfig::GTK3)
 add_test(NAME ExtensionsTests COMMAND ExtensionsTests)
 
-add_executable(RemoteControl src/TMain.cpp src/TMcpServer.cpp src/TMcpProtocol.cpp src/TBackup.cpp src/TExtensions.cpp src/TExternalEditor.cpp src/TGScriptEditor.cpp src/TGS2Diagnostics.cpp src/TRCAccounts.cpp src/TEncryption.cpp src/TAccountPresentation.cpp src/TScriptEditorTracking.cpp src/TAccountsWindow.cpp src/TFileBrowser.cpp src/TFileBrowserTree.cpp src/TMng.cpp src/TListServerProfiles.cpp src/TLocalBanWindow.cpp src/TNPCList.cpp src/TLevelList.cpp src/TOptionsWindow.cpp src/TPlayerList.cpp src/TScriptList.cpp src/TSyncManager.cpp src/TRemoteFrame.cpp src/TServerList.cpp src/TServerPlayer.cpp src/TServerTextEditor.cpp src/TToallsWindow.cpp src/TStartFrame.cpp)
+add_executable(RemoteControl src/TMain.cpp src/TCrashLogger.cpp src/TMcpServer.cpp src/TMcpProtocol.cpp src/TBackup.cpp src/TExtensions.cpp src/TExternalEditor.cpp src/TGScriptEditor.cpp src/TGS2Diagnostics.cpp src/TRCAccounts.cpp src/TEncryption.cpp src/TAccountPresentation.cpp src/TScriptEditorTracking.cpp src/TAccountsWindow.cpp src/TFileBrowser.cpp src/TFileBrowserTree.cpp src/TMng.cpp src/TListServerProfiles.cpp src/TLocalBanWindow.cpp src/TNPCList.cpp src/TLevelList.cpp src/TOptionsWindow.cpp src/TPlayerList.cpp src/TScriptList.cpp src/TSyncManager.cpp src/TRemoteFrame.cpp src/TServerList.cpp src/TServerPlayer.cpp src/TServerTextEditor.cpp src/TToallsWindow.cpp src/TStartFrame.cpp)
 target_include_directories(RemoteControl PRIVATE "${GRCLIB_SOURCE_DIR}/include" include)
 if(WIN32)
     set_target_properties(RemoteControl PROPERTIES WIN32_EXECUTABLE TRUE)

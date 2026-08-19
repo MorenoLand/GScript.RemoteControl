@@ -147,7 +147,7 @@ TAccountsWindow::TAccountsWindow() {
     gtk_widget_set_name(reasonField, "AccountReason");
     gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(reasonField), GTK_WRAP_WORD_CHAR);
     GtkCssProvider* reasonProvider = gtk_css_provider_new();
-    gtk_css_provider_load_from_data(reasonProvider, "#AccountEditorWindow entry { min-height: 0; padding: 2px; } #AccountReason, #AccountReason text, #AccountReasonScroll, #AccountReasonScroll viewport { background-color: #1e1e1e; color: #dddddd; }", -1, nullptr);
+    gtk_css_provider_load_from_data(reasonProvider, "#AccountEditorWindow entry { min-height: 0; padding: 2px; } #AccountReason, #AccountReason text, #AccountReasonScroll, #AccountReasonScroll viewport { background-color: #1e1e1e; color: #dddddd; } #AccountReasonScroll { border: 1px solid #777777; }", -1, nullptr);
     gtk_style_context_add_provider(gtk_widget_get_style_context(editorWindow), GTK_STYLE_PROVIDER(reasonProvider), GTK_STYLE_PROVIDER_PRIORITY_USER);
     g_object_unref(reasonProvider);
     GdkColor reasonBackground;

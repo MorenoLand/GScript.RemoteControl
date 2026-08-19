@@ -196,7 +196,7 @@ namespace {
     class NativeFileDataObject final : public IDataObject {
     public:
         using ContentProvider = std::function<bool(size_t, std::vector<guint8>&)>;
-        NativeFileDataObject(const std::vector<std::wstring>& values, ContentProvider provider) : names(values), contentProvider(std::move(provider)) {}
+        NativeFileDataObject(const std::vector<std::wstring>& values, const std::vector<ULONGLONG>& fileSizes, ContentProvider provider) : names(values), sizes(fileSizes), contentProvider(std::move(provider)) {}
         HRESULT __stdcall QueryInterface(REFIID iid, void** result) override {
             if (result == nullptr) return E_POINTER;
             *result = nullptr;
@@ -219,8 +219,11 @@ namespace {
                 group->cItems = static_cast<UINT>(names.size());
                 for (size_t index = 0; index < names.size(); ++index) {
                     FILEDESCRIPTORW& file = group->fgd[index];
-                    file.dwFlags = FD_ATTRIBUTES | FD_PROGRESSUI;
+                    const ULONGLONG size = index < sizes.size() ? sizes[index] : 0;
+                    file.dwFlags = FD_ATTRIBUTES | FD_FILESIZE | FD_PROGRESSUI;
                     file.dwFileAttributes = FILE_ATTRIBUTE_NORMAL;
+                    file.nFileSizeHigh = static_cast<DWORD>(size >> 32);
+                    file.nFileSizeLow = static_cast<DWORD>(size & 0xFFFFFFFFULL);
                     std::wcsncpy(file.cFileName, names[index].c_str(), ARRAYSIZE(file.cFileName) - 1);
                     file.cFileName[ARRAYSIZE(file.cFileName) - 1] = L'\0';
                 }
@@ -229,19 +232,28 @@ namespace {
                 medium->hGlobal = global;
                 return S_OK;
             }
-            if (format->cfFormat == contentsFormat() && (format->tymed & TYMED_ISTREAM) != 0) {
+            if (format->cfFormat == contentsFormat() && (format->tymed & (TYMED_ISTREAM | TYMED_HGLOBAL)) != 0) {
                 if (format->lindex < 0 || static_cast<size_t>(format->lindex) >= names.size() || !contentProvider) return DV_E_LINDEX;
                 std::vector<guint8> content;
                 if (!contentProvider(static_cast<size_t>(format->lindex), content)) return E_FAIL;
-                HGLOBAL global = GlobalAlloc(GMEM_MOVEABLE, content.size() == 0 ? 1 : content.size());
+                HGLOBAL global = GlobalAlloc(GMEM_MOVEABLE, std::max<std::size_t>(content.size(), 1));
                 if (global == nullptr) return E_OUTOFMEMORY;
                 void* buffer = GlobalLock(global);
                 if (buffer == nullptr) { GlobalFree(global); return E_OUTOFMEMORY; }
                 if (!content.empty()) std::memcpy(buffer, content.data(), content.size());
                 GlobalUnlock(global);
+                if ((format->tymed & TYMED_ISTREAM) == 0) {
+                    medium->tymed = TYMED_HGLOBAL;
+                    medium->hGlobal = global;
+                    return S_OK;
+                }
                 IStream* stream = nullptr;
                 HRESULT result = CreateStreamOnHGlobal(global, TRUE, &stream);
                 if (FAILED(result)) { GlobalFree(global); return result; }
+                ULARGE_INTEGER streamSize{};
+                streamSize.QuadPart = content.size();
+                result = stream->SetSize(streamSize);
+                if (FAILED(result)) { stream->Release(); return result; }
                 medium->tymed = TYMED_ISTREAM;
                 medium->pstm = stream;
                 return S_OK;
@@ -252,7 +264,7 @@ namespace {
         HRESULT __stdcall QueryGetData(FORMATETC* format) override {
             if (format == nullptr) return E_POINTER;
             if (format->cfFormat == descriptorFormat() && (format->tymed & TYMED_HGLOBAL) != 0) return S_OK;
-            if (format->cfFormat == contentsFormat() && (format->tymed & TYMED_ISTREAM) != 0 && format->lindex >= 0 && static_cast<size_t>(format->lindex) < names.size()) return S_OK;
+            if (format->cfFormat == contentsFormat() && (format->tymed & (TYMED_ISTREAM | TYMED_HGLOBAL)) != 0 && (format->lindex == -1 || (format->lindex >= 0 && static_cast<size_t>(format->lindex) < names.size()))) return S_OK;
             return DV_E_FORMATETC;
         }
         HRESULT __stdcall GetCanonicalFormatEtc(FORMATETC* format, FORMATETC* result) override { if (format == nullptr || result == nullptr) return E_POINTER; *result = *format; result->ptd = nullptr; return DATA_S_SAMEFORMATETC; }
@@ -263,7 +275,7 @@ namespace {
             if (direction != DATADIR_GET) return E_NOTIMPL;
             FORMATETC formats[2] = {
                 {static_cast<CLIPFORMAT>(descriptorFormat()), nullptr, DVASPECT_CONTENT, -1, TYMED_HGLOBAL},
-                {static_cast<CLIPFORMAT>(contentsFormat()), nullptr, DVASPECT_CONTENT, -1, TYMED_ISTREAM}
+                {static_cast<CLIPFORMAT>(contentsFormat()), nullptr, DVASPECT_CONTENT, -1, static_cast<DWORD>(TYMED_ISTREAM | TYMED_HGLOBAL)}
             };
             IEnumFORMATETC* first = nullptr;
             HRESULT status = SHCreateStdEnumFmtEtc(2, formats, &first);
@@ -279,14 +291,15 @@ namespace {
         static UINT contentsFormat() { static UINT value = RegisterClipboardFormatW(L"FileContents"); return value; }
         ULONG references = 1;
         std::vector<std::wstring> names;
+        std::vector<ULONGLONG> sizes;
         ContentProvider contentProvider;
     };
 
-    HRESULT nativeFileDrag(const std::vector<std::wstring>& names, NativeFileDataObject::ContentProvider contentProvider, const std::shared_ptr<bool>& dropAccepted, HWND previewWindow) {
+    HRESULT nativeFileDrag(const std::vector<std::wstring>& names, const std::vector<ULONGLONG>& sizes, NativeFileDataObject::ContentProvider contentProvider, const std::shared_ptr<bool>& dropAccepted, HWND previewWindow) {
         if (names.empty()) return E_INVALIDARG;
         const HRESULT initialized = OleInitialize(nullptr);
         if (FAILED(initialized)) return initialized;
-        IDataObject* data = new NativeFileDataObject(names, std::move(contentProvider));
+        IDataObject* data = new NativeFileDataObject(names, sizes, std::move(contentProvider));
         IDropSource* source = new NativeDropSource(dropAccepted, previewWindow);
         DWORD effect = DROPEFFECT_NONE;
         ReleaseCapture();
@@ -1383,6 +1396,7 @@ void TFileBrowserTree::startNativeDrag(GtkWidget* widget) {
     if (rows == nullptr) return;
     std::vector<std::string> remotePaths;
     std::vector<std::wstring> names;
+    std::vector<ULONGLONG> sizes;
     for (GList* node = rows; node != nullptr; node = node->next) {
         GtkTreeIter row;
         gchar* remotePath = nullptr;
@@ -1395,16 +1409,19 @@ void TFileBrowserTree::startNativeDrag(GtkWidget* widget) {
         const std::string fileName = basename == nullptr ? "download" : basename;
         g_free(basename);
         gunichar2* wideName = g_utf8_to_utf16(fileName.c_str(), -1, nullptr, nullptr, nullptr);
-        if (wideName != nullptr) names.emplace_back(reinterpret_cast<wchar_t*>(wideName));
+        if (wideName == nullptr) { g_free(remotePath); continue; }
+        names.emplace_back(reinterpret_cast<wchar_t*>(wideName));
         g_free(wideName);
         remotePaths.emplace_back(remotePath);
+        const auto size = previewFileSizes.find(remotePath);
+        sizes.push_back(size == previewFileSizes.end() ? 0 : size->second);
         g_free(remotePath);
     }
     pendingNativeDragContents.clear();
     const auto dropAccepted = std::make_shared<bool>(false);
     GdkWindow* previewSurface = dragPreviewWindow == nullptr ? nullptr : gtk_widget_get_window(dragPreviewWindow);
     HWND previewHandle = previewSurface == nullptr ? nullptr : reinterpret_cast<HWND>(GDK_WINDOW_HWND(previewSurface));
-    const HRESULT dragResult = nativeFileDrag(names, [this, remotePaths](size_t index, std::vector<guint8>& content) {
+    const HRESULT dragResult = nativeFileDrag(names, sizes, [this, remotePaths](size_t index, std::vector<guint8>& content) {
         if (index >= remotePaths.size()) return false;
         const std::string& remotePath = remotePaths[index];
         if (!pendingNativeDragContents.contains(remotePath)) {
@@ -1848,11 +1865,12 @@ void TFileBrowserTree::onUpload(GtkMenuItem*, gpointer data) {
 
 void TFileBrowserTree::onFileReceived(const char* path, const void* content, int length, void* data) {
     TFileBrowserTree* browser = static_cast<TFileBrowserTree*>(data);
-    if (path == nullptr || content == nullptr || length < 0) return;
+    if (path == nullptr || length < 0 || (content == nullptr && length != 0)) return;
+    const void* safeContent = content == nullptr ? static_cast<const void*>("") : content;
     const std::string receivedPath(path);
     for (auto iterator = browser->pendingNativeDragContents.begin(); iterator != browser->pendingNativeDragContents.end(); ++iterator) {
         if (!pathMatches(iterator->first, receivedPath)) continue;
-        iterator->second.assign(static_cast<const guint8*>(content), static_cast<const guint8*>(content) + length);
+        iterator->second.assign(static_cast<const guint8*>(safeContent), static_cast<const guint8*>(safeContent) + length);
         return;
     }
     bool previewResponse = false;
@@ -1862,14 +1880,14 @@ void TFileBrowserTree::onFileReceived(const char* path, const void* content, int
         const std::string previewPath = iterator->first;
         browser->pendingPreviewDownloads.erase(iterator);
         previewResponse = true;
-        if (wanted) browser->cachePreview(previewPath, content, length);
+        if (wanted) browser->cachePreview(previewPath, safeContent, length);
         else browser->startNextPreviewDownload();
         break;
     }
     for (auto iterator = browser->pendingDragDownloads.begin(); iterator != browser->pendingDragDownloads.end(); ++iterator) {
         if (!pathMatches(iterator->first, receivedPath)) continue;
         GError* error = nullptr;
-        if (g_file_set_contents(iterator->second.c_str(), static_cast<const gchar*>(content), length, &error)) {
+        if (g_file_set_contents(iterator->second.c_str(), static_cast<const gchar*>(safeContent), length, &error)) {
             browser->completedDragDownloads.push_back(iterator->second);
         } else {
             browser->appendLog(error == nullptr ? "Could not stage dragged file." : error->message);
@@ -1888,14 +1906,14 @@ void TFileBrowserTree::onFileReceived(const char* path, const void* content, int
         gchar* basename = g_path_get_basename(path);
         gchar* destination = g_build_filename(destinationFolder.c_str(), basename, nullptr);
         g_free(basename);
-        if (!g_file_set_contents(destination, static_cast<const gchar*>(content), length, nullptr)) { g_free(destination); browser->appendLog("Could not save downloaded file."); return; }
+        if (!g_file_set_contents(destination, static_cast<const gchar*>(safeContent), length, nullptr)) { g_free(destination); browser->appendLog("Could not save downloaded file."); return; }
         gchar* absoluteDestination = g_canonicalize_filename(destination, nullptr);
         g_free(destination);
         const std::string localPath(absoluteDestination);
         g_free(absoluteDestination);
         for (const auto& entry : browser->remoteModifiedTimes) if (pathMatches(entry.first, receivedPath)) { applyModifiedTime(localPath, entry.second); break; }
         const std::string extension = localPath.substr(localPath.find_last_of('.') == std::string::npos ? localPath.size() : localPath.find_last_of('.'));
-        if (g_ascii_strcasecmp(extension.c_str(), ".exe") == 0 || g_ascii_strcasecmp(extension.c_str(), ".bat") == 0 || g_ascii_strcasecmp(extension.c_str(), ".sh") == 0) { browser->showTextEditor(path, content, length); return; }
+        if (g_ascii_strcasecmp(extension.c_str(), ".exe") == 0 || g_ascii_strcasecmp(extension.c_str(), ".bat") == 0 || g_ascii_strcasecmp(extension.c_str(), ".sh") == 0) { browser->showTextEditor(path, safeContent, length); return; }
 #ifdef _WIN32
         gunichar2* widePath = g_utf8_to_utf16(localPath.c_str(), -1, nullptr, nullptr, nullptr);
         const HINSTANCE result = widePath == nullptr ? nullptr : ShellExecuteW(nullptr, L"open", reinterpret_cast<LPCWSTR>(widePath), nullptr, nullptr, SW_SHOWNORMAL);

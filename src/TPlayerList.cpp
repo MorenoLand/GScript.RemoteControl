@@ -66,7 +66,6 @@ namespace {
     };
 
     struct PMPlayerIdentity { int id; std::string account; std::string nick; };
-    std::string formatPMCommaText(const std::string& value);
     std::string stripPMLabel(const std::string& value);
 
     gboolean findServerPlayerById(GtkTreeModel* model, GtkTreePath*, GtkTreeIter* row, gpointer data) {
@@ -123,7 +122,7 @@ namespace {
 
     void appendPMConversationMessage(PMWindowData* data, const std::string& sender, const std::string& message, bool outgoing) {
         if (data == nullptr || data->received == nullptr || message.empty()) return;
-        const std::string body = stripPMLabel(formatPMCommaText(message));
+        const std::string body = stripPMLabel(message);
         if (body.empty()) return;
         GtkWidget* row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
         gtk_widget_set_margin_start(row, 8);
@@ -171,40 +170,6 @@ namespace {
         delete windowData;
     }
 
-    std::string formatPMCommaText(const std::string& value) {
-        if (value.size() >= 2 && value.front() == '"' && value.back() == '"') {
-            std::string unquoted = value.substr(1, value.size() - 2);
-            for (size_t index = 0; (index = unquoted.find("\"\"", index)) != std::string::npos; ++index) unquoted.replace(index, 2, "\"");
-            return unquoted;
-        }
-        if (value.find(',') == std::string::npos) return value;
-        std::vector<std::string> fields;
-        std::string field;
-        bool quoted = false;
-        for (size_t index = 0; index < value.size(); ++index) {
-            const char character = value[index];
-            if (character == '"') {
-                if (quoted && index + 1 < value.size() && value[index + 1] == '"') { field += character; ++index; }
-                else quoted = !quoted;
-            } else if (character == ',' && !quoted) {
-                while (!field.empty() && field.front() == ' ') field.erase(field.begin());
-                while (!field.empty() && field.back() == ' ') field.pop_back();
-                fields.push_back(field);
-                field.clear();
-            } else field += character;
-        }
-        while (!field.empty() && field.front() == ' ') field.erase(field.begin());
-        while (!field.empty() && field.back() == ' ') field.pop_back();
-        fields.push_back(field);
-        if (fields.size() < 2) return value;
-        std::ostringstream output;
-        for (size_t index = 0; index < fields.size(); ++index) {
-            if (index != 0) output << '\n';
-            output << fields[index];
-        }
-        return output.str();
-    }
-
     std::string stripPMLabel(const std::string& value) {
         std::ostringstream output;
         size_t start = 0;
@@ -246,7 +211,7 @@ namespace {
         if (account.empty() || sender.empty() || message == nullptr || *message == '\0') return;
         std::filesystem::create_directories(directory);
         std::ofstream output(directory / (account + ".txt"), std::ios::app | std::ios::binary);
-        output << sender << " (" << pmHistoryTimestamp() << "):\n" << stripPMLabel(formatPMCommaText(message)) << "\n\n";
+        output << sender << " (" << pmHistoryTimestamp() << "):\n" << stripPMLabel(message) << "\n\n";
     }
 
     void onPMSend(GtkButton*, gpointer data) {
@@ -427,7 +392,7 @@ TPlayerList::TPlayerList(const std::filesystem::path& nextApplicationDirectory, 
     g_object_unref(expanderProvider);
     gtk_notebook_append_page(GTK_NOTEBOOK(notebook), scrolled, gtk_label_new("This server "));
     GtkCssProvider* tabProvider = gtk_css_provider_new();
-    gtk_css_provider_load_from_data(tabProvider, "#PlayerList notebook > header > tabs > tab { min-height: 0; border: 1px solid #777777; border-bottom: 0; border-radius: 4px 4px 0 0; margin-right: 1px; padding: 5px 8px; } #PlayerList notebook > header > tabs > tab label { margin: 0; padding: 0; font-size: 12px; } #PlayerList notebook > header > tabs > tab:checked { border-color: #aaaaaa; margin-bottom: -1px; }", -1, nullptr);
+    gtk_css_provider_load_from_data(tabProvider, "#PlayerList notebook > header { border-bottom: 1px solid #777777; } #PlayerList notebook > header > tabs > tab { min-height: 0; border: 1px solid #777777; border-bottom: 0; border-radius: 4px 4px 0 0; margin-right: 1px; padding: 5px 8px; } #PlayerList notebook > header > tabs > tab label { margin: 0; padding: 0; font-size: 12px; } #PlayerList notebook > header > tabs > tab:checked { border-color: #aaaaaa; border-bottom-color: transparent; margin-bottom: -1px; } #PlayerList notebook > stack { border: 1px solid #777777; border-top: 0; }", -1, nullptr);
     gtk_style_context_add_provider_for_screen(gdk_screen_get_default(), GTK_STYLE_PROVIDER(tabProvider), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION + 1);
     g_object_unref(tabProvider);
     for (const char* title : {"Guilds", "Servers", "Channels"}) {
@@ -815,7 +780,7 @@ void TPlayerList::handlePlayerRights(const char* account, int rights, const char
     gtk_notebook_append_page(GTK_NOTEBOOK(notebook), flags, gtk_label_new("IP Range and Right flags"));
     gtk_notebook_append_page(GTK_NOTEBOOK(notebook), folderScroll, gtk_label_new("Folder rights"));
     GtkCssProvider* rightsTabs = gtk_css_provider_new();
-    gtk_css_provider_load_from_data(rightsTabs, "#EditRightsWindow notebook > header { border-bottom: 1px solid #777777; } #EditRightsWindow notebook > header > tabs > tab { border: 1px solid #777777; border-bottom: 0; border-radius: 4px 4px 0 0; margin-right: 3px; padding: 4px 8px; } #EditRightsWindow notebook > header > tabs > tab:checked { border-color: #aaaaaa; margin-bottom: -1px; } #EditRightsWindow notebook > stack { border: 1px solid #777777; border-top: 0; }", -1, nullptr);
+    gtk_css_provider_load_from_data(rightsTabs, "#EditRightsWindow notebook > header { border-bottom: 1px solid #777777; } #EditRightsWindow notebook > header > tabs > tab { border: 1px solid #777777; border-bottom: 0; border-radius: 4px 4px 0 0; margin-right: 3px; padding: 4px 8px; } #EditRightsWindow notebook > header > tabs > tab:checked { border-color: #aaaaaa; border-bottom-color: transparent; margin-bottom: -1px; } #EditRightsWindow notebook > stack { border: 1px solid #777777; border-top: 0; }", -1, nullptr);
     gtk_style_context_add_provider_for_screen(gdk_screen_get_default(), GTK_STYLE_PROVIDER(rightsTabs), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION + 1);
     g_object_unref(rightsTabs);
     gtk_box_pack_start(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), notebook, true, true, 0);
@@ -869,7 +834,7 @@ void TPlayerList::handlePlayerAttributes(const char* account, const char*, const
     gtk_container_set_border_width(GTK_CONTAINER(notebook), 5);
     gtk_notebook_set_show_border(GTK_NOTEBOOK(notebook), true);
     GtkCssProvider* tabProvider = gtk_css_provider_new();
-    gtk_css_provider_load_from_data(tabProvider, "#EditAttributesWindow notebook > header > tabs > tab { min-height: 0; margin: 0; padding: 3px 5px; } #EditAttributesWindow notebook > header > tabs > tab label { margin: 0; padding: 0; font-size: 12px; }", -1, nullptr);
+    gtk_css_provider_load_from_data(tabProvider, "#EditAttributesWindow notebook > header { border-bottom: 1px solid #777777; } #EditAttributesWindow notebook > header > tabs > tab { min-height: 0; margin: 0; padding: 3px 5px; } #EditAttributesWindow notebook > header > tabs > tab label { margin: 0; padding: 0; font-size: 12px; } #EditAttributesWindow notebook > header > tabs > tab:checked { border-bottom-color: transparent; } #EditAttributesWindow notebook > stack { border: 1px solid #777777; border-top: 0; }", -1, nullptr);
     gtk_style_context_add_provider_for_screen(gdk_screen_get_default(), GTK_STYLE_PROVIDER(tabProvider), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION + 1);
     g_object_unref(tabProvider);
     auto* state = new AttributeState{this, account, {}, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr};

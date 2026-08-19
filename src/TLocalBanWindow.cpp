@@ -86,7 +86,7 @@ TLocalBanWindow::TLocalBanWindow(const std::filesystem::path& nextApplicationDir
         gtk_widget_show_all(tab);
     }
     GtkCssProvider* banTabs = gtk_css_provider_new();
-    gtk_css_provider_load_from_data(banTabs, "#BanWindow notebook > header { border-bottom: 1px solid #777777; } #BanWindow notebook > header > tabs > tab { border: 1px solid #777777; border-bottom: 0; border-radius: 4px 4px 0 0; margin-right: 3px; padding: 4px 8px; } #BanWindow notebook > header > tabs > tab:checked { border-color: #aaaaaa; margin-bottom: -1px; } #BanWindow notebook > stack { border: 1px solid #777777; border-top: 0; }", -1, nullptr);
+    gtk_css_provider_load_from_data(banTabs, "#BanWindow notebook > header { border-bottom: 1px solid #777777; } #BanWindow notebook > header > tabs > tab { border: 1px solid #777777; border-bottom: 0; border-radius: 4px 4px 0 0; margin-right: 3px; padding: 4px 8px; } #BanWindow notebook > header > tabs > tab:checked { border-color: #aaaaaa; border-bottom-color: transparent; margin-bottom: -1px; } #BanWindow notebook > stack { border: 1px solid #777777; border-top: 0; }", -1, nullptr);
     gtk_style_context_add_provider_for_screen(gdk_screen_get_default(), GTK_STYLE_PROVIDER(banTabs), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION + 1);
     g_object_unref(banTabs);
     gtk_box_pack_start(GTK_BOX(root), notebook, true, true, 0);
@@ -237,9 +237,13 @@ void TLocalBanWindow::onBanHistory(GtkButton*, gpointer data) {
     TLocalBanWindow* editor = static_cast<TLocalBanWindow*>(data);
     const std::string target = editor->account.empty() ? "pc:" + editor->computerId : editor->account;
     if (!target.empty()) rc_request_ban_history(editor->connection, target.c_str());
+    gtk_widget_show(editor->window);
+    gtk_window_present(GTK_WINDOW(editor->window));
 }
 void TLocalBanWindow::onStaffActivity(GtkButton*, gpointer data) {
     TLocalBanWindow* editor = static_cast<TLocalBanWindow*>(data);
     if (!editor->account.empty()) rc_request_staff_activity(editor->connection, editor->account.c_str());
+    gtk_widget_show(editor->window);
+    gtk_window_present(GTK_WINDOW(editor->window));
 }
 gboolean TLocalBanWindow::onDelete(GtkWidget*, GdkEvent*, gpointer data) { gtk_widget_hide(static_cast<TLocalBanWindow*>(data)->window); return true; }
