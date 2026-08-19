@@ -1974,7 +1974,7 @@ void TRemoteFrame::refreshNotebookTheme() {
     if (screen == nullptr || notebook == nullptr) return;
     notebookTabProvider = gtk_css_provider_new();
     if (graphicalContainer != nullptr) {
-        const std::string graphicalNotebookCss = "#GraphicalNotebook > header.top > tabs > tab { min-height: 0; min-width: 0; margin: 1px 0 0 0; padding: 0 5px; } #GraphicalNotebook > header.top > tabs > tab:checked { margin-top: 0; padding-bottom: 1px; }";
+        const std::string graphicalNotebookCss = "#GraphicalNotebook > header.top > tabs { padding-left: 2px; } #GraphicalNotebook > header.top > tabs > tab { min-height: 0; min-width: 0; margin: 1px 0 0 0; padding: 0 5px; } #GraphicalNotebook > header.top > tabs > tab:checked { margin-top: 0; padding-bottom: 1px; border-bottom-color: transparent; box-shadow: none; background-image: none; }";
         gtk_css_provider_load_from_data(notebookTabProvider, graphicalNotebookCss.c_str(), -1, nullptr);
         gtk_style_context_add_provider_for_screen(screen, GTK_STYLE_PROVIDER(notebookTabProvider), GTK_STYLE_PROVIDER_PRIORITY_USER + 1);
         return;
