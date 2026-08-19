@@ -11,6 +11,7 @@ public:
     ~TLocalBanWindow();
     void open(void* connection, const std::string& account, const std::string& computerId, const std::string& details);
     void setBanTypes(const char* types);
+    void setUseNewBanType(bool enabled);
 private:
     static void onApply(GtkButton*, gpointer data);
     static void onCancel(GtkButton*, gpointer data);
@@ -28,6 +29,7 @@ private:
     std::string computerId;
     std::vector<std::string> banTypes;
     std::vector<int> banDurations;
+    bool useNewBanType = true;
     void updateTimeLeft(int scope);
     void updateTabIcon(int scope);
 };

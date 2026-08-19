@@ -11,6 +11,7 @@ public:
     void setAccounts(const char* accounts);
     void showEditor(void* connection, const std::string& account, const char* content);
     void setServerName(const std::string& server);
+    void setUseNewBanType(bool enabled);
 private:
     static void onGetList(GtkButton*, gpointer data);
     static void onGetAccounts(GtkButton*, gpointer data);
@@ -53,4 +54,5 @@ private:
     void* connection = nullptr;
     std::string editingAccount;
     std::string serverName;
+    bool useNewBanType = true;
 };

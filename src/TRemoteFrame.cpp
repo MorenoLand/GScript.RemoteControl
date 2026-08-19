@@ -564,6 +564,7 @@ TRemoteFrame::TRemoteFrame(const RC::RCOptions& nextOptions, const std::filesyst
     }
 
     notebook = gtk_notebook_new();
+    gtk_widget_set_name(notebook, graphicalContainer != nullptr ? "GraphicalNotebook" : "RemoteNotebook");
     gtk_notebook_set_show_border(GTK_NOTEBOOK(notebook), false);
     gtk_notebook_set_scrollable(GTK_NOTEBOOK(notebook), true);
     chatScrolled = gtk_scrolled_window_new(nullptr, nullptr);
@@ -874,6 +875,7 @@ void TRemoteFrame::onPlayerList(GtkMenuItem*, gpointer data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
     if (frame->connection == nullptr) return;
     if (frame->playerList == nullptr) frame->playerList = new TPlayerList(frame->applicationDirectory, frame->accountName);
+    frame->playerList->setUseNewBanType(frame->options.usenewbantype);
     frame->playerList->setServerName(frame->serverName);
     frame->playerList->open(frame->connection);
 }
@@ -890,6 +892,7 @@ void TRemoteFrame::onAccounts(GtkMenuItem*, gpointer data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
     if (frame->connection == nullptr) return;
     if (frame->accountsWindow == nullptr) frame->accountsWindow = new TAccountsWindow();
+    frame->accountsWindow->setUseNewBanType(frame->options.usenewbantype);
     frame->accountsWindow->setServerName(frame->serverName);
     frame->accountsWindow->open(frame->connection);
 }
@@ -907,6 +910,7 @@ void TRemoteFrame::onPlayerText(const char* type, const char* account, const cha
     if (type == nullptr || account == nullptr) return;
     if (std::string(type) == "account") {
         if (frame->accountsWindow == nullptr) frame->accountsWindow = new TAccountsWindow();
+        frame->accountsWindow->setUseNewBanType(frame->options.usenewbantype);
         frame->accountsWindow->setServerName(frame->serverName);
         frame->accountsWindow->showEditor(frame->connection, account, content);
         return;
@@ -933,6 +937,7 @@ void TRemoteFrame::onPlayerAttributes(const char* account, const char* propertie
 void TRemoteFrame::onBanData(const char* account, const char* computerId, const char* details, void* data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
     if (frame->playerList == nullptr) frame->playerList = new TPlayerList(frame->applicationDirectory, frame->accountName);
+    frame->playerList->setUseNewBanType(frame->options.usenewbantype);
     frame->playerList->setServerName(frame->serverName);
     frame->playerList->setConnection(frame->connection);
     frame->playerList->handleBanData(account, computerId, details);
@@ -940,6 +945,7 @@ void TRemoteFrame::onBanData(const char* account, const char* computerId, const 
 void TRemoteFrame::onBanListData(const char* type, const char* account, const char* content, void* data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
     if (frame->playerList == nullptr) frame->playerList = new TPlayerList(frame->applicationDirectory, frame->accountName);
+    frame->playerList->setUseNewBanType(frame->options.usenewbantype);
     frame->playerList->setServerName(frame->serverName);
     frame->playerList->setConnection(frame->connection);
     frame->playerList->handleBanListData(type, account, content);
@@ -1858,6 +1864,8 @@ void TRemoteFrame::applyOptions(const RC::RCOptions& previous) {
     if (connection != nullptr && (options.nomassmessages != previous.nomassmessages || options.nomassifclienton != previous.nomassifclienton)) updateMassPMAcceptance();
     if (connection != nullptr && (options.globalpms != previous.globalpms || options.buddytracking != previous.buddytracking || options.showbuddies != previous.showbuddies)) sendServerListOptions();
     if (playerList != nullptr && options.attachaway != previous.attachaway) playerList->setAttachAway(options.attachaway);
+    if (playerList != nullptr && options.usenewbantype != previous.usenewbantype) playerList->setUseNewBanType(options.usenewbantype);
+    if (accountsWindow != nullptr && options.usenewbantype != previous.usenewbantype) accountsWindow->setUseNewBanType(options.usenewbantype);
     if (options.separatenc != previous.separatenc) setNCChannelVisible(options.separatenc);
     if (fileBrowser != nullptr && options.downloadfolder != previous.downloadfolder) fileBrowser->setDownloadFolder(options.downloadfolder);
     if (fileBrowser != nullptr && options.modernfilebrowser != previous.modernfilebrowser) fileBrowser->setModernFileBrowser(options.modernfilebrowser);
@@ -1965,11 +1973,17 @@ void TRemoteFrame::refreshNotebookTheme() {
     if (notebookTabProvider != nullptr) { gtk_style_context_remove_provider_for_screen(screen, GTK_STYLE_PROVIDER(notebookTabProvider)); g_object_unref(notebookTabProvider); notebookTabProvider = nullptr; }
     if (screen == nullptr || notebook == nullptr) return;
     notebookTabProvider = gtk_css_provider_new();
-    const std::string tabBackground = options.darkmode ? "#3d3d3d" : "#f5f5f5";
-    const std::string tabBorder = options.darkmode ? "#707070" : "#c4c4c4";
+    if (graphicalContainer != nullptr) {
+        const std::string graphicalNotebookCss = "#GraphicalNotebook > header.top > tabs > tab { min-height: 0; min-width: 0; margin: 1px 0 0 0; padding: 0 5px; } #GraphicalNotebook > header.top > tabs > tab:checked { margin-top: 0; padding-bottom: 1px; }";
+        gtk_css_provider_load_from_data(notebookTabProvider, graphicalNotebookCss.c_str(), -1, nullptr);
+        gtk_style_context_add_provider_for_screen(screen, GTK_STYLE_PROVIDER(notebookTabProvider), GTK_STYLE_PROVIDER_PRIORITY_USER + 1);
+        return;
+    }
+    const std::string tabBackground = options.colorlabelback;
+    const std::string tabBorder = "alpha(" + options.colorlabel + ", 0.45)";
     const std::string activeTabBackground = options.colorchatback;
-    const std::string activeTabBorder = options.darkmode ? "#909090" : "#9a9a9a";
-    const std::string notebookCss = "#RemoteFrame notebook, #RemoteFrame notebook > header, #RemoteFrame notebook > header.top, #RemoteFrame notebook > header.top > tabs { margin: 0; padding: 0; border: 0; background-color: transparent; background-image: none; box-shadow: none; } #RemoteFrame notebook > header.top > tabs { padding-left: 6px; background-color: " + tabBackground + "; } #RemoteFrame notebook > header, #RemoteFrame notebook > header.top, #RemoteFrame notebook > header.top > tabs { min-height: 0; } #RemoteFrame notebook > header.top { border-bottom: 1px solid " + tabBorder + "; } #RemoteFrame notebook > stack, #RemoteFrame notebook > stack > scrolledwindow, #RemoteFrame notebook > stack > scrolledwindow > viewport { margin: 0; padding: 0; border: 1px solid " + tabBorder + "; border-top: 0; background-color: " + options.colorchatback + "; } #RemoteFrame notebook > header.top > tabs > tab { min-height: 0; min-width: 0; margin: 0 1px 0 0; padding: 3px 7px; background-image: none; background-color: " + tabBackground + "; border: 1px solid " + tabBorder + "; border-radius: 3px 3px 0 0; } #RemoteFrame notebook > header.top > tabs > tab:checked { background-color: " + activeTabBackground + "; border-color: " + activeTabBorder + "; border-bottom-color: " + options.colorchatback + "; margin-bottom: -1px; } #RemoteFrame notebook > header.top > tabs > tab label { min-width: 0; margin: 0; padding: 0; font-size: 12px; }";
+    const std::string activeTabBorder = options.colorlabel;
+    const std::string notebookCss = "#RemoteFrame notebook, #RemoteFrame notebook > header, #RemoteFrame notebook > header.top, #RemoteFrame notebook > header.top > tabs { margin: 0; padding: 0; border: 0; background-color: transparent; background-image: none; box-shadow: none; } #RemoteFrame notebook > header.top > tabs { padding-left: 6px; background-color: " + tabBackground + "; } #RemoteFrame notebook > header, #RemoteFrame notebook > header.top, #RemoteFrame notebook > header.top > tabs { min-height: 0; } #RemoteFrame notebook > header.top { border-bottom: 1px solid " + tabBorder + "; } #RemoteFrame notebook > stack, #RemoteFrame notebook > stack > scrolledwindow, #RemoteFrame notebook > stack > scrolledwindow > viewport { margin: 0; padding: 0; border: 1px solid " + tabBorder + "; border-top: 0; background-color: " + options.colorchatback + "; } #RemoteFrame notebook > header.top > tabs > tab { min-height: 0; min-width: 0; margin: 2px 0 0 0; padding: 3px 7px; background-image: none; background-color: " + tabBackground + "; border: 1px solid " + tabBorder + "; border-radius: 3px 3px 0 0; } #RemoteFrame notebook > header.top > tabs > tab:checked { background-color: " + activeTabBackground + "; border-color: " + activeTabBorder + "; border-bottom-color: " + options.colorchatback + "; margin-top: 0; padding-bottom: 5px; } #RemoteFrame notebook > header.top > tabs > tab label { min-width: 0; margin: 0; padding: 0; font-size: 12px; }";
     gtk_css_provider_load_from_data(notebookTabProvider, notebookCss.c_str(), -1, nullptr);
     gtk_style_context_add_provider_for_screen(screen, GTK_STYLE_PROVIDER(notebookTabProvider), GTK_STYLE_PROVIDER_PRIORITY_USER + 1);
 }

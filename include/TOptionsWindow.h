@@ -62,6 +62,7 @@ private:
     GtkWidget* extensionsEnabled = nullptr;
     GtkWidget* syncEnabled = nullptr;
     GtkWidget* levelListEnabled = nullptr;
+    GtkWidget* useNewBanType = nullptr;
     GtkWidget* syntax = nullptr;
     GtkWidget* autoIndent = nullptr;
     GtkWidget* smartHomeEnd = nullptr;

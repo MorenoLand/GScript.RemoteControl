@@ -87,6 +87,7 @@ namespace RC {
             else if (key == "extensionsenabled") options.extensionsenabled = isTrue(value);
             else if (key == "syncenabled") options.syncenabled = isTrue(value);
             else if (key == "levellistenabled") options.levellistenabled = isTrue(value);
+            else if (key == "usenewbantype") options.usenewbantype = isTrue(value);
             else if (key == "chatfontsize") options.chatfontsize = std::stoi(value);
             else if (key == "chatfontfamily") options.chatfontfamily = value.empty() ? "Sans" : value;
             else if (key == "globalpms") options.globalpms = isTrue(value);
@@ -180,6 +181,7 @@ namespace RC {
         writeBool(stream, "extensionsenabled", options.extensionsenabled);
         writeBool(stream, "syncenabled", options.syncenabled);
         writeBool(stream, "levellistenabled", options.levellistenabled);
+        writeBool(stream, "usenewbantype", options.usenewbantype);
         writeBool(stream, "dontsavepassword", options.dontsavepassword);
         writeBool(stream, "graphicalmenu", options.graphicalmenu);
         writeBool(stream, "darkmode", options.darkmode);

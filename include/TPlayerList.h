@@ -17,6 +17,7 @@ public:
     void setConnection(void* connection);
     void rebindConnection(void* connection);
     void setServerName(const std::string& server);
+    void setUseNewBanType(bool enabled);
     void setStatusList(const char* statuses);
     void setAttachAway(bool enabled);
     void setAwayStatus(bool away);
@@ -116,4 +117,5 @@ private:
     void* connection = nullptr;
     std::filesystem::path applicationDirectory;
     std::string accountName;
+    bool useNewBanType = true;
 };

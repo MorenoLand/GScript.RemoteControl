@@ -30,6 +30,7 @@ namespace RC {
         bool extensionsenabled = false;
         bool syncenabled = false;
         bool levellistenabled = true;
+        bool usenewbantype = true;
         bool dontsavepassword = false;
         bool graphicalmenu = true;
         bool darkmode = true;

@@ -108,6 +108,8 @@ TLocalBanWindow::TLocalBanWindow(const std::filesystem::path& nextApplicationDir
 
 TLocalBanWindow::~TLocalBanWindow() { if (window != nullptr) gtk_widget_destroy(window); }
 
+void TLocalBanWindow::setUseNewBanType(bool enabled) { useNewBanType = enabled; }
+
 void TLocalBanWindow::setBanTypes(const char* types) {
     banTypes.clear();
     banDurations.clear();
@@ -149,7 +151,7 @@ void TLocalBanWindow::open(void* nextConnection, const std::string& nextAccount,
     gtk_window_set_title(GTK_WINDOW(window), ("Edit Access of " + account + (computerId.empty() ? "" : " (computer: " + computerId + ")")).c_str());
     for (int index = 0; index < 4; ++index) {
         scopes[index].target = index < 2 ? account : (computerId.empty() ? "" : "pc:" + computerId);
-        const bool available = !scopes[index].target.empty();
+        const bool available = useNewBanType ? !scopes[index].target.empty() : index == 0 && !account.empty();
         gtk_widget_set_visible(scopes[index].page, available);
         gtk_widget_set_visible(scopes[index].tab, available);
         gtk_widget_set_sensitive(scopes[index].banned, !scopes[index].target.empty());
@@ -164,6 +166,20 @@ void TLocalBanWindow::open(void* nextConnection, const std::string& nextAccount,
         gtk_label_set_text(GTK_LABEL(scopes[index].timeLeft), "Ban time left: -");
         updateTabIcon(index);
     }
+    if (!useNewBanType) {
+        bool banned = false;
+        std::istringstream records(details);
+        for (std::string record; std::getline(records, record);) {
+            const size_t separator = record.find('=');
+            if (separator == std::string::npos) continue;
+            const std::string key = record.substr(0, separator);
+            const std::string value = record.substr(separator + 1);
+            if (key == "banned") banned = value == "1" || value == "true";
+        }
+        gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(scopes[0].banned), banned);
+        updateTimeLeft(0);
+        updateTabIcon(0);
+    } else {
     std::istringstream records(details);
     for (std::string record; std::getline(records, record);) {
         std::map<std::string, std::string> fields;
@@ -188,9 +204,10 @@ void TLocalBanWindow::open(void* nextConnection, const std::string& nextAccount,
         updateTimeLeft(index);
         updateTabIcon(index);
     }
+    }
     gtk_widget_show_all(window);
     for (int index = 0; index < 4; ++index) {
-        const bool available = !scopes[index].target.empty();
+        const bool available = useNewBanType ? !scopes[index].target.empty() : index == 0 && !account.empty();
         gtk_widget_set_visible(scopes[index].page, available);
         gtk_widget_set_visible(scopes[index].tab, available);
     }
@@ -206,7 +223,10 @@ void TLocalBanWindow::onApply(GtkButton* button, gpointer data) {
     const bool reset = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(scope.reset));
     const char* type = gtk_combo_box_get_active_id(GTK_COMBO_BOX(scope.type));
     const char* world = (index & 1) == 0 ? "local" : "all";
-    rc_set_ban(editor->connection, scope.target.c_str(), world, banned, type == nullptr ? "" : type, reset ? "" : scope.releaseTime.c_str(), gtk_entry_get_text(GTK_ENTRY(scope.reason)));
+    if (!editor->useNewBanType) {
+        if (index != 0 || editor->account.empty()) return;
+        rc_set_legacy_player_ban(editor->connection, editor->account.c_str(), banned, gtk_entry_get_text(GTK_ENTRY(scope.reason)));
+    } else rc_set_ban(editor->connection, scope.target.c_str(), world, banned, type == nullptr ? "" : type, reset ? "" : scope.releaseTime.c_str(), gtk_entry_get_text(GTK_ENTRY(scope.reason)));
     gtk_widget_hide(editor->window);
 }
 

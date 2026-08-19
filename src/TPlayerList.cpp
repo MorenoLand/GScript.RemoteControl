@@ -518,6 +518,7 @@ TPlayerList::TPlayerList(const std::filesystem::path& nextApplicationDirectory, 
 TPlayerList::~TPlayerList() { if (pmBlinkSource != 0) g_source_remove(pmBlinkSource); while (!pmWindows.empty()) { PMWindowData* data = static_cast<PMWindowData*>(pmWindows.begin()->second); pmWindows.erase(pmWindows.begin()); data->owner = nullptr; gtk_widget_destroy(data->window); } delete localBanWindow; for (GdkPixbuf* icon : statusIcons) if (icon != nullptr) g_object_unref(icon); if (onlineIcon != nullptr) g_object_unref(onlineIcon); if (channelIcon != nullptr) g_object_unref(channelIcon); if (channelClosedIcon != nullptr) g_object_unref(channelClosedIcon); if (pmNormalIcon != nullptr) g_object_unref(pmNormalIcon); if (pmGuildIcon != nullptr) g_object_unref(pmGuildIcon); if (pmAdminIcon != nullptr) g_object_unref(pmAdminIcon); if (pmMassIcon != nullptr) g_object_unref(pmMassIcon); if (window != nullptr) gtk_widget_destroy(window); if (store != nullptr) g_object_unref(store); if (guildStore != nullptr) g_object_unref(guildStore); if (serverStore != nullptr) g_object_unref(serverStore); if (channelStore != nullptr) g_object_unref(channelStore); }
 void TPlayerList::open(void* nextConnection) { setConnection(nextConnection); rc_on_pm_servers_updated(connection, onPMServers, this); rc_on_pm_guilds_updated(connection, onPMGuilds, this); rc_on_pm_server_players(connection, onPMServerPlayers, this); refresh(); gtk_widget_show_all(window); gtk_window_present(GTK_WINDOW(window)); }
 void TPlayerList::setConnection(void* nextConnection) { connection = nextConnection; for (const auto& [playerId, value] : pmWindows) static_cast<PMWindowData*>(value)->connection = connection; }
+void TPlayerList::setUseNewBanType(bool enabled) { useNewBanType = enabled; if (localBanWindow != nullptr) localBanWindow->setUseNewBanType(enabled); }
 void TPlayerList::rebindConnection(void* nextConnection) {
     if (connection == nextConnection) return;
     setConnection(nextConnection);
@@ -674,6 +675,7 @@ void TPlayerList::onResetPlayer(GtkMenuItem*, gpointer data) { static_cast<TPlay
 void TPlayerList::handleBanData(const char* account, const char* computerId, const char* details) {
     if (account == nullptr || *account == '\0') return;
     if (localBanWindow == nullptr) localBanWindow = new TLocalBanWindow(applicationDirectory);
+    localBanWindow->setUseNewBanType(useNewBanType);
     localBanWindow->open(connection, account, computerId == nullptr ? "" : computerId, details == nullptr ? "" : details);
 }
 void TPlayerList::handleBanListData(const char* type, const char* account, const char* content) {
@@ -681,6 +683,7 @@ void TPlayerList::handleBanListData(const char* type, const char* account, const
     const std::string listType(type);
     if (listType == "bantypes") {
         if (localBanWindow == nullptr) localBanWindow = new TLocalBanWindow(applicationDirectory);
+        localBanWindow->setUseNewBanType(useNewBanType);
         localBanWindow->setBanTypes(content);
         return;
     }
@@ -1697,7 +1700,7 @@ void TPlayerList::editAccess() {
     gchar* account = nullptr;
     int playerId = 0;
     gtk_tree_model_get(model, &row, PlayerAccountColumn, &account, PlayerIdColumn, &playerId, -1);
-    if (account != nullptr && *account != '\0' && playerId != 0) { rc_request_ban_types(connection); rc_request_player_ban(connection, account, playerId); }
+    if (account != nullptr && *account != '\0' && playerId != 0) { if (useNewBanType) { rc_request_ban_types(connection); rc_request_new_player_ban(connection, account, playerId); } else rc_request_legacy_player_ban(connection, account); }
     g_free(account);
 }
 void TPlayerList::editRights() {
