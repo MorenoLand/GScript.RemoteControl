@@ -248,7 +248,7 @@ void TScriptList::onAdd(GtkButton*, gpointer data) {
     struct AddState { TScriptList* list; GtkWidget* name; GtkWidget* image; };
     TScriptList* list = static_cast<TScriptList*>(data);
     const bool isClass = list->type == "classes";
-    GtkWidget* dialog = gtk_dialog_new_with_buttons(isClass ? "Add Class" : "Add Weapon/GUI Script", GTK_WINDOW(list->window), GTK_DIALOG_MODAL, "Cancel", GTK_RESPONSE_CANCEL, "Add", GTK_RESPONSE_ACCEPT, nullptr);
+    GtkWidget* dialog = gtk_dialog_new_with_buttons(isClass ? "Add Class" : "Add Weapon/GUI Script", nullptr, GTK_DIALOG_MODAL, "Cancel", GTK_RESPONSE_CANCEL, "Add", GTK_RESPONSE_ACCEPT, nullptr);
     GtkWidget* grid = gtk_grid_new();
     gtk_container_set_border_width(GTK_CONTAINER(grid), 8);
     gtk_grid_set_row_spacing(GTK_GRID(grid), 5);
@@ -335,7 +335,7 @@ void TScriptList::deleteSelected() {
     gtk_tree_model_get(model, &row, 0, &name, -1);
     if (name == nullptr || *name == '\0') { g_free(name); return; }
     const std::string noun = type == "weapons" ? "Weapon/GUI Script" : "Class";
-    GtkWidget* dialog = gtk_message_dialog_new(GTK_WINDOW(window), GTK_DIALOG_MODAL, GTK_MESSAGE_WARNING, GTK_BUTTONS_OK_CANCEL, "Delete %s %s?", noun.c_str(), name);
+    GtkWidget* dialog = gtk_message_dialog_new(nullptr, GTK_DIALOG_MODAL, GTK_MESSAGE_WARNING, GTK_BUTTONS_OK_CANCEL, "Delete %s %s?", noun.c_str(), name);
     const gint response = gtk_dialog_run(GTK_DIALOG(dialog));
     gtk_widget_destroy(dialog);
     if (response == GTK_RESPONSE_OK) {
@@ -394,9 +394,7 @@ void TScriptList::showEditor(const char* name, const char* script) {
     }
     struct EditorState { void* connection; bool weapon; std::string name; GtkWidget* editor; GtkWidget* icon; };
     const std::string editorTitle = (type == "weapons" ? "Weapon: " : "Class: ") + scriptName + (serverName.empty() ? "" : " (" + serverName + ")");
-    GtkWidget* dialog = gtk_dialog_new_with_buttons(editorTitle.c_str(), GTK_WINDOW(window), static_cast<GtkDialogFlags>(0), "Apply", GTK_RESPONSE_ACCEPT, "Close", GTK_RESPONSE_CANCEL, nullptr);
-    gtk_window_set_destroy_with_parent(GTK_WINDOW(dialog), false);
-    gtk_window_set_transient_for(GTK_WINDOW(dialog), nullptr);
+    GtkWidget* dialog = gtk_dialog_new_with_buttons(editorTitle.c_str(), nullptr, static_cast<GtkDialogFlags>(0), "Apply", GTK_RESPONSE_ACCEPT, "Close", GTK_RESPONSE_CANCEL, nullptr);
     gtk_window_set_type_hint(GTK_WINDOW(dialog), GDK_WINDOW_TYPE_HINT_NORMAL);
     gtk_window_set_resizable(GTK_WINDOW(dialog), true);
     gtk_window_set_default_size(GTK_WINDOW(dialog), 700, 520);

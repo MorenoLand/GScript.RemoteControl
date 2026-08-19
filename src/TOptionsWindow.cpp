@@ -408,8 +408,8 @@ TOptionsWindow::TOptionsWindow(RC::RCOptions& nextOptions, const std::filesystem
     g_signal_connect(backgroundBrowse, "clicked", G_CALLBACK(onBrowseBackground), this);
     g_signal_connect(viewMcpAudit, "clicked", G_CALLBACK(+[](GtkButton*, gpointer data) {
         TOptionsWindow* optionsWindow = static_cast<TOptionsWindow*>(data);
-        GtkWidget* dialog = gtk_dialog_new_with_buttons("MCP Audit Log", GTK_WINDOW(optionsWindow->window), GTK_DIALOG_MODAL, "Close", GTK_RESPONSE_CLOSE, nullptr);
-        gtk_window_set_position(GTK_WINDOW(dialog), GTK_WIN_POS_CENTER_ON_PARENT);
+        GtkWidget* dialog = gtk_dialog_new_with_buttons("MCP Audit Log", nullptr, GTK_DIALOG_MODAL, "Close", GTK_RESPONSE_CLOSE, nullptr);
+        gtk_window_set_position(GTK_WINDOW(dialog), GTK_WIN_POS_CENTER);
         gtk_window_set_default_size(GTK_WINDOW(dialog), 700, 420);
         GtkWidget* scrolled = gtk_scrolled_window_new(nullptr, nullptr);
         GtkWidget* view = gtk_text_view_new();
@@ -486,7 +486,7 @@ void TOptionsWindow::onGlobalHotkeyConfirm(GtkButton*, gpointer data) {
 gboolean TOptionsWindow::onLiveEditorOptionFocusOut(GtkWidget*, GdkEventFocus*, gpointer data) { static_cast<TOptionsWindow*>(data)->save(); return false; }
 void TOptionsWindow::onBrowseDownload(GtkButton*, gpointer data) {
     TOptionsWindow* optionsWindow = static_cast<TOptionsWindow*>(data);
-    GtkWidget* dialog = gtk_file_chooser_dialog_new("Download folder", GTK_WINDOW(optionsWindow->window), GTK_FILE_CHOOSER_ACTION_SELECT_FOLDER, "Cancel", GTK_RESPONSE_CANCEL, "Select", GTK_RESPONSE_ACCEPT, nullptr);
+    GtkWidget* dialog = gtk_file_chooser_dialog_new("Download folder", nullptr, GTK_FILE_CHOOSER_ACTION_SELECT_FOLDER, "Cancel", GTK_RESPONSE_CANCEL, "Select", GTK_RESPONSE_ACCEPT, nullptr);
     gtk_file_chooser_set_filename(GTK_FILE_CHOOSER(dialog), gtk_entry_get_text(GTK_ENTRY(optionsWindow->downloadFolder)));
     if (gtk_dialog_run(GTK_DIALOG(dialog)) == GTK_RESPONSE_ACCEPT) {
         gchar* path = gtk_file_chooser_get_filename(GTK_FILE_CHOOSER(dialog));
@@ -497,20 +497,20 @@ void TOptionsWindow::onBrowseDownload(GtkButton*, gpointer data) {
 }
 void TOptionsWindow::onBrowseExternalWorkspace(GtkButton*, gpointer data) {
     TOptionsWindow* optionsWindow = static_cast<TOptionsWindow*>(data);
-    GtkWidget* dialog = gtk_file_chooser_dialog_new("External editor workspace", GTK_WINDOW(optionsWindow->window), GTK_FILE_CHOOSER_ACTION_SELECT_FOLDER, "Cancel", GTK_RESPONSE_CANCEL, "Select", GTK_RESPONSE_ACCEPT, nullptr);
+    GtkWidget* dialog = gtk_file_chooser_dialog_new("External editor workspace", nullptr, GTK_FILE_CHOOSER_ACTION_SELECT_FOLDER, "Cancel", GTK_RESPONSE_CANCEL, "Select", GTK_RESPONSE_ACCEPT, nullptr);
     gtk_file_chooser_set_filename(GTK_FILE_CHOOSER(dialog), gtk_entry_get_text(GTK_ENTRY(optionsWindow->externalEditorWorkspace)));
     if (gtk_dialog_run(GTK_DIALOG(dialog)) == GTK_RESPONSE_ACCEPT) { gchar* path = gtk_file_chooser_get_filename(GTK_FILE_CHOOSER(dialog)); gtk_entry_set_text(GTK_ENTRY(optionsWindow->externalEditorWorkspace), path); g_free(path); }
     gtk_widget_destroy(dialog);
 }
 void TOptionsWindow::onBrowseExternalEditor(GtkButton*, gpointer data) {
     TOptionsWindow* optionsWindow = static_cast<TOptionsWindow*>(data);
-    GtkWidget* dialog = gtk_file_chooser_dialog_new("External editor executable", GTK_WINDOW(optionsWindow->window), GTK_FILE_CHOOSER_ACTION_OPEN, "Cancel", GTK_RESPONSE_CANCEL, "Select", GTK_RESPONSE_ACCEPT, nullptr);
+    GtkWidget* dialog = gtk_file_chooser_dialog_new("External editor executable", nullptr, GTK_FILE_CHOOSER_ACTION_OPEN, "Cancel", GTK_RESPONSE_CANCEL, "Select", GTK_RESPONSE_ACCEPT, nullptr);
     if (gtk_dialog_run(GTK_DIALOG(dialog)) == GTK_RESPONSE_ACCEPT) { gchar* path = gtk_file_chooser_get_filename(GTK_FILE_CHOOSER(dialog)); gtk_entry_set_text(GTK_ENTRY(optionsWindow->externalEditorCommand), path); g_free(path); }
     gtk_widget_destroy(dialog);
 }
 void TOptionsWindow::onBrowseLog(GtkButton*, gpointer data) {
     TOptionsWindow* optionsWindow = static_cast<TOptionsWindow*>(data);
-    GtkWidget* dialog = gtk_file_chooser_dialog_new("RC chat log", GTK_WINDOW(optionsWindow->window), GTK_FILE_CHOOSER_ACTION_SAVE, "Cancel", GTK_RESPONSE_CANCEL, "Select", GTK_RESPONSE_ACCEPT, nullptr);
+    GtkWidget* dialog = gtk_file_chooser_dialog_new("RC chat log", nullptr, GTK_FILE_CHOOSER_ACTION_SAVE, "Cancel", GTK_RESPONSE_CANCEL, "Select", GTK_RESPONSE_ACCEPT, nullptr);
     gtk_file_chooser_set_filename(GTK_FILE_CHOOSER(dialog), gtk_entry_get_text(GTK_ENTRY(optionsWindow->logFile)));
     if (gtk_dialog_run(GTK_DIALOG(dialog)) == GTK_RESPONSE_ACCEPT) {
         gchar* path = gtk_file_chooser_get_filename(GTK_FILE_CHOOSER(dialog));
@@ -521,7 +521,7 @@ void TOptionsWindow::onBrowseLog(GtkButton*, gpointer data) {
 }
 void TOptionsWindow::onBrowseAutocompleteSource(GtkButton*, gpointer data) {
     TOptionsWindow* optionsWindow = static_cast<TOptionsWindow*>(data);
-    GtkWidget* dialog = gtk_file_chooser_dialog_new("Autocomplete source", GTK_WINDOW(optionsWindow->window), GTK_FILE_CHOOSER_ACTION_OPEN, "Cancel", GTK_RESPONSE_CANCEL, "Select", GTK_RESPONSE_ACCEPT, nullptr);
+    GtkWidget* dialog = gtk_file_chooser_dialog_new("Autocomplete source", nullptr, GTK_FILE_CHOOSER_ACTION_OPEN, "Cancel", GTK_RESPONSE_CANCEL, "Select", GTK_RESPONSE_ACCEPT, nullptr);
     if (gtk_dialog_run(GTK_DIALOG(dialog)) == GTK_RESPONSE_ACCEPT) {
         gchar* path = gtk_file_chooser_get_filename(GTK_FILE_CHOOSER(dialog));
         gtk_entry_set_text(GTK_ENTRY(optionsWindow->autocompleteSource), path);
@@ -532,7 +532,7 @@ void TOptionsWindow::onBrowseAutocompleteSource(GtkButton*, gpointer data) {
 }
 void TOptionsWindow::onBrowseBackground(GtkButton*, gpointer data) {
     TOptionsWindow* optionsWindow = static_cast<TOptionsWindow*>(data);
-    GtkWidget* dialog = gtk_file_chooser_dialog_new("Background image", GTK_WINDOW(optionsWindow->window), GTK_FILE_CHOOSER_ACTION_OPEN, "Cancel", GTK_RESPONSE_CANCEL, "Select", GTK_RESPONSE_ACCEPT, nullptr);
+    GtkWidget* dialog = gtk_file_chooser_dialog_new("Background image", nullptr, GTK_FILE_CHOOSER_ACTION_OPEN, "Cancel", GTK_RESPONSE_CANCEL, "Select", GTK_RESPONSE_ACCEPT, nullptr);
     if (gtk_dialog_run(GTK_DIALOG(dialog)) == GTK_RESPONSE_ACCEPT) {
         gchar* path = gtk_file_chooser_get_filename(GTK_FILE_CHOOSER(dialog));
         gtk_entry_set_text(GTK_ENTRY(optionsWindow->backgroundImage), path);

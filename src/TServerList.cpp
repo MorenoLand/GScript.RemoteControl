@@ -299,10 +299,8 @@ void TServerList::openListServerSettings() {
     struct SettingsState { TServerList* serverList; GtkWidget* dialog; GtkWidget* endpoint; GtkWidget* name; GtkWidget* host; GtkWidget* port; GtkWidget* theme; GtkWidget* error; std::vector<SavedListServer> endpoints; guint saveTimer = 0; int editIndex = 0; bool updating = false; };
     GtkWidget* dialog = gtk_dialog_new();
     gtk_window_set_title(GTK_WINDOW(dialog), "RC settings");
-    gtk_window_set_transient_for(GTK_WINDOW(dialog), GTK_WINDOW(window));
-    gtk_window_set_position(GTK_WINDOW(dialog), GTK_WIN_POS_CENTER_ON_PARENT);
+    gtk_window_set_position(GTK_WINDOW(dialog), GTK_WIN_POS_CENTER);
     gtk_window_set_modal(GTK_WINDOW(dialog), false);
-    gtk_window_set_destroy_with_parent(GTK_WINDOW(dialog), true);
     gtk_window_set_default_size(GTK_WINDOW(dialog), 292, -1);
     gtk_window_set_resizable(GTK_WINDOW(dialog), false);
     GtkWidget* actionArea = gtk_dialog_get_action_area(GTK_DIALOG(dialog));

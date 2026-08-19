@@ -545,7 +545,6 @@ TFileBrowserTree::TFileBrowserTree(const std::filesystem::path& nextApplicationD
     g_signal_connect(closeButton, "clicked", G_CALLBACK(onRefresh), this);
     g_signal_connect(window, "delete-event", G_CALLBACK(onDelete), this);
     previewWindow = gtk_window_new(GTK_WINDOW_POPUP);
-    gtk_window_set_transient_for(GTK_WINDOW(previewWindow), GTK_WINDOW(window));
     gtk_window_set_type_hint(GTK_WINDOW(previewWindow), GDK_WINDOW_TYPE_HINT_TOOLTIP);
     GtkWidget* previewFrame = gtk_frame_new(nullptr);
     gtk_frame_set_shadow_type(GTK_FRAME(previewFrame), GTK_SHADOW_OUT);
@@ -1242,7 +1241,6 @@ void TFileBrowserTree::showDragPreview(int rootX, int rootY) {
     if (count == 0) { if (icon != nullptr) g_object_unref(icon); g_free(name); hideDragPreview(); return; }
     if (dragPreviewWindow == nullptr) {
         dragPreviewWindow = gtk_window_new(GTK_WINDOW_POPUP);
-        gtk_window_set_transient_for(GTK_WINDOW(dragPreviewWindow), GTK_WINDOW(window));
         gtk_window_set_type_hint(GTK_WINDOW(dragPreviewWindow), GDK_WINDOW_TYPE_HINT_TOOLTIP);
         GtkWidget* frame = gtk_frame_new(nullptr);
         gtk_frame_set_shadow_type(GTK_FRAME(frame), GTK_SHADOW_OUT);
@@ -1757,7 +1755,7 @@ void TFileBrowserTree::onRename(GtkMenuItem*, gpointer data) {
     FileMenuItem* item = static_cast<FileMenuItem*>(data);
     if (item->paths.size() != 1) return;
     if (item->browser->modernFileBrowser) {
-        GtkWidget* dialog = gtk_dialog_new_with_buttons("Rename", GTK_WINDOW(item->browser->window), GTK_DIALOG_MODAL, "Cancel", GTK_RESPONSE_CANCEL, "Rename", GTK_RESPONSE_ACCEPT, nullptr);
+        GtkWidget* dialog = gtk_dialog_new_with_buttons("Rename", nullptr, GTK_DIALOG_MODAL, "Cancel", GTK_RESPONSE_CANCEL, "Rename", GTK_RESPONSE_ACCEPT, nullptr);
         GtkWidget* entry = gtk_entry_new();
         gchar* basename = g_path_get_basename(item->paths.front().c_str());
         gtk_entry_set_text(GTK_ENTRY(entry), basename == nullptr ? item->paths.front().c_str() : basename);
@@ -1811,7 +1809,7 @@ void TFileBrowserTree::onFileNameEdited(GtkCellRendererText*, gchar* path, gchar
 
 void TFileBrowserTree::onMove(GtkMenuItem*, gpointer data) {
     FileMenuItem* item = static_cast<FileMenuItem*>(data);
-    GtkWidget* dialog = gtk_dialog_new_with_buttons((item->paths.size() == 1 ? "Move " + item->paths.front() : "Move selected files").c_str(), GTK_WINDOW(item->browser->window), GTK_DIALOG_MODAL, "Cancel", GTK_RESPONSE_CANCEL, "OK", GTK_RESPONSE_ACCEPT, nullptr);
+    GtkWidget* dialog = gtk_dialog_new_with_buttons((item->paths.size() == 1 ? "Move " + item->paths.front() : "Move selected files").c_str(), nullptr, GTK_DIALOG_MODAL, "Cancel", GTK_RESPONSE_CANCEL, "OK", GTK_RESPONSE_ACCEPT, nullptr);
     GtkWidget* entry = gtk_entry_new();
     gtk_entry_set_text(GTK_ENTRY(entry), item->browser->currentFolder.c_str());
     gtk_box_pack_start(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), entry, false, false, 8);
@@ -1832,7 +1830,7 @@ void TFileBrowserTree::onMove(GtkMenuItem*, gpointer data) {
 
 void TFileBrowserTree::onUpload(GtkMenuItem*, gpointer data) {
     TFileBrowserTree* browser = static_cast<TFileBrowserTree*>(data);
-    GtkWidget* dialog = gtk_file_chooser_dialog_new("Upload file(s)", GTK_WINDOW(browser->window), GTK_FILE_CHOOSER_ACTION_OPEN, "Cancel", GTK_RESPONSE_CANCEL, "Upload", GTK_RESPONSE_ACCEPT, nullptr);
+    GtkWidget* dialog = gtk_file_chooser_dialog_new("Upload file(s)", nullptr, GTK_FILE_CHOOSER_ACTION_OPEN, "Cancel", GTK_RESPONSE_CANCEL, "Upload", GTK_RESPONSE_ACCEPT, nullptr);
     gtk_file_chooser_set_select_multiple(GTK_FILE_CHOOSER(dialog), true);
     if (gtk_dialog_run(GTK_DIALOG(dialog)) == GTK_RESPONSE_ACCEPT) {
         GSList* filenames = gtk_file_chooser_get_filenames(GTK_FILE_CHOOSER(dialog));
@@ -2010,9 +2008,7 @@ gboolean TFileBrowserTree::beginInlineRename(gpointer data) {
 void TFileBrowserTree::showTextEditor(const char* path, const void* content, int length) {
     struct EditorState { void* connection; std::string path; GtkWidget* editor; };
     const std::string editorTitle = downloadServer.empty() ? std::string(path) : std::string(path) + " - " + downloadServer;
-    GtkWidget* dialog = gtk_dialog_new_with_buttons(editorTitle.c_str(), GTK_WINDOW(window), static_cast<GtkDialogFlags>(0), "Cancel", GTK_RESPONSE_CANCEL, "Save", GTK_RESPONSE_ACCEPT, nullptr);
-    gtk_window_set_destroy_with_parent(GTK_WINDOW(dialog), false);
-    gtk_window_set_transient_for(GTK_WINDOW(dialog), nullptr);
+    GtkWidget* dialog = gtk_dialog_new_with_buttons(editorTitle.c_str(), nullptr, static_cast<GtkDialogFlags>(0), "Cancel", GTK_RESPONSE_CANCEL, "Save", GTK_RESPONSE_ACCEPT, nullptr);
     gtk_window_set_type_hint(GTK_WINDOW(dialog), GDK_WINDOW_TYPE_HINT_NORMAL);
     gtk_window_set_resizable(GTK_WINDOW(dialog), true);
     gtk_window_set_default_size(GTK_WINDOW(dialog), 700, 520);

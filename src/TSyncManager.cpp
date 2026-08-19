@@ -1329,8 +1329,6 @@ void TSyncManager::createWindow() {
     g_object_add_weak_pointer(G_OBJECT(window), reinterpret_cast<gpointer*>(&window));
     gtk_window_set_title(GTK_WINDOW(window), ("Sync & Git Backups (Alpha) - " + serverName).c_str());
     gtk_window_set_default_size(GTK_WINDOW(window), 560, 500);
-    gtk_window_set_transient_for(GTK_WINDOW(window), GTK_WINDOW(parent));
-    gtk_window_set_destroy_with_parent(GTK_WINDOW(window), true);
     gtk_window_set_modal(GTK_WINDOW(window), false);
     g_signal_connect(window, "delete-event", G_CALLBACK(onWindowDelete), this);
     GtkWidget* root = gtk_box_new(GTK_ORIENTATION_VERTICAL, 10);
@@ -1668,7 +1666,7 @@ gboolean TSyncManager::onWindowDelete(GtkWidget* widget, GdkEvent*, gpointer) {
 
 void TSyncManager::onChooseWorkspace(GtkButton*, gpointer data) {
     auto* manager = static_cast<TSyncManager*>(data);
-    GtkWidget* chooser = gtk_file_chooser_dialog_new("Choose script sync workspace", GTK_WINDOW(manager->parent), GTK_FILE_CHOOSER_ACTION_SELECT_FOLDER, "_Close", GTK_RESPONSE_CANCEL, "_Select", GTK_RESPONSE_ACCEPT, nullptr);
+    GtkWidget* chooser = gtk_file_chooser_dialog_new("Choose script sync workspace", nullptr, GTK_FILE_CHOOSER_ACTION_SELECT_FOLDER, "_Close", GTK_RESPONSE_CANCEL, "_Select", GTK_RESPONSE_ACCEPT, nullptr);
     gtk_window_set_modal(GTK_WINDOW(chooser), false);
     if (!manager->workspace.empty()) gtk_file_chooser_set_filename(GTK_FILE_CHOOSER(chooser), manager->workspace.string().c_str());
     g_signal_connect(chooser, "response", G_CALLBACK(onWorkspaceChosen), manager);
@@ -1953,7 +1951,7 @@ void TSyncManager::onGitRemoteChanged(GtkEditable* editable, gpointer data) {
 
 void TSyncManager::onImportGitKey(GtkButton*, gpointer data) {
     auto* manager = static_cast<TSyncManager*>(data);
-    GtkWidget* chooser = gtk_file_chooser_dialog_new("Import SSH private key", GTK_WINDOW(manager->window), GTK_FILE_CHOOSER_ACTION_OPEN, "_Close", GTK_RESPONSE_CANCEL, "_Import", GTK_RESPONSE_ACCEPT, nullptr);
+    GtkWidget* chooser = gtk_file_chooser_dialog_new("Import SSH private key", nullptr, GTK_FILE_CHOOSER_ACTION_OPEN, "_Close", GTK_RESPONSE_CANCEL, "_Import", GTK_RESPONSE_ACCEPT, nullptr);
     gtk_window_set_modal(GTK_WINDOW(chooser), false);
     g_signal_connect(chooser, "response", G_CALLBACK(onGitKeyChosen), manager);
     gtk_widget_show(chooser);
@@ -2083,7 +2081,7 @@ void TSyncManager::onChooseFileFolders(GtkButton*, gpointer data) {
 
 void TSyncManager::showFileRoots(const std::vector<std::string>& roots) {
     if (fileRootsDialog != nullptr) { fileRootsStore = nullptr; gtk_widget_destroy(fileRootsDialog); }
-    fileRootsDialog = gtk_dialog_new_with_buttons("Select server folders", GTK_WINDOW(window), static_cast<GtkDialogFlags>(0), "_Close", GTK_RESPONSE_CLOSE, "_Apply", GTK_RESPONSE_APPLY, nullptr);
+    fileRootsDialog = gtk_dialog_new_with_buttons("Select server folders", nullptr, static_cast<GtkDialogFlags>(0), "_Close", GTK_RESPONSE_CLOSE, "_Apply", GTK_RESPONSE_APPLY, nullptr);
     g_object_add_weak_pointer(G_OBJECT(fileRootsDialog), reinterpret_cast<gpointer*>(&fileRootsDialog));
     gtk_window_set_modal(GTK_WINDOW(fileRootsDialog), false);
     gtk_window_set_default_size(GTK_WINDOW(fileRootsDialog), 430, 380);
@@ -2289,7 +2287,7 @@ bool TSyncManager::findFileRoot(const std::string& path, GtkTreeIter& result) co
 }
 
 void TSyncManager::showResult(const std::string& title, const std::string& message, GtkMessageType type) const {
-    GtkWidget* dialog = gtk_message_dialog_new(GTK_WINDOW(parent), static_cast<GtkDialogFlags>(0), type, GTK_BUTTONS_CLOSE, "%s", message.empty() ? title.c_str() : message.c_str());
+    GtkWidget* dialog = gtk_message_dialog_new(nullptr, static_cast<GtkDialogFlags>(0), type, GTK_BUTTONS_CLOSE, "%s", message.empty() ? title.c_str() : message.c_str());
     gtk_window_set_title(GTK_WINDOW(dialog), title.c_str());
     gtk_window_set_modal(GTK_WINDOW(dialog), false);
     g_signal_connect_swapped(dialog, "response", G_CALLBACK(gtk_widget_destroy), dialog);

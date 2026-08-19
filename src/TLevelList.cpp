@@ -14,7 +14,6 @@
 TLevelList::TLevelList(GtkWindow* parent) {
     window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
     gtk_window_set_title(GTK_WINDOW(window), "Levels");
-    gtk_window_set_transient_for(GTK_WINDOW(window), parent);
     gtk_window_set_default_size(GTK_WINDOW(window), 600, 460);
     GtkWidget* root = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
     gtk_container_add(GTK_CONTAINER(window), root);

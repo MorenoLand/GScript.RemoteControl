@@ -74,7 +74,7 @@ void TNPCList::setConnection(void* nextConnection) { connection = nextConnection
 void TNPCList::onRefresh(GtkButton*, gpointer data) { static_cast<TNPCList*>(data)->refresh(); }
 void TNPCList::onAdd(GtkButton*, gpointer data) {
     TNPCList* list = static_cast<TNPCList*>(data);
-    GtkWidget* dialog = gtk_dialog_new_with_buttons("Add NPC", GTK_WINDOW(list->window), GTK_DIALOG_MODAL, "Apply", GTK_RESPONSE_OK, "Cancel", GTK_RESPONSE_CANCEL, nullptr);
+    GtkWidget* dialog = gtk_dialog_new_with_buttons("Add NPC", nullptr, GTK_DIALOG_MODAL, "Apply", GTK_RESPONSE_OK, "Cancel", GTK_RESPONSE_CANCEL, nullptr);
     gtk_window_set_default_size(GTK_WINDOW(dialog), 340, 300);
     GtkWidget* grid = gtk_grid_new();
     gtk_container_set_border_width(GTK_CONTAINER(grid), 8);
@@ -194,7 +194,7 @@ void TNPCList::onViewAttributes(GtkMenuItem*, gpointer data) {
 void TNPCList::onWarp(GtkMenuItem*, gpointer data) {
     TNPCList* list = static_cast<TNPCList*>(data);
     if (list->selectedNPCId < 0) return;
-    GtkWidget* dialog = gtk_dialog_new_with_buttons("Warp NPC", GTK_WINDOW(list->window), GTK_DIALOG_MODAL, "Cancel", GTK_RESPONSE_CANCEL, "Warp", GTK_RESPONSE_OK, nullptr);
+    GtkWidget* dialog = gtk_dialog_new_with_buttons("Warp NPC", nullptr, GTK_DIALOG_MODAL, "Cancel", GTK_RESPONSE_CANCEL, "Warp", GTK_RESPONSE_OK, nullptr);
     GtkWidget* grid = gtk_grid_new();
     gtk_container_set_border_width(GTK_CONTAINER(grid), 8);
     gtk_grid_set_row_spacing(GTK_GRID(grid), 6);
@@ -239,7 +239,7 @@ void TNPCList::onDeleteNPC(GtkMenuItem*, gpointer data) {
     GtkTreeIter row;
     if (gtk_tree_selection_get_selected(gtk_tree_view_get_selection(GTK_TREE_VIEW(list->tree)), &model, &row)) gtk_tree_model_get(model, &row, 0, &list->selectedNPCId, -1);
     if (list->selectedNPCId < 0) return;
-    GtkWidget* dialog = gtk_message_dialog_new(GTK_WINDOW(list->window), GTK_DIALOG_MODAL, GTK_MESSAGE_WARNING, GTK_BUTTONS_OK_CANCEL, "Delete NPC %d?", list->selectedNPCId);
+    GtkWidget* dialog = gtk_message_dialog_new(nullptr, GTK_DIALOG_MODAL, GTK_MESSAGE_WARNING, GTK_BUTTONS_OK_CANCEL, "Delete NPC %d?", list->selectedNPCId);
     const gint response = gtk_dialog_run(GTK_DIALOG(dialog));
     gtk_widget_destroy(dialog);
     if (response == GTK_RESPONSE_OK) rc_delete_npc(list->connection, list->selectedNPCId);
@@ -262,9 +262,7 @@ void TNPCList::showScriptEditor(const char* name, int id, const char* script) {
     struct EditorState { void* connection; int id; std::string backupName; GtkWidget* editor; };
     const std::string scriptName = name == nullptr ? "" : name;
     const std::string editorTitle = "Npcscript: " + scriptName + (serverName.empty() ? "" : " (" + serverName + ")");
-    GtkWidget* dialog = gtk_dialog_new_with_buttons(editorTitle.c_str(), GTK_WINDOW(window), static_cast<GtkDialogFlags>(0), "Apply", GTK_RESPONSE_ACCEPT, "Close", GTK_RESPONSE_CANCEL, nullptr);
-    gtk_window_set_destroy_with_parent(GTK_WINDOW(dialog), false);
-    gtk_window_set_transient_for(GTK_WINDOW(dialog), nullptr);
+    GtkWidget* dialog = gtk_dialog_new_with_buttons(editorTitle.c_str(), nullptr, static_cast<GtkDialogFlags>(0), "Apply", GTK_RESPONSE_ACCEPT, "Close", GTK_RESPONSE_CANCEL, nullptr);
     gtk_window_set_type_hint(GTK_WINDOW(dialog), GDK_WINDOW_TYPE_HINT_NORMAL);
     gtk_window_set_resizable(GTK_WINDOW(dialog), true);
     gtk_window_set_default_size(GTK_WINDOW(dialog), 700, 520);
@@ -366,8 +364,6 @@ void TNPCList::showFlagsEditor(int id, const std::string& npcName, const char* f
     const std::string editorTitle = "NPC Flags: " + displayName + (serverName.empty() ? "" : " (" + serverName + ")");
     GtkWidget* dialog = gtk_window_new(GTK_WINDOW_TOPLEVEL);
     gtk_window_set_title(GTK_WINDOW(dialog), editorTitle.c_str());
-    gtk_window_set_transient_for(GTK_WINDOW(dialog), GTK_WINDOW(window));
-    gtk_window_set_destroy_with_parent(GTK_WINDOW(dialog), false);
     gtk_window_set_resizable(GTK_WINDOW(dialog), true);
     gtk_window_set_default_size(GTK_WINDOW(dialog), 600, 460);
     GtkWidget* root = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
@@ -432,7 +428,7 @@ void TNPCList::showFlagsEditor(int id, const std::string& npcName, const char* f
 }
 void TNPCList::showAttributes(int id, const char* attributes) {
     const std::string editorTitle = "Attributes of NPC " + std::to_string(id) + (serverName.empty() ? "" : " - " + serverName);
-    GtkWidget* dialog = gtk_dialog_new_with_buttons(editorTitle.c_str(), GTK_WINDOW(window), static_cast<GtkDialogFlags>(0), "Close", GTK_RESPONSE_CLOSE, nullptr);
+    GtkWidget* dialog = gtk_dialog_new_with_buttons(editorTitle.c_str(), nullptr, static_cast<GtkDialogFlags>(0), "Close", GTK_RESPONSE_CLOSE, nullptr);
     gtk_window_set_default_size(GTK_WINDOW(dialog), 500, 360);
     GtkWidget* scrolled = gtk_scrolled_window_new(nullptr, nullptr);
     GtkSourceLanguage* language = gtk_source_language_manager_get_language(gtk_source_language_manager_get_default(), "ini");

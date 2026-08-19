@@ -1003,7 +1003,7 @@ void TRemoteFrame::onLocalNPCDump(GtkMenuItem*, gpointer data) {
     if (frame->connection == nullptr || rc_is_nc_authenticated(frame->connection) == 0) return;
     rc_on_local_npcs(frame->connection, onLocalNPCData, frame);
     const std::string title = frame->serverName.empty() ? "Local NPCs" : "Local NPCs - " + frame->serverName;
-    GtkWidget* dialog = gtk_dialog_new_with_buttons(title.c_str(), GTK_WINDOW(frame->window), GTK_DIALOG_MODAL, "Cancel", GTK_RESPONSE_CANCEL, "OK", GTK_RESPONSE_OK, nullptr);
+    GtkWidget* dialog = gtk_dialog_new_with_buttons(title.c_str(), nullptr, GTK_DIALOG_MODAL, "Cancel", GTK_RESPONSE_CANCEL, "OK", GTK_RESPONSE_OK, nullptr);
     GtkWidget* content = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
     GtkWidget* grid = gtk_grid_new();
     gtk_container_set_border_width(GTK_CONTAINER(grid), 8);
@@ -1040,7 +1040,7 @@ void TRemoteFrame::onLocalNPCData(const char*, const char* content, void* data) 
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
     if (content == nullptr || content[0] == '\0') return;
     const std::string title = frame->serverName.empty() ? "Local NPCs" : "Local NPCs - " + frame->serverName;
-    GtkWidget* dialog = gtk_dialog_new_with_buttons(title.c_str(), GTK_WINDOW(frame->window), static_cast<GtkDialogFlags>(0), "Close", GTK_RESPONSE_CLOSE, nullptr);
+    GtkWidget* dialog = gtk_dialog_new_with_buttons(title.c_str(), nullptr, static_cast<GtkDialogFlags>(0), "Close", GTK_RESPONSE_CLOSE, nullptr);
     gtk_window_set_default_size(GTK_WINDOW(dialog), 520, 380);
     GtkWidget* scrolled = gtk_scrolled_window_new(nullptr, nullptr);
     GtkSourceLanguage* language = gtk_source_language_manager_get_language(gtk_source_language_manager_get_default(), "ini");
@@ -1587,7 +1587,7 @@ void TRemoteFrame::handleDisconnected(void* disconnectedConnection, std::uint64_
     if (!unsaved.empty()) {
         std::string message = "The following scripts have unsaved changes and remain open:\n";
         for (const std::string& name : unsaved) message += "\n" + name;
-        GtkWidget* warning = gtk_message_dialog_new(GTK_WINDOW(window), GTK_DIALOG_MODAL, GTK_MESSAGE_WARNING, GTK_BUTTONS_OK, "%s", message.c_str());
+        GtkWidget* warning = gtk_message_dialog_new(nullptr, GTK_DIALOG_MODAL, GTK_MESSAGE_WARNING, GTK_BUTTONS_OK, "%s", message.c_str());
         gtk_dialog_run(GTK_DIALOG(warning));
         gtk_widget_destroy(warning);
     }

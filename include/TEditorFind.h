@@ -141,8 +141,7 @@ inline EditorFindState* editorFindState(GtkWidget* editor) {
     state->editor = editor;
     state->dialog = gtk_dialog_new();
     gtk_window_set_title(GTK_WINDOW(state->dialog), "Find and Replace");
-    gtk_window_set_transient_for(GTK_WINDOW(state->dialog), GTK_WINDOW(gtk_widget_get_toplevel(editor)));
-    gtk_window_set_position(GTK_WINDOW(state->dialog), GTK_WIN_POS_CENTER_ON_PARENT);
+    gtk_window_set_position(GTK_WINDOW(state->dialog), GTK_WIN_POS_CENTER);
     gtk_window_set_default_size(GTK_WINDOW(state->dialog), 360, -1);
     gtk_window_set_resizable(GTK_WINDOW(state->dialog), false);
     GtkWidget* grid = gtk_grid_new();
@@ -221,8 +220,8 @@ inline void openEditorGoToLine(GtkWidget* editor) {
     GtkTextIter current;
     GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(editor));
     gtk_text_buffer_get_iter_at_mark(buffer, &current, gtk_text_buffer_get_insert(buffer));
-    GtkWidget* dialog = gtk_dialog_new_with_buttons("Go to line", GTK_WINDOW(gtk_widget_get_toplevel(editor)), static_cast<GtkDialogFlags>(0), "Close", GTK_RESPONSE_CANCEL, "Go", GTK_RESPONSE_ACCEPT, nullptr);
-    gtk_window_set_position(GTK_WINDOW(dialog), GTK_WIN_POS_CENTER_ON_PARENT);
+    GtkWidget* dialog = gtk_dialog_new_with_buttons("Go to line", nullptr, static_cast<GtkDialogFlags>(0), "Close", GTK_RESPONSE_CANCEL, "Go", GTK_RESPONSE_ACCEPT, nullptr);
+    gtk_window_set_position(GTK_WINDOW(dialog), GTK_WIN_POS_CENTER);
     GtkWidget* entry = gtk_entry_new();
     gtk_entry_set_input_purpose(GTK_ENTRY(entry), GTK_INPUT_PURPOSE_DIGITS);
     gtk_entry_set_text(GTK_ENTRY(entry), std::to_string(gtk_text_iter_get_line(&current) + 1).c_str());

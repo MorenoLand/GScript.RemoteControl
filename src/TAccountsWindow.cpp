@@ -279,8 +279,8 @@ void TAccountsWindow::onReset(GtkMenuItem*, gpointer data) {
     TAccountsWindow* window = static_cast<TAccountsWindow*>(data);
     const std::string account = window->selectedAccount();
     if (account.empty()) return;
-    GtkWidget* dialog = gtk_message_dialog_new(GTK_WINDOW(window->listWindow), GTK_DIALOG_MODAL, GTK_MESSAGE_QUESTION, GTK_BUTTONS_OK_CANCEL, "Do you really want to reset the attributes of %s?", account.c_str());
-    gtk_window_set_position(GTK_WINDOW(dialog), GTK_WIN_POS_CENTER_ON_PARENT);
+    GtkWidget* dialog = gtk_message_dialog_new(nullptr, GTK_DIALOG_MODAL, GTK_MESSAGE_QUESTION, GTK_BUTTONS_OK_CANCEL, "Do you really want to reset the attributes of %s?", account.c_str());
+    gtk_window_set_position(GTK_WINDOW(dialog), GTK_WIN_POS_CENTER);
     if (gtk_dialog_run(GTK_DIALOG(dialog)) == GTK_RESPONSE_OK) rc_reset_player(window->connection, account.c_str());
     gtk_widget_destroy(dialog);
 }
@@ -288,8 +288,8 @@ void TAccountsWindow::onDeleteAccount(GtkMenuItem*, gpointer data) {
     TAccountsWindow* window = static_cast<TAccountsWindow*>(data);
     const std::string account = window->selectedAccount();
     if (account.empty()) return;
-    GtkWidget* dialog = gtk_message_dialog_new(GTK_WINDOW(window->listWindow), GTK_DIALOG_MODAL, GTK_MESSAGE_QUESTION, GTK_BUTTONS_OK_CANCEL, "Do you really want to delete the account %s?", account.c_str());
-    gtk_window_set_position(GTK_WINDOW(dialog), GTK_WIN_POS_CENTER_ON_PARENT);
+    GtkWidget* dialog = gtk_message_dialog_new(nullptr, GTK_DIALOG_MODAL, GTK_MESSAGE_QUESTION, GTK_BUTTONS_OK_CANCEL, "Do you really want to delete the account %s?", account.c_str());
+    gtk_window_set_position(GTK_WINDOW(dialog), GTK_WIN_POS_CENTER);
     if (gtk_dialog_run(GTK_DIALOG(dialog)) == GTK_RESPONSE_OK) rc_send_raw_packet(window->connection, PLI_RC_ACCOUNTDEL, account.c_str(), static_cast<int>(account.size()));
     gtk_widget_destroy(dialog);
 }

@@ -69,7 +69,6 @@ namespace {
         for (GList* item = windows; item != nullptr; item = item->next) {
             GtkWidget* candidate = GTK_WIDGET(item->data);
             if (g_strcmp0(gtk_window_get_title(GTK_WINDOW(candidate)), "RC settings") != 0) continue;
-            gtk_window_set_transient_for(GTK_WINDOW(candidate), state->editDialog);
             g_signal_connect(candidate, "destroy", G_CALLBACK(onAccountServerSettingsClosed), state->picker);
             gtk_window_present(GTK_WINDOW(candidate));
             break;
@@ -377,10 +376,10 @@ void TStartFrame::refreshAccountMenu() {
 }
 
 bool TStartFrame::editAccount(const std::string& accountName, GtkWindow* parent, int accountIndex) {
-    GtkWidget* dialog = gtk_dialog_new_with_buttons(accountName.empty() ? "Add Account" : "Edit Account", parent == nullptr ? GTK_WINDOW(window) : parent, static_cast<GtkDialogFlags>(0), "Close", GTK_RESPONSE_CANCEL, "Save", GTK_RESPONSE_OK, nullptr);
+    GtkWidget* dialog = gtk_dialog_new_with_buttons(accountName.empty() ? "Add Account" : "Edit Account", nullptr, static_cast<GtkDialogFlags>(0), "Close", GTK_RESPONSE_CANCEL, "Save", GTK_RESPONSE_OK, nullptr);
     applyGtkButtonIcon(gtk_dialog_get_widget_for_response(GTK_DIALOG(dialog), GTK_RESPONSE_CANCEL), GTK_STOCK_CLOSE);
     applyGtkButtonIcon(gtk_dialog_get_widget_for_response(GTK_DIALOG(dialog), GTK_RESPONSE_OK), GTK_STOCK_SAVE);
-    gtk_window_set_position(GTK_WINDOW(dialog), GTK_WIN_POS_CENTER_ON_PARENT);
+    gtk_window_set_position(GTK_WINDOW(dialog), GTK_WIN_POS_CENTER);
     gtk_window_set_default_size(GTK_WINDOW(dialog), 292, -1);
     GtkWidget* box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
     gtk_container_set_border_width(GTK_CONTAINER(box), 8);
@@ -442,13 +441,13 @@ bool TStartFrame::editAccount(const std::string& accountName, GtkWindow* parent,
 }
 
 void TStartFrame::openAccountManager() {
-    GtkWidget* dialog = gtk_dialog_new_with_buttons("Accounts", GTK_WINDOW(window), static_cast<GtkDialogFlags>(0), "Add Account", 100, "Edit", 101, "Delete", 102, "Close", GTK_RESPONSE_CLOSE, "Select", GTK_RESPONSE_OK, nullptr);
+    GtkWidget* dialog = gtk_dialog_new_with_buttons("Accounts", nullptr, static_cast<GtkDialogFlags>(0), "Add Account", 100, "Edit", 101, "Delete", 102, "Close", GTK_RESPONSE_CLOSE, "Select", GTK_RESPONSE_OK, nullptr);
     applyGtkButtonIcon(gtk_dialog_get_widget_for_response(GTK_DIALOG(dialog), 100), GTK_STOCK_ADD);
     applyGtkButtonIcon(gtk_dialog_get_widget_for_response(GTK_DIALOG(dialog), 101), GTK_STOCK_EDIT);
     applyGtkButtonIcon(gtk_dialog_get_widget_for_response(GTK_DIALOG(dialog), 102), GTK_STOCK_DELETE);
     applyGtkButtonIcon(gtk_dialog_get_widget_for_response(GTK_DIALOG(dialog), GTK_RESPONSE_CLOSE), GTK_STOCK_CLOSE);
     applyGtkButtonIcon(gtk_dialog_get_widget_for_response(GTK_DIALOG(dialog), GTK_RESPONSE_OK), GTK_STOCK_OK);
-    gtk_window_set_position(GTK_WINDOW(dialog), GTK_WIN_POS_CENTER_ON_PARENT);
+    gtk_window_set_position(GTK_WINDOW(dialog), GTK_WIN_POS_CENTER);
     gtk_widget_set_name(dialog, "AccountsDialog");
     gtk_window_set_default_size(GTK_WINDOW(dialog), 500, 330);
     GtkWidget* content = gtk_dialog_get_content_area(GTK_DIALOG(dialog));

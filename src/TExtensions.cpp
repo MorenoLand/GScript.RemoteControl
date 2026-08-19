@@ -605,8 +605,7 @@ void TExtensionsManager::showWindow() {
         gtk_widget_set_name(window, "ExtensionsWindow");
         gtk_window_set_title(GTK_WINDOW(window), "Extensions");
         gtk_window_set_default_size(GTK_WINDOW(window), 520, 180);
-        gtk_window_set_transient_for(GTK_WINDOW(window), parent);
-        gtk_window_set_position(GTK_WINDOW(window), GTK_WIN_POS_CENTER_ON_PARENT);
+        gtk_window_set_position(GTK_WINDOW(window), GTK_WIN_POS_CENTER);
         g_signal_connect(window, "delete-event", G_CALLBACK(+[](GtkWidget* widget, GdkEvent*, gpointer) -> gboolean { gtk_widget_hide(widget); return true; }), nullptr);
         GtkCssProvider* extensionsCss = gtk_css_provider_new();
         gtk_css_provider_load_from_data(extensionsCss, "#ExtensionsWindow button.extension-output-active, #ExtensionsWindow button.extension-output-active:hover, #ExtensionsWindow button.extension-output-active:active, #ExtensionsWindow button.extension-output-active:focus { background-image: none; background-color: @theme_selected_bg_color; color: @theme_selected_fg_color; border-color: @theme_selected_bg_color; }", -1, nullptr);
@@ -669,9 +668,8 @@ void TExtensionsManager::onOpen(GtkButton* button, gpointer data) {
     if (index >= manager->extensions.size()) return;
     const auto& manifest = manager->extensions[index].manifest;
     const auto path = manifest.autoDiscover || manifest.entry.empty() ? manifest.directory : manifest.directory / manifest.entry;
-    GtkWindow* parent = manager->window == nullptr ? nullptr : GTK_WINDOW(manager->window);
     const auto showFailure = [&](const char* detail) {
-        GtkWidget* dialog = gtk_message_dialog_new(parent, GTK_DIALOG_MODAL, GTK_MESSAGE_WARNING, GTK_BUTTONS_CLOSE, "Unable to open extension path");
+        GtkWidget* dialog = gtk_message_dialog_new(nullptr, GTK_DIALOG_MODAL, GTK_MESSAGE_WARNING, GTK_BUTTONS_CLOSE, "Unable to open extension path");
         gtk_message_dialog_format_secondary_text(GTK_MESSAGE_DIALOG(dialog), "%s\n%s", detail, path.string().c_str());
         gtk_dialog_run(GTK_DIALOG(dialog));
         gtk_widget_destroy(dialog);
@@ -682,7 +680,7 @@ void TExtensionsManager::onOpen(GtkButton* button, gpointer data) {
 #else
     GError* error = nullptr;
     gchar* uri = g_filename_to_uri(path.string().c_str(), nullptr, &error);
-    const gboolean opened = uri != nullptr && gtk_show_uri_on_window(parent, uri, GDK_CURRENT_TIME, &error);
+    const gboolean opened = uri != nullptr && gtk_show_uri_on_window(nullptr, uri, GDK_CURRENT_TIME, &error);
     if (!opened) showFailure(error == nullptr ? "No file manager is available:" : error->message);
     if (error != nullptr) g_error_free(error);
     g_free(uri);
@@ -727,7 +725,7 @@ void TExtensionsManager::setOutputTab(std::size_t index, bool enabled) {
 void TExtensionsManager::removeExtension(std::size_t index) {
     if (index >= extensions.size()) return;
     auto& extension = extensions[index];
-    GtkWidget* dialog = gtk_message_dialog_new(window == nullptr ? parent : GTK_WINDOW(window), GTK_DIALOG_MODAL, GTK_MESSAGE_WARNING, GTK_BUTTONS_NONE, "Remove extension '%s'?", extension.manifest.name.c_str());
+    GtkWidget* dialog = gtk_message_dialog_new(nullptr, GTK_DIALOG_MODAL, GTK_MESSAGE_WARNING, GTK_BUTTONS_NONE, "Remove extension '%s'?", extension.manifest.name.c_str());
     gtk_message_dialog_format_secondary_text(GTK_MESSAGE_DIALOG(dialog), "This removes the installed package directory and stops its runtime.");
     gtk_dialog_add_buttons(GTK_DIALOG(dialog), "Close", GTK_RESPONSE_CANCEL, "Remove", GTK_RESPONSE_ACCEPT, nullptr);
     const gint response = gtk_dialog_run(GTK_DIALOG(dialog));
@@ -966,7 +964,7 @@ void TExtensionsManager::onChildExit(GPid pid, gint, gpointer data) { auto* mana
 
 void TExtensionsManager::showLog(std::size_t index) {
     if (index >= extensions.size()) return;
-    GtkWidget* dialog = gtk_dialog_new_with_buttons("Extension Log", window == nullptr ? nullptr : GTK_WINDOW(window), GTK_DIALOG_MODAL, "Close", GTK_RESPONSE_CLOSE, nullptr);
+    GtkWidget* dialog = gtk_dialog_new_with_buttons("Extension Log", nullptr, GTK_DIALOG_MODAL, "Close", GTK_RESPONSE_CLOSE, nullptr);
     gtk_window_set_default_size(GTK_WINDOW(dialog), 520, 320);
     GtkWidget* view = gtk_text_view_new();
     gtk_text_view_set_editable(GTK_TEXT_VIEW(view), false);
@@ -982,7 +980,7 @@ void TExtensionsManager::showDetails(std::size_t index) {
     if (index >= extensions.size()) return;
     auto& extension = extensions[index];
     const auto& manifest = extension.manifest;
-    GtkWidget* dialog = gtk_dialog_new_with_buttons(manifest.name.c_str(), window == nullptr ? nullptr : GTK_WINDOW(window), GTK_DIALOG_MODAL, "Close", GTK_RESPONSE_CLOSE, nullptr);
+    GtkWidget* dialog = gtk_dialog_new_with_buttons(manifest.name.c_str(), nullptr, GTK_DIALOG_MODAL, "Close", GTK_RESPONSE_CLOSE, nullptr);
     gtk_window_set_default_size(GTK_WINDOW(dialog), 460, 320);
     GtkWidget* content = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
     const std::string status = !manifest.error.empty() || !extension.runtimeError.empty() ? "failed" : extension.launching ? "starting" : extension.pid != 0 ? "running" : extension.enabled ? "stopped" : "disabled";

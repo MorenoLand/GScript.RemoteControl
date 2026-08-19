@@ -239,7 +239,7 @@ namespace {
 
     void onPMHistory(GtkButton*, gpointer data) {
         PMWindowData* windowData = static_cast<PMWindowData*>(data);
-        GtkWidget* history = gtk_dialog_new_with_buttons(("History: " + windowData->account + " - " + windowData->nick).c_str(), GTK_WINDOW(windowData->window), static_cast<GtkDialogFlags>(0), "Close", GTK_RESPONSE_CLOSE, nullptr);
+        GtkWidget* history = gtk_dialog_new_with_buttons(("History: " + windowData->account + " - " + windowData->nick).c_str(), nullptr, static_cast<GtkDialogFlags>(0), "Close", GTK_RESPONSE_CLOSE, nullptr);
         gtk_widget_set_name(history, "PrivateMessageHistory");
         gtk_window_set_default_size(GTK_WINDOW(history), 540, 475);
         GtkWidget* scrolled = gtk_scrolled_window_new(nullptr, nullptr);
@@ -286,7 +286,7 @@ namespace {
     }
 
     bool getMessage(GtkWindow* parent, const char* title, const char* label, std::string& message, const char* acceptLabel = "Send") {
-        GtkWidget* dialog = gtk_dialog_new_with_buttons(title, parent, GTK_DIALOG_MODAL, "Cancel", GTK_RESPONSE_CANCEL, acceptLabel, GTK_RESPONSE_ACCEPT, nullptr);
+        GtkWidget* dialog = gtk_dialog_new_with_buttons(title, nullptr, GTK_DIALOG_MODAL, "Cancel", GTK_RESPONSE_CANCEL, acceptLabel, GTK_RESPONSE_ACCEPT, nullptr);
         GtkWidget* content = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
         GtkWidget* text = gtk_text_view_new();
         gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(text), GTK_WRAP_WORD_CHAR);
@@ -309,7 +309,7 @@ namespace {
     }
 
     bool getAdminMessage(GtkWindow* parent, std::string& message) {
-        GtkWidget* dialog = gtk_dialog_new_with_buttons("Admin Message to all", parent, GTK_DIALOG_MODAL, "Cancel", GTK_RESPONSE_CANCEL, "OK", GTK_RESPONSE_ACCEPT, nullptr);
+        GtkWidget* dialog = gtk_dialog_new_with_buttons("Admin Message to all", nullptr, GTK_DIALOG_MODAL, "Cancel", GTK_RESPONSE_CANCEL, "OK", GTK_RESPONSE_ACCEPT, nullptr);
         GtkWidget* content = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
         GtkWidget* label = gtk_label_new("Message");
         GtkWidget* entry = gtk_entry_new();
@@ -653,7 +653,7 @@ void TPlayerList::handleBanListData(const char* type, const char* account, const
         return;
     }
     if (listType != "banhistory" && listType != "staffactivity") return;
-    GtkWidget* dialog = gtk_dialog_new_with_buttons((std::string(listType == "banhistory" ? "Ban History of " : "Staff Activity of ") + (account == nullptr ? "" : account)).c_str(), GTK_WINDOW(window), static_cast<GtkDialogFlags>(0), "Close", GTK_RESPONSE_CLOSE, nullptr);
+    GtkWidget* dialog = gtk_dialog_new_with_buttons((std::string(listType == "banhistory" ? "Ban History of " : "Staff Activity of ") + (account == nullptr ? "" : account)).c_str(), nullptr, static_cast<GtkDialogFlags>(0), "Close", GTK_RESPONSE_CLOSE, nullptr);
     gtk_window_set_default_size(GTK_WINDOW(dialog), 440, 300);
     GtkWidget* scrolled = gtk_scrolled_window_new(nullptr, nullptr);
     GtkSourceBuffer* sourceBuffer = gtk_source_buffer_new(nullptr);
@@ -710,10 +710,8 @@ void TPlayerList::handleBanListData(const char* type, const char* account, const
 void TPlayerList::handlePlayerRights(const char* account, int rights, const char* ipRange, const char* folderAccess) {
     if (account == nullptr || *account == '\0') return;
     struct RightsState { TPlayerList* list; std::string account; GtkWidget* ipRange; GtkWidget* folderAccess; GtkWidget* checks[20]{}; };
-    GtkWidget* dialog = gtk_dialog_new_with_buttons(("Edit Rights of " + std::string(account)).c_str(), GTK_WINDOW(window), static_cast<GtkDialogFlags>(0), "Close", GTK_RESPONSE_CANCEL, "Apply", GTK_RESPONSE_ACCEPT, nullptr);
+    GtkWidget* dialog = gtk_dialog_new_with_buttons(("Edit Rights of " + std::string(account)).c_str(), nullptr, static_cast<GtkDialogFlags>(0), "Close", GTK_RESPONSE_CANCEL, "Apply", GTK_RESPONSE_ACCEPT, nullptr);
     gtk_widget_set_name(dialog, "EditRightsWindow");
-    gtk_window_set_transient_for(GTK_WINDOW(dialog), nullptr);
-    gtk_window_set_destroy_with_parent(GTK_WINDOW(dialog), false);
     gtk_window_set_default_size(GTK_WINDOW(dialog), 460, 420);
     GtkWidget* notebook = gtk_notebook_new();
     gtk_container_set_border_width(GTK_CONTAINER(notebook), 5);
@@ -819,8 +817,6 @@ void TPlayerList::handlePlayerAttributes(const char* account, const char*, const
     const std::map<std::string, std::string> values = fieldValues(editorText);
     GtkWidget* dialog = gtk_window_new(GTK_WINDOW_TOPLEVEL);
     gtk_window_set_title(GTK_WINDOW(dialog), ("Edit Attributes of " + std::string(account)).c_str());
-    gtk_window_set_transient_for(GTK_WINDOW(dialog), GTK_WINDOW(window));
-    gtk_window_set_destroy_with_parent(GTK_WINDOW(dialog), true);
     gtk_widget_set_name(dialog, "EditAttributesWindow");
     gtk_window_set_default_size(GTK_WINDOW(dialog), 400, 360);
     GdkGeometry attributeGeometry{};
@@ -834,7 +830,7 @@ void TPlayerList::handlePlayerAttributes(const char* account, const char*, const
     gtk_container_set_border_width(GTK_CONTAINER(notebook), 5);
     gtk_notebook_set_show_border(GTK_NOTEBOOK(notebook), true);
     GtkCssProvider* tabProvider = gtk_css_provider_new();
-    gtk_css_provider_load_from_data(tabProvider, "#EditAttributesWindow notebook > header { border-bottom: 1px solid #777777; } #EditAttributesWindow notebook > header > tabs > tab { min-height: 0; margin: 0; padding: 3px 5px; } #EditAttributesWindow notebook > header > tabs > tab label { margin: 0; padding: 0; font-size: 12px; } #EditAttributesWindow notebook > header > tabs > tab:checked { border-bottom-color: transparent; } #EditAttributesWindow notebook > stack { border: 1px solid #777777; border-top: 0; }", -1, nullptr);
+    gtk_css_provider_load_from_data(tabProvider, "#EditAttributesWindow notebook > header { border-bottom: 1px solid #777777; } #EditAttributesWindow notebook > header > tabs > tab { min-height: 0; margin: 1px 0 0 0; padding: 3px 5px; } #EditAttributesWindow notebook > header > tabs > tab label { margin: 0; padding: 0; font-size: 12px; } #EditAttributesWindow notebook > header > tabs > tab:checked { margin-top: 0; margin-bottom: -1px; border-bottom-color: transparent; } #EditAttributesWindow notebook > stack { border: 1px solid #777777; border-top: 0; }", -1, nullptr);
     gtk_style_context_add_provider_for_screen(gdk_screen_get_default(), GTK_STYLE_PROVIDER(tabProvider), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION + 1);
     g_object_unref(tabProvider);
     auto* state = new AttributeState{this, account, {}, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr};
@@ -1006,7 +1002,7 @@ void TPlayerList::handlePlayerText(const char* type, const char* account, const 
         std::istringstream input(content == nullptr ? "" : content);
         for (std::string value; std::getline(input, value);) values.push_back(value);
         while (values.size() < 11) values.emplace_back();
-        GtkWidget* dialog = gtk_dialog_new_with_buttons(("Profile of " + std::string(account)).c_str(), GTK_WINDOW(window), static_cast<GtkDialogFlags>(0), "Apply", GTK_RESPONSE_ACCEPT, "Close", GTK_RESPONSE_CANCEL, nullptr);
+        GtkWidget* dialog = gtk_dialog_new_with_buttons(("Profile of " + std::string(account)).c_str(), nullptr, static_cast<GtkDialogFlags>(0), "Apply", GTK_RESPONSE_ACCEPT, "Close", GTK_RESPONSE_CANCEL, nullptr);
         gtk_widget_set_name(dialog, "ProfileWindow");
         gtk_window_set_default_size(GTK_WINDOW(dialog), 520, 400);
         GtkWidget* root = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
@@ -1123,7 +1119,7 @@ void TPlayerList::handlePlayerText(const char* type, const char* account, const 
     }
     struct TextState { TPlayerList* list; std::string account; std::string type; GtkWidget* text; };
     const std::string title = (dataType == "profile" ? "Profile of " : "Edit Comments of ") + std::string(account);
-        GtkWidget* dialog = gtk_dialog_new_with_buttons(title.c_str(), GTK_WINDOW(window), static_cast<GtkDialogFlags>(0), "Close", GTK_RESPONSE_CANCEL, "Save", GTK_RESPONSE_ACCEPT, nullptr);
+        GtkWidget* dialog = gtk_dialog_new_with_buttons(title.c_str(), nullptr, static_cast<GtkDialogFlags>(0), "Close", GTK_RESPONSE_CANCEL, "Save", GTK_RESPONSE_ACCEPT, nullptr);
     gtk_window_set_default_size(GTK_WINDOW(dialog), 420, 280);
     GtkWidget* scrolled = gtk_scrolled_window_new(nullptr, nullptr);
     GtkWidget* text = gtk_text_view_new();
@@ -1781,7 +1777,7 @@ void TPlayerList::resetSelectedPlayer() {
     gtk_tree_model_get(model, &row, PlayerAccountColumn, &account, -1);
     if (account != nullptr && *account != '\0') {
         const std::string prompt = "Do you really want to reset the attributes of " + std::string(account) + " ?";
-        GtkWidget* dialog = gtk_message_dialog_new(GTK_WINDOW(window), static_cast<GtkDialogFlags>(0), GTK_MESSAGE_QUESTION, GTK_BUTTONS_CANCEL, "%s", prompt.c_str());
+        GtkWidget* dialog = gtk_message_dialog_new(nullptr, static_cast<GtkDialogFlags>(0), GTK_MESSAGE_QUESTION, GTK_BUTTONS_CANCEL, "%s", prompt.c_str());
         gtk_window_set_title(GTK_WINDOW(dialog), "Question");
         gtk_dialog_add_button(GTK_DIALOG(dialog), "OK", GTK_RESPONSE_ACCEPT);
         g_object_set_data_full(G_OBJECT(dialog), "player-account", g_strdup(account), g_free);
@@ -1811,7 +1807,7 @@ void TPlayerList::warpSelectedPlayer() {
     gtk_tree_model_get(model, &row, PlayerIdColumn, &playerId, -1);
     if (playerId == 0) return;
     struct WarpState { TPlayerList* list; int playerId; GtkWidget* level; GtkWidget* x; GtkWidget* y; };
-    GtkWidget* dialog = gtk_dialog_new_with_buttons("Warp Player", GTK_WINDOW(window), GTK_DIALOG_MODAL, "Cancel", GTK_RESPONSE_CANCEL, "Warp", GTK_RESPONSE_ACCEPT, nullptr);
+    GtkWidget* dialog = gtk_dialog_new_with_buttons("Warp Player", nullptr, GTK_DIALOG_MODAL, "Cancel", GTK_RESPONSE_CANCEL, "Warp", GTK_RESPONSE_ACCEPT, nullptr);
     GtkWidget* grid = gtk_grid_new();
     gtk_container_set_border_width(GTK_CONTAINER(grid), 8);
     gtk_grid_set_row_spacing(GTK_GRID(grid), 5);
