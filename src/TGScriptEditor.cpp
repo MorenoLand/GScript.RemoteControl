@@ -19,6 +19,7 @@
 #include <string>
 #include <thread>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 void ensureGScriptEditorMinimap(GtkWidget* editor);
@@ -44,9 +45,11 @@ namespace {
     bool apiDefinitionsLoading = false;
     bool apiDefinitionsLoaded = false;
     std::vector<GtkWidget*> completionEditors;
-    struct ApiDefinition { std::string name; std::string type; std::vector<std::string> params; std::string returns; std::string scope; std::string description; std::string example; };
+    struct ApiDefinition { std::string name; std::string type; std::vector<std::string> params; std::string returns; std::string scope; std::string description; std::string example; std::string searchName; std::string completionLabel; std::string completionInfo; std::string completionSummary; std::string completionScope; };
     std::vector<ApiDefinition> apiDefinitions;
     std::string lowerText(std::string value);
+    std::string upperCase(std::string value);
+    void prepareCompletionDefinition(ApiDefinition& definition);
     std::vector<ApiDefinition> referenceApiDefinitions() {
         const std::vector<std::pair<std::string, std::vector<std::string>>> constructors = {
             {"GuiControl", {"name"}}, {"GuiMLTextCtrl", {"name"}}, {"GuiScrollCtrl", {"name"}}, {"GuiTextCtrl", {"name"}},
@@ -58,26 +61,34 @@ namespace {
         std::vector<ApiDefinition> definitions;
         for (const auto& constructor : constructors) definitions.push_back({constructor.first, "class", constructor.second, {}, {}, {}, {}});
         definitions.push_back({"visible", "property", {}, {}, {}, {}, {}});
+        for (ApiDefinition& definition : definitions) prepareCompletionDefinition(definition);
         return definitions;
     }
     typedef struct _RemoteCompletionProvider { GObject parent; GtkWidget* editor; } RemoteCompletionProvider;
     typedef struct _RemoteCompletionProviderClass { GObjectClass parentClass; } RemoteCompletionProviderClass;
-    struct EditorCompletionState { GtkWidget* editor; RemoteCompletionProvider* provider; GtkWidget* signaturePopover; GtkWidget* signatureLabel; void* connection; bool connectionDetached = false; bool completionArmed = false; bool restoreSignature = false; guint restoreTimer = 0; guint signatureTimer = 0; };
+    struct EditorCompletionState { GtkWidget* editor; RemoteCompletionProvider* provider; GtkWidget* signaturePopover; GtkWidget* signatureLabel; void* connection; bool connectionDetached = false; bool completionArmed = false; bool restoreSignature = false; guint restoreTimer = 0; guint signatureTimer = 0; guint symbolsTimer = 0; unsigned int symbolsRequest = 0; bool symbolsRunning = false; std::vector<ApiDefinition> localDefinitions; std::vector<std::string> localIdentifiers; };
     std::vector<EditorCompletionState> editorCompletionStates;
     std::unordered_map<void*, std::unordered_map<int, std::string>> playerCommunityNames;
     struct EditorSelection { GtkTextMark* anchor; GtkTextMark* caret; };
     struct EditorMultiSelectionState { GtkWidget* editor; GtkTextTag* tag; std::vector<EditorSelection> selections; bool applying; };
     std::vector<std::unique_ptr<EditorMultiSelectionState>> multiSelectionStates;
-    struct EditorDiagnosticsState { GtkWidget* editor; GtkTextTag* errorTag; GtkTextTag* warningTag; GtkTextTag* infoTag; guint timeout; std::string source; std::vector<GS2Diagnostic> diagnostics; };
+    struct EditorDiagnosticsState { GtkWidget* editor; GtkTextTag* errorTag; GtkTextTag* warningTag; GtkTextTag* infoTag; guint timeout; std::string source; std::vector<GS2Diagnostic> diagnostics; unsigned int request = 0; bool running = false; };
+    struct DiagnosticsPayload { GtkWidget* editor; unsigned int request; std::string source; std::vector<GS2Diagnostic> diagnostics; };
+    struct CompletionSymbolsPayload { GtkWidget* editor; unsigned int request; std::vector<ApiDefinition> definitions; std::vector<std::string> identifiers; };
     std::vector<std::unique_ptr<EditorDiagnosticsState>> diagnosticsStates;
+    void scheduleEditorDiagnostics(EditorDiagnosticsState* state);
+    void scheduleEditorSymbols(GtkWidget* editor);
     struct EditorBulkInsertState { GtkWidget* editor; GtkSourceBuffer* buffer; guint resumeTimer; bool active; std::size_t pendingBytes; std::size_t pendingLines; };
     std::vector<std::unique_ptr<EditorBulkInsertState>> bulkInsertStates;
     constexpr std::size_t bulkInsertBytes = 8192;
     constexpr std::size_t bulkInsertLines = 128;
     constexpr gint completionPopupMinWidth = 260;
-    constexpr gint completionPopupMaxWidth = 320;
-    constexpr std::size_t completionMaxProposals = 80;
+    constexpr gint completionPopupMaxWidth = 300;
+    constexpr std::size_t completionMaxProposals = 16;
+    constexpr unsigned int completionPopupClampAttempts = 8;
     std::unordered_map<std::string, GdkPixbuf*> completionIconCache;
+    guint completionIconWarmupSource = 0;
+    std::size_t completionIconWarmupIndex = 0;
     struct CompletionPayload { unsigned int request; std::vector<ApiDefinition> definitions; };
     static gboolean refreshEditorScrollbars(gpointer data);
 
@@ -115,33 +126,57 @@ namespace {
         state->diagnostics.clear();
     }
 
+    gboolean applyEditorDiagnostics(gpointer data) {
+        auto* payload = static_cast<DiagnosticsPayload*>(data);
+        const auto state = std::find_if(diagnosticsStates.begin(), diagnosticsStates.end(), [payload](const auto& value) { return value->editor == payload->editor; });
+        if (state == diagnosticsStates.end()) return G_SOURCE_REMOVE;
+        EditorDiagnosticsState* diagnostics = state->get();
+        diagnostics->running = false;
+        if (diagnostics->request != payload->request) {
+            if (scriptDiagnosticsEnabled && diagnostics->timeout == 0) scheduleEditorDiagnostics(diagnostics);
+            return G_SOURCE_REMOVE;
+        }
+        GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(diagnostics->editor));
+        diagnostics->source = std::move(payload->source);
+        diagnostics->diagnostics = std::move(payload->diagnostics);
+        for (const GS2Diagnostic& diagnostic : diagnostics->diagnostics) {
+            const std::size_t startByte = std::min(diagnostic.start, diagnostics->source.size());
+            const std::size_t endByte = std::min(diagnostic.end, diagnostics->source.size());
+            const gint startOffset = static_cast<gint>(g_utf8_pointer_to_offset(diagnostics->source.c_str(), diagnostics->source.c_str() + startByte));
+            const gint endOffset = static_cast<gint>(g_utf8_pointer_to_offset(diagnostics->source.c_str(), diagnostics->source.c_str() + endByte));
+            GtkTextIter start;
+            GtkTextIter end;
+            gtk_text_buffer_get_iter_at_offset(buffer, &start, startOffset);
+            gtk_text_buffer_get_iter_at_offset(buffer, &end, std::max(startOffset + 1, endOffset));
+            GtkTextTag* tag = diagnostic.severity == GS2DiagnosticSeverity::Error ? diagnostics->errorTag : diagnostic.severity == GS2DiagnosticSeverity::Warning ? diagnostics->warningTag : diagnostics->infoTag;
+            gtk_text_buffer_apply_tag(buffer, tag, &start, &end);
+        }
+        return G_SOURCE_REMOVE;
+    }
+
     void runEditorDiagnostics(EditorDiagnosticsState* state) {
         EditorBulkInsertState* bulk = bulkInsertState(gtk_text_view_get_buffer(GTK_TEXT_VIEW(state->editor)));
         if (bulk != nullptr && bulk->active) return;
+        const unsigned int request = ++state->request;
         clearEditorDiagnostics(state);
         if (!scriptDiagnosticsEnabled) return;
+        if (state->running) return;
+        state->running = true;
         GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(state->editor));
         GtkTextIter bufferStart;
         GtkTextIter bufferEnd;
         gtk_text_buffer_get_bounds(buffer, &bufferStart, &bufferEnd);
         gchar* text = gtk_text_buffer_get_text(buffer, &bufferStart, &bufferEnd, false);
-        state->source = text;
+        std::string source = text == nullptr ? "" : text;
         g_free(text);
         std::vector<GS2ApiFunction> enabledApiFunctions;
         if (lspEnabled) for (const ApiDefinition& definition : apiDefinitions) enabledApiFunctions.push_back(gs2ApiFunction(definition.name, definition.params));
-        state->diagnostics = analyzeGS2(state->source, enabledApiFunctions, !lspEnabled || (!apiDefinitionsLoading && apiDefinitionsLoaded && !apiDefinitions.empty()));
-        for (const GS2Diagnostic& diagnostic : state->diagnostics) {
-            const std::size_t startByte = std::min(diagnostic.start, state->source.size());
-            const std::size_t endByte = std::min(diagnostic.end, state->source.size());
-            const gint startOffset = static_cast<gint>(g_utf8_pointer_to_offset(state->source.c_str(), state->source.c_str() + startByte));
-            const gint endOffset = static_cast<gint>(g_utf8_pointer_to_offset(state->source.c_str(), state->source.c_str() + endByte));
-            GtkTextIter start;
-            GtkTextIter end;
-            gtk_text_buffer_get_iter_at_offset(buffer, &start, startOffset);
-            gtk_text_buffer_get_iter_at_offset(buffer, &end, std::max(startOffset + 1, endOffset));
-            GtkTextTag* tag = diagnostic.severity == GS2DiagnosticSeverity::Error ? state->errorTag : diagnostic.severity == GS2DiagnosticSeverity::Warning ? state->warningTag : state->infoTag;
-            gtk_text_buffer_apply_tag(buffer, tag, &start, &end);
-        }
+        const bool reportUnknownFunctions = !lspEnabled || (!apiDefinitionsLoading && apiDefinitionsLoaded && !apiDefinitions.empty());
+        GtkWidget* editor = state->editor;
+        std::thread([editor, request, source = std::move(source), enabledApiFunctions = std::move(enabledApiFunctions), reportUnknownFunctions]() mutable {
+            auto* payload = new DiagnosticsPayload{editor, request, source, analyzeGS2(source, enabledApiFunctions, reportUnknownFunctions)};
+            g_idle_add_full(G_PRIORITY_LOW, applyEditorDiagnostics, payload, +[](gpointer data) { delete static_cast<DiagnosticsPayload*>(data); });
+        }).detach();
     }
 
     gboolean runScheduledEditorDiagnostics(gpointer data) {
@@ -153,6 +188,7 @@ namespace {
 
     void scheduleEditorDiagnostics(EditorDiagnosticsState* state) {
         if (state->timeout != 0) g_source_remove(state->timeout);
+        ++state->request;
         state->timeout = g_timeout_add(180, runScheduledEditorDiagnostics, state);
     }
 
@@ -675,7 +711,9 @@ namespace {
             if (position < json.size() && json[position] == ',') ++position;
         }
         }
-        std::sort(definitions.begin(), definitions.end(), [](const ApiDefinition& left, const ApiDefinition& right) { return left.name < right.name; });
+        for (ApiDefinition& definition : definitions) prepareCompletionDefinition(definition);
+        std::sort(definitions.begin(), definitions.end(), [](const ApiDefinition& left, const ApiDefinition& right) { return left.searchName < right.searchName; });
+        definitions.erase(std::unique(definitions.begin(), definitions.end(), [](const ApiDefinition& left, const ApiDefinition& right) { return left.searchName == right.searchName; }), definitions.end());
         return definitions;
     }
 
@@ -787,14 +825,16 @@ namespace {
     }
 
     gboolean applyCompletionText(gpointer data) {
-        const auto* payload = static_cast<CompletionPayload*>(data);
+        auto* payload = static_cast<CompletionPayload*>(data);
         if (payload->request == completionRequest) {
-            apiDefinitions = payload->definitions;
+            const bool definitionsLoaded = !payload->definitions.empty();
+            apiDefinitions = std::move(payload->definitions);
             for (const ApiDefinition& reference : referenceApiDefinitions()) {
-                const auto existing = std::find_if(apiDefinitions.begin(), apiDefinitions.end(), [&reference](const ApiDefinition& definition) { return lowerText(definition.name) == lowerText(reference.name); });
+                const auto existing = std::find_if(apiDefinitions.begin(), apiDefinitions.end(), [&reference](const ApiDefinition& definition) { return definition.searchName == reference.searchName; });
                 if (existing == apiDefinitions.end()) apiDefinitions.push_back(reference);
             }
-            apiDefinitionsLoaded = !payload->definitions.empty();
+            std::sort(apiDefinitions.begin(), apiDefinitions.end(), [](const ApiDefinition& left, const ApiDefinition& right) { return left.searchName < right.searchName; });
+            apiDefinitionsLoaded = definitionsLoaded;
             apiDefinitionsLoading = false;
             for (const auto& state : diagnosticsStates) if (scriptDiagnosticsEnabled) runEditorDiagnostics(state.get());
         }
@@ -820,6 +860,34 @@ namespace {
     std::string upperCase(std::string value) {
         std::transform(value.begin(), value.end(), value.begin(), [](unsigned char character) { return static_cast<char>(std::toupper(character)); });
         return value;
+    }
+
+    void prepareCompletionDefinition(ApiDefinition& definition) {
+        definition.searchName = lowerText(definition.name);
+        std::string signature = definition.name + '(';
+        definition.completionLabel = definition.name;
+        if (!definition.params.empty()) definition.completionLabel += '(';
+        for (std::size_t index = 0; index < definition.params.size(); ++index) {
+            if (index != 0) { signature += ", "; definition.completionLabel += ", "; }
+            signature += definition.params[index];
+            definition.completionLabel += definition.params[index];
+        }
+        signature += ')';
+        if (!definition.params.empty()) definition.completionLabel += ')';
+        if (definition.completionLabel.size() > 52) definition.completionLabel = definition.completionLabel.substr(0, 49) + "...";
+        definition.completionInfo.clear();
+        if (!definition.type.empty()) definition.completionInfo += definition.type;
+        if (!definition.scope.empty()) definition.completionInfo += (definition.completionInfo.empty() ? "" : "  ") + upperCase(definition.scope);
+        if (!definition.params.empty()) {
+            definition.completionInfo += (definition.completionInfo.empty() ? "" : "\n") + std::string("Parameters: ");
+            for (std::size_t index = 0; index < definition.params.size(); ++index) { if (index != 0) definition.completionInfo += ", "; definition.completionInfo += definition.params[index]; }
+        }
+        if (!definition.returns.empty()) definition.completionInfo += (definition.completionInfo.empty() ? "" : "\n") + std::string("Returns: ") + definition.returns;
+        definition.completionSummary = signature;
+        if (!definition.returns.empty()) definition.completionSummary += " - returns " + definition.returns;
+        if (!definition.description.empty()) definition.completionSummary += " - " + definition.description;
+        const std::string scope = lowerText(definition.scope);
+        definition.completionScope = scope == "script" ? "GLOBAL" : scope == "client" ? "CLIENTSIDE" : scope == "server" ? "SERVERSIDE" : upperCase(definition.scope);
     }
 
     bool identifierCharacter(gunichar character) { return g_unichar_isalnum(character) || character == '_' || character == '$'; }
@@ -854,15 +922,10 @@ namespace {
         return quote != 0;
     }
 
-    std::vector<std::string> localIdentifiers(GtkWidget* editor) {
-        GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(editor));
-        GtkTextIter start;
-        GtkTextIter end;
-        gtk_text_buffer_get_bounds(buffer, &start, &end);
-        gchar* text = gtk_text_buffer_get_text(buffer, &start, &end, false);
+    std::vector<std::string> localIdentifiers(const std::string& text) {
         std::set<std::string> seen;
         std::vector<std::string> names;
-        for (const char* cursor = text; cursor != nullptr && *cursor != '\0'; ) {
+        for (const char* cursor = text.c_str(); cursor != nullptr && *cursor != '\0'; ) {
             const gunichar character = g_utf8_get_char(cursor);
             if (!(g_unichar_isalpha(character) || character == '_' || character == '$')) { cursor = g_utf8_next_char(cursor); continue; }
             const char* wordStart = cursor;
@@ -875,18 +938,10 @@ namespace {
             const std::string name(wordStart, cursor - wordStart);
             if (seen.insert(lowerText(name)).second) names.push_back(name);
         }
-        g_free(text);
         return names;
     }
 
-    std::vector<ApiDefinition> localFunctionDefinitions(GtkWidget* editor) {
-        GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(editor));
-        GtkTextIter start;
-        GtkTextIter end;
-        gtk_text_buffer_get_bounds(buffer, &start, &end);
-        gchar* text = gtk_text_buffer_get_text(buffer, &start, &end, false);
-        std::string source = text == nullptr ? "" : text;
-        g_free(text);
+    std::vector<ApiDefinition> localFunctionDefinitions(const std::string& source) {
         std::vector<ApiDefinition> definitions;
         std::set<std::string> seen;
         std::size_t lineStart = 0;
@@ -918,6 +973,7 @@ namespace {
                         definition.type = "Function";
                         definition.scope = source.find("//#CLIENTSIDE") != std::string::npos && source.find("//#SERVERSIDE") == std::string::npos ? "clientside" : "script";
                         definition.description = "Function defined in the current script.";
+                        prepareCompletionDefinition(definition);
                         definitions.push_back(std::move(definition));
                     }
                 }
@@ -928,15 +984,58 @@ namespace {
         return definitions;
     }
 
-    const ApiDefinition* findDefinition(const std::string& name) {
-        const std::string lowerName = lowerText(name);
-        const auto found = std::find_if(apiDefinitions.begin(), apiDefinitions.end(), [&lowerName](const ApiDefinition& definition) { return lowerText(definition.name) == lowerName; });
-        return found == apiDefinitions.end() ? nullptr : &*found;
+    gboolean applyEditorSymbols(gpointer data) {
+        auto* payload = static_cast<CompletionSymbolsPayload*>(data);
+        const auto state = std::find_if(editorCompletionStates.begin(), editorCompletionStates.end(), [payload](const EditorCompletionState& value) { return value.editor == payload->editor; });
+        if (state == editorCompletionStates.end()) return G_SOURCE_REMOVE;
+        state->symbolsRunning = false;
+        if (state->symbolsRequest != payload->request) {
+            if (state->symbolsTimer == 0) scheduleEditorSymbols(state->editor);
+            return G_SOURCE_REMOVE;
+        }
+        state->localDefinitions = std::move(payload->definitions);
+        state->localIdentifiers = std::move(payload->identifiers);
+        return G_SOURCE_REMOVE;
     }
 
-    int completionMatchScore(const std::string& candidate, const std::string& needle) {
+    gboolean refreshEditorSymbols(gpointer data) {
+        GtkWidget* editor = GTK_WIDGET(data);
+        const auto state = std::find_if(editorCompletionStates.begin(), editorCompletionStates.end(), [editor](const EditorCompletionState& value) { return value.editor == editor; });
+        if (state == editorCompletionStates.end()) return G_SOURCE_REMOVE;
+        state->symbolsTimer = 0;
+        if (state->symbolsRunning) return G_SOURCE_REMOVE;
+        state->symbolsRunning = true;
+        GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(editor));
+        GtkTextIter start;
+        GtkTextIter end;
+        gtk_text_buffer_get_bounds(buffer, &start, &end);
+        gchar* text = gtk_text_buffer_get_text(buffer, &start, &end, false);
+        const std::string source = text == nullptr ? "" : text;
+        g_free(text);
+        const unsigned int request = state->symbolsRequest;
+        std::thread([editor, request, source] {
+            auto* payload = new CompletionSymbolsPayload{editor, request, localFunctionDefinitions(source), localIdentifiers(source)};
+            g_idle_add_full(G_PRIORITY_LOW, applyEditorSymbols, payload, +[](gpointer data) { delete static_cast<CompletionSymbolsPayload*>(data); });
+        }).detach();
+        return G_SOURCE_REMOVE;
+    }
+
+    void scheduleEditorSymbols(GtkWidget* editor) {
+        const auto state = std::find_if(editorCompletionStates.begin(), editorCompletionStates.end(), [editor](const EditorCompletionState& value) { return value.editor == editor; });
+        if (state == editorCompletionStates.end()) return;
+        if (state->symbolsTimer != 0) g_source_remove(state->symbolsTimer);
+        ++state->symbolsRequest;
+        state->symbolsTimer = g_timeout_add(180, refreshEditorSymbols, editor);
+    }
+
+    const ApiDefinition* findDefinition(const std::string& name) {
+        const std::string lowerName = lowerText(name);
+        const auto found = std::lower_bound(apiDefinitions.begin(), apiDefinitions.end(), lowerName, [](const ApiDefinition& definition, const std::string& value) { return definition.searchName < value; });
+        return found == apiDefinitions.end() || found->searchName != lowerName ? nullptr : &*found;
+    }
+
+    int completionMatchScoreLower(const std::string& lowerCandidate, const std::string& needle) {
         if (needle.empty()) return 0;
-        const std::string lowerCandidate = lowerText(candidate);
         if (lowerCandidate == needle) return 0;
         if (lowerCandidate.rfind(needle, 0) == 0) return 10;
         const std::size_t position = lowerCandidate.find(needle);
@@ -951,6 +1050,8 @@ namespace {
         }
         return 100 + gaps;
     }
+
+    int completionMatchScore(const std::string& candidate, const std::string& needle) { return completionMatchScoreLower(lowerText(candidate), needle); }
 
     GdkPixbuf* completionIcon(const std::string& type) {
         const std::string lowerType = lowerText(type);
@@ -1012,7 +1113,26 @@ namespace {
         return nullptr;
     }
 
-    struct CompletionPopupClampRequest { GtkSourceCompletion* completion; unsigned int attempts; };
+    GdkPixbuf* cachedCompletionIcon(const std::string& type) {
+        const auto cached = completionIconCache.find(lowerText(type));
+        return cached == completionIconCache.end() ? nullptr : GDK_PIXBUF(g_object_ref(cached->second));
+    }
+
+    gboolean warmCompletionIcons(gpointer) {
+        static const char* types[] = {"function", "class", "property", "player", "identifier"};
+        if (completionIconWarmupIndex >= G_N_ELEMENTS(types)) { completionIconWarmupSource = 0; return G_SOURCE_REMOVE; }
+        GdkPixbuf* icon = completionIcon(types[completionIconWarmupIndex++]);
+        if (icon != nullptr) g_object_unref(icon);
+        return G_SOURCE_CONTINUE;
+    }
+
+    void scheduleCompletionIconWarmup() {
+        if (completionIconWarmupSource != 0) return;
+        completionIconWarmupIndex = 0;
+        completionIconWarmupSource = g_idle_add_full(G_PRIORITY_LOW, warmCompletionIcons, nullptr, nullptr);
+    }
+
+    struct CompletionPopupClampRequest { GtkSourceCompletion* completion; unsigned int attempts; guint source; };
 
     GtkWidget* completionPopupTreeView(GtkWidget* widget) {
         if (widget == nullptr) return nullptr;
@@ -1036,6 +1156,25 @@ namespace {
             if (proposal != nullptr) return proposal;
         }
         return nullptr;
+    }
+
+    GtkWidget* completionPopupProposalTreeView(GtkWidget* widget) {
+        if (widget == nullptr) return nullptr;
+        if (GTK_IS_TREE_VIEW(widget)) {
+            GtkTreeModel* model = gtk_tree_view_get_model(GTK_TREE_VIEW(widget));
+            GtkTreeIter iter;
+            if (model != nullptr && gtk_tree_model_get_iter_first(model, &iter)) for (int row = 0; row < 32; ++row) {
+                if (completionProposalAt(model, &iter) != nullptr) return widget;
+                if (!gtk_tree_model_iter_next(model, &iter)) break;
+            }
+            return nullptr;
+        }
+        if (!GTK_IS_CONTAINER(widget)) return nullptr;
+        GtkWidget* found = nullptr;
+        GList* children = gtk_container_get_children(GTK_CONTAINER(widget));
+        for (GList* iterator = children; iterator != nullptr && found == nullptr; iterator = iterator->next) found = completionPopupProposalTreeView(GTK_WIDGET(iterator->data));
+        g_list_free(children);
+        return found;
     }
 
     GtkWidget* completionDetailsButton(GtkWidget* widget) {
@@ -1152,6 +1291,8 @@ namespace {
         gtk_label_set_xalign(GTK_LABEL(text), 0.0F);
         gtk_label_set_ellipsize(GTK_LABEL(text), PANGO_ELLIPSIZE_END);
         gtk_label_set_single_line_mode(GTK_LABEL(text), true);
+        gtk_label_set_max_width_chars(GTK_LABEL(text), 30);
+        gtk_widget_set_size_request(preview, completionPopupMaxWidth - 16, -1);
         gtk_widget_set_hexpand(preview, true);
         gtk_widget_set_hexpand(text, true);
         gtk_box_pack_start(GTK_BOX(preview), kind, false, false, 0);
@@ -1183,10 +1324,15 @@ namespace {
         if (widget == nullptr) return;
         if (GTK_IS_SCROLLED_WINDOW(widget)) {
             gtk_scrolled_window_set_max_content_width(GTK_SCROLLED_WINDOW(widget), completionPopupMaxWidth);
+            gtk_scrolled_window_set_min_content_width(GTK_SCROLLED_WINDOW(widget), completionPopupMaxWidth - 20);
             gtk_scrolled_window_set_propagate_natural_width(GTK_SCROLLED_WINDOW(widget), false);
+            gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(widget), GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
+            gtk_widget_set_size_request(widget, completionPopupMaxWidth - 20, -1);
+            gtk_widget_set_hexpand(widget, false);
         }
         if (GTK_IS_TREE_VIEW(widget)) {
             GtkTreeView* tree = GTK_TREE_VIEW(widget);
+            gtk_widget_set_size_request(widget, completionPopupMaxWidth - 20, -1);
             GList* columns = gtk_tree_view_get_columns(tree);
             struct TextRenderer { GtkTreeViewColumn* column; GtkCellRenderer* renderer; };
             std::vector<TextRenderer> textRenderers;
@@ -1196,7 +1342,7 @@ namespace {
                 for (GList* cell = cells; cell != nullptr; cell = cell->next) {
                     if (!GTK_IS_CELL_RENDERER_TEXT(cell->data)) continue;
                     textRenderers.push_back({column, GTK_CELL_RENDERER(cell->data)});
-                    g_object_set(cell->data, "ellipsize", PANGO_ELLIPSIZE_END, "ellipsize-set", TRUE, "max-width-chars", 46, nullptr);
+                    g_object_set(cell->data, "ellipsize", PANGO_ELLIPSIZE_END, "ellipsize-set", TRUE, "max-width-chars", 30, nullptr);
                 }
                 g_list_free(cells);
             }
@@ -1207,7 +1353,7 @@ namespace {
                 scopeRenderer = textRenderers.back().renderer;
                 if (g_object_get_data(G_OBJECT(scopeRenderer), "remote-completion-scope-renderer") == nullptr) {
                     gtk_tree_view_column_set_cell_data_func(scopeColumn, scopeRenderer, renderCompletionScope, nullptr, nullptr);
-                    gtk_cell_renderer_set_fixed_size(scopeRenderer, 96, -1);
+                    gtk_cell_renderer_set_fixed_size(scopeRenderer, 72, -1);
                     g_object_set(scopeRenderer, "xalign", 1.0F, "ellipsize", PANGO_ELLIPSIZE_END, "ellipsize-set", TRUE, "max-width-chars", 14, nullptr);
                     g_object_set_data(G_OBJECT(scopeRenderer), "remote-completion-scope-renderer", GINT_TO_POINTER(1));
                 }
@@ -1218,7 +1364,7 @@ namespace {
                 for (const TextRenderer& entry : textRenderers) if (entry.column == column) ++textCount;
                 const bool scopeOnly = scopeColumn == column && textCount == 1;
                 gtk_tree_view_column_set_sizing(column, GTK_TREE_VIEW_COLUMN_FIXED);
-                gtk_tree_view_column_set_fixed_width(column, textCount == 0 ? 24 : (scopeOnly ? 78 : (scopeColumn == column ? 78 : 218)));
+                gtk_tree_view_column_set_fixed_width(column, textCount == 0 ? 20 : (scopeOnly ? 70 : (scopeColumn == column ? 70 : 190)));
                 gtk_tree_view_column_set_expand(column, false);
             }
             g_list_free(columns);
@@ -1239,11 +1385,13 @@ namespace {
         for (GList* iterator = windows; iterator != nullptr; iterator = iterator->next) {
             GtkWindow* window = GTK_WINDOW(iterator->data);
             if (!GTK_IS_WINDOW(window)) continue;
+            if (window == owner) continue;
             const gchar* typeName = G_OBJECT_TYPE_NAME(window);
             GtkWindow* transient = gtk_window_get_transient_for(window);
             const bool namedCompletion = typeName != nullptr && (g_str_has_prefix(typeName, "GtkSourceCompletionWindow") || g_strrstr(typeName, "Completion") != nullptr);
-            const bool attachedCompletion = owner != nullptr && window != owner && transient == owner && completionPopupTreeView(GTK_WIDGET(window)) != nullptr;
-            if (!namedCompletion && !attachedCompletion) continue;
+            const bool attachedCompletion = owner != nullptr && transient == owner;
+            if (!namedCompletion && !attachedCompletion && !gtk_widget_get_visible(GTK_WIDGET(window))) continue;
+            if (completionPopupTreeView(GTK_WIDGET(window)) == nullptr) continue;
             if (attachedCompletion) { fallback = window; break; }
             if (gtk_widget_get_visible(GTK_WIDGET(window))) fallback = fallback == nullptr ? window : fallback;
         }
@@ -1269,12 +1417,15 @@ namespace {
                 gint x = 0;
                 gint y = 0;
                 gtk_window_get_position(popup, &x, &y);
-                x = std::clamp(x, workarea.x, std::max(workarea.x, workarea.x + workarea.width - width));
-                y = std::clamp(y, workarea.y, std::max(workarea.y, workarea.y + workarea.height - height));
-                gtk_window_move(popup, x, y);
+                const gint targetX = std::clamp(x, workarea.x, std::max(workarea.x, workarea.x + workarea.width - width));
+                const gint targetY = std::clamp(y, workarea.y, std::max(workarea.y, workarea.y + workarea.height - height));
+                if (targetX != x || targetY != y) gtk_window_move(popup, targetX, targetY);
             }
         }
-        gtk_window_resize(popup, width, height);
+        gint currentWidth = 0;
+        gint currentHeight = 0;
+        gtk_window_get_size(popup, &currentWidth, &currentHeight);
+        if (currentWidth != width || currentHeight != height) gtk_window_resize(popup, width, height);
         g_object_set_data(G_OBJECT(popup), "remote-completion-resizing", nullptr);
     }
 
@@ -1287,6 +1438,13 @@ namespace {
         gtk_window_set_geometry_hints(popup, nullptr, &geometry, static_cast<GdkWindowHints>(GDK_HINT_MIN_SIZE | GDK_HINT_MAX_SIZE));
         gtk_window_set_resizable(popup, false);
         gtk_widget_set_size_request(GTK_WIDGET(popup), completionPopupMinWidth, -1);
+        if (GTK_IS_BIN(popup)) {
+            GtkWidget* child = gtk_bin_get_child(GTK_BIN(popup));
+            if (child != nullptr) {
+                gtk_widget_set_size_request(child, completionPopupMaxWidth - 16, -1);
+                gtk_widget_set_hexpand(child, false);
+            }
+        }
         g_signal_connect(popup, "size-allocate", G_CALLBACK(+[](GtkWidget* widget, GtkAllocation*, gpointer) {
             enforceCompletionPopupGeometry(GTK_WINDOW(widget));
         }), nullptr);
@@ -1307,13 +1465,21 @@ namespace {
     gboolean clampCompletionPopup(gpointer data) {
         CompletionPopupClampRequest* request = static_cast<CompletionPopupClampRequest*>(data);
         GtkWindow* popup = completionPopupWindow(request->completion);
-        if (popup == nullptr && request->attempts++ < 240) return G_SOURCE_CONTINUE;
+        if (popup == nullptr) return ++request->attempts < completionPopupClampAttempts ? G_SOURCE_CONTINUE : G_SOURCE_REMOVE;
         if (popup != nullptr) {
             gtk_style_context_add_class(gtk_widget_get_style_context(GTK_WIDGET(popup)), "remote-completion-popup");
             constrainCompletionPopupContents(GTK_WIDGET(popup));
             const bool previewInstalled = installCompletionPreview(GTK_WIDGET(popup));
+            constrainCompletionPopupContents(GTK_WIDGET(popup));
             installCompletionPopupGeometry(popup);
-            if (!previewInstalled && request->attempts++ < 240) return G_SOURCE_CONTINUE;
+            enforceCompletionPopupGeometry(popup);
+            if (!previewInstalled) return ++request->attempts < completionPopupClampAttempts ? G_SOURCE_CONTINUE : G_SOURCE_REMOVE;
+        }
+        GtkSourceCompletionInfo* infoWindow = gtk_source_completion_get_info_window(request->completion);
+        if (infoWindow != nullptr) {
+            constrainCompletionPopupContents(GTK_WIDGET(infoWindow));
+            installCompletionPopupGeometry(GTK_WINDOW(infoWindow));
+            enforceCompletionPopupGeometry(GTK_WINDOW(infoWindow));
         }
         GtkWidget* view = GTK_WIDGET(gtk_source_completion_get_view(request->completion));
         GtkWindow* owner = view != nullptr && GTK_IS_WINDOW(gtk_widget_get_toplevel(view)) ? GTK_WINDOW(gtk_widget_get_toplevel(view)) : nullptr;
@@ -1323,20 +1489,27 @@ namespace {
             const gchar* typeName = G_OBJECT_TYPE_NAME(window);
             GtkWindow* transient = gtk_window_get_transient_for(window);
             const bool namedCompletion = typeName != nullptr && g_strrstr(typeName, "Completion") != nullptr;
-            const bool attachedCompletion = owner != nullptr && window != owner && transient == owner && completionPopupTreeView(GTK_WIDGET(window)) != nullptr;
-            if ((namedCompletion || attachedCompletion) && window != owner) installCompletionPopupGeometry(window);
+            const bool attachedCompletion = owner != nullptr && window != owner && transient == owner;
+            if ((namedCompletion || attachedCompletion || gtk_widget_get_visible(GTK_WIDGET(window))) && window != owner && completionPopupTreeView(GTK_WIDGET(window)) != nullptr) {
+                constrainCompletionPopupContents(GTK_WIDGET(window));
+                installCompletionPopupGeometry(window);
+                enforceCompletionPopupGeometry(window);
+            }
         }
         g_list_free(windows);
-        return ++request->attempts < 240 ? G_SOURCE_CONTINUE : G_SOURCE_REMOVE;
+        return G_SOURCE_REMOVE;
     }
 
     void scheduleCompletionPopupClamp(GtkSourceCompletion* completion) {
-        CompletionPopupClampRequest* request = new CompletionPopupClampRequest{GTK_SOURCE_COMPLETION(g_object_ref(completion)), 0};
-        g_timeout_add_full(G_PRIORITY_DEFAULT, 16, clampCompletionPopup, request, [](gpointer data) {
+        if (completion == nullptr || g_object_get_data(G_OBJECT(completion), "remote-completion-clamp-source") != nullptr) return;
+        CompletionPopupClampRequest* request = new CompletionPopupClampRequest{GTK_SOURCE_COMPLETION(g_object_ref(completion)), 0, 0};
+        request->source = g_timeout_add_full(G_PRIORITY_DEFAULT, 16, clampCompletionPopup, request, [](gpointer data) {
             CompletionPopupClampRequest* request = static_cast<CompletionPopupClampRequest*>(data);
+            if (GPOINTER_TO_UINT(g_object_get_data(G_OBJECT(request->completion), "remote-completion-clamp-source")) == request->source) g_object_set_data(G_OBJECT(request->completion), "remote-completion-clamp-source", nullptr);
             g_object_unref(request->completion);
             delete request;
         });
+        g_object_set_data(G_OBJECT(completion), "remote-completion-clamp-source", GUINT_TO_POINTER(request->source));
     }
 
     void setCompletionPreview(GtkSourceCompletionItem* item, const char* kind, const std::string& description, const std::string& scope = {}) {
@@ -1352,7 +1525,8 @@ namespace {
         if (separator != std::string::npos) {
             if (const ApiDefinition* definition = findDefinition(name.substr(separator + 1))) { result = *definition; return true; }
         }
-        for (const ApiDefinition& definition : localFunctionDefinitions(editor)) if (lowerText(definition.name) == lowerName) { result = definition; return true; }
+        const auto state = std::find_if(editorCompletionStates.begin(), editorCompletionStates.end(), [editor](const EditorCompletionState& value) { return value.editor == editor; });
+        if (state != editorCompletionStates.end()) for (const ApiDefinition& definition : state->localDefinitions) if (definition.searchName == lowerName) { result = definition; return true; }
         return false;
     }
 
@@ -1490,42 +1664,45 @@ namespace {
         const std::size_t dot = completionContext.rfind('.');
         const std::string objectPrefix = dot == std::string::npos ? "" : completionContext.substr(0, dot + 1);
         if (prefix.size() < 2 && gtk_source_completion_context_get_activation(context) == GTK_SOURCE_COMPLETION_ACTIVATION_INTERACTIVE) { gtk_source_completion_context_add_proposals(context, provider, nullptr, true); return; }
-        std::set<std::string> seen;
         GList* proposals = nullptr;
-        const std::vector<ApiDefinition> localDefinitions = localFunctionDefinitions(remote->editor);
+        const std::vector<ApiDefinition>* localDefinitions = state == editorCompletionStates.end() ? nullptr : &state->localDefinitions;
         struct RankedDefinition { int score; const ApiDefinition* definition; };
         std::vector<RankedDefinition> rankedDefinitions;
-        auto rankDefinitions = [&rankedDefinitions, &seen, &prefix](const std::vector<ApiDefinition>& definitions) {
+        rankedDefinitions.reserve(completionMaxProposals);
+        const auto rankedDefinitionOrder = [](const RankedDefinition& left, const RankedDefinition& right) {
+            if (left.score != right.score) return left.score < right.score;
+            return left.definition->searchName < right.definition->searchName;
+        };
+        auto rankDefinition = [&rankedDefinitions, &rankedDefinitionOrder](const RankedDefinition& candidate) {
+            if (rankedDefinitions.size() < completionMaxProposals) { rankedDefinitions.push_back(candidate); return; }
+            const auto worst = std::max_element(rankedDefinitions.begin(), rankedDefinitions.end(), rankedDefinitionOrder);
+            if (rankedDefinitionOrder(candidate, *worst)) *worst = candidate;
+        };
+        auto rankDefinitions = [&prefix, &rankDefinition](const std::vector<ApiDefinition>& definitions) {
             for (const ApiDefinition& definition : definitions) {
-                if (!seen.insert(lowerText(definition.name)).second) continue;
-                const int score = completionMatchScore(definition.name, prefix);
-                if (score < 0) continue;
-                rankedDefinitions.push_back({score, &definition});
+                const int score = completionMatchScoreLower(definition.searchName, prefix);
+                if (score >= 0) rankDefinition({score, &definition});
             }
         };
         rankDefinitions(apiDefinitions);
-        rankDefinitions(localDefinitions);
-        const auto rankedDefinitionOrder = [](const RankedDefinition& left, const RankedDefinition& right) {
-            if (left.score != right.score) return left.score < right.score;
-            return lowerText(left.definition->name) < lowerText(right.definition->name);
-        };
-        const std::size_t rankedLimit = std::min(completionMaxProposals, rankedDefinitions.size());
-        if (rankedDefinitions.size() > rankedLimit) std::partial_sort(rankedDefinitions.begin(), rankedDefinitions.begin() + rankedLimit, rankedDefinitions.end(), rankedDefinitionOrder);
-        else std::sort(rankedDefinitions.begin(), rankedDefinitions.end(), rankedDefinitionOrder);
-        rankedDefinitions.resize(rankedLimit);
+        if (localDefinitions != nullptr) for (const ApiDefinition& definition : *localDefinitions) {
+            const auto existing = std::lower_bound(apiDefinitions.begin(), apiDefinitions.end(), definition.searchName, [](const ApiDefinition& candidate, const std::string& value) { return candidate.searchName < value; });
+            if (existing == apiDefinitions.end() || existing->searchName != definition.searchName) {
+                const int score = completionMatchScoreLower(definition.searchName, prefix);
+                if (score >= 0) rankDefinition({score, &definition});
+            }
+        }
+        std::sort(rankedDefinitions.begin(), rankedDefinitions.end(), rankedDefinitionOrder);
+        std::unordered_set<std::string> seen;
+        seen.reserve(completionMaxProposals * 2);
         std::size_t proposalCount = 0;
         for (const RankedDefinition& ranked : rankedDefinitions) {
             const ApiDefinition& definition = *ranked.definition;
-            std::string label = definition.name;
-            if (!definition.params.empty()) {
-                label += '(';
-                for (std::size_t index = 0; index < definition.params.size(); ++index) { if (index != 0) label += ", "; label += definition.params[index]; }
-                label += ')';
-            }
-            GdkPixbuf* icon = completionIcon(definition.type);
-            GtkSourceCompletionItem* item = gtk_source_completion_item_new(label.c_str(), definition.name.c_str(), icon, definitionInfo(definition).c_str());
+            seen.insert(definition.searchName);
+            GdkPixbuf* icon = cachedCompletionIcon(definition.type);
+            GtkSourceCompletionItem* item = gtk_source_completion_item_new(definition.completionLabel.c_str(), definition.name.c_str(), icon, definition.completionInfo.c_str());
             const std::string kind = definition.type.empty() ? "Function" : definition.type;
-            setCompletionPreview(item, kind.c_str(), completionSummary(definition), completionScopeLabel(definition));
+            setCompletionPreview(item, kind.c_str(), definition.completionSummary, definition.completionScope);
             if (icon != nullptr) g_object_unref(icon);
             proposals = g_list_prepend(proposals, item);
             ++proposalCount;
@@ -1551,7 +1728,7 @@ namespace {
                     if (!seen.insert("player:" + lowerAlias).second) continue;
                     const std::string label = alias + "  [" + kind + "]";
                     const std::string detail = "Online player" + (account.empty() ? std::string() : " — " + account);
-                    GdkPixbuf* icon = completionIcon("player");
+                    GdkPixbuf* icon = cachedCompletionIcon("player");
                     GtkSourceCompletionItem* item = gtk_source_completion_item_new(label.c_str(), account.empty() ? alias.c_str() : account.c_str(), icon, detail.c_str());
                     setCompletionPreview(item, "Player", detail);
                     if (icon != nullptr) g_object_unref(icon);
@@ -1560,7 +1737,7 @@ namespace {
                 }
             }
         }
-        if (proposalCount < completionMaxProposals) for (const std::string& name : localIdentifiers(remote->editor)) {
+        if (proposalCount < completionMaxProposals && state != editorCompletionStates.end()) for (const std::string& name : state->localIdentifiers) {
             const std::string lowerName = lowerText(name);
             std::string insertText = name;
             if (!objectPrefix.empty()) {
@@ -1568,7 +1745,7 @@ namespace {
                 insertText = name.substr(objectPrefix.size());
             }
             if (completionMatchScore(insertText, prefix) < 0 || !seen.insert(lowerText(insertText)).second) continue;
-            GdkPixbuf* icon = completionIcon("identifier");
+            GdkPixbuf* icon = cachedCompletionIcon("identifier");
             GtkSourceCompletionItem* item = gtk_source_completion_item_new(insertText.c_str(), insertText.c_str(), icon, "Current script identifier");
             setCompletionPreview(item, "Identifier", "Current script identifier");
             if (icon != nullptr) g_object_unref(icon);
@@ -2114,11 +2291,13 @@ void configureGScriptEditor(GtkWidget* editor, bool script) {
         gtk_widget_set_halign(signaturePopover, GTK_ALIGN_START);
         gtk_popover_set_constrain_to(GTK_POPOVER(signaturePopover), GTK_POPOVER_CONSTRAINT_WINDOW);
         editorCompletionStates.push_back({editor, provider, signaturePopover, signatureLabel, nullptr, false});
+        scheduleEditorSymbols(editor);
         g_signal_connect(editor, "destroy", G_CALLBACK(+[](GtkWidget* widget, gpointer) {
             const auto state = std::find_if(editorCompletionStates.begin(), editorCompletionStates.end(), [widget](const EditorCompletionState& value) { return value.editor == widget; });
             if (state != editorCompletionStates.end()) {
                 if (state->restoreTimer != 0) g_source_remove(state->restoreTimer);
                 if (state->signatureTimer != 0) g_source_remove(state->signatureTimer);
+                if (state->symbolsTimer != 0) g_source_remove(state->symbolsTimer);
                 GtkSourceCompletion* completion = gtk_source_view_get_completion(GTK_SOURCE_VIEW(widget));
                 gtk_source_completion_remove_provider(completion, GTK_SOURCE_COMPLETION_PROVIDER(state->provider), nullptr);
                 gtk_widget_destroy(state->signaturePopover);
@@ -2156,12 +2335,14 @@ void configureGScriptEditor(GtkWidget* editor, bool script) {
         scheduleCompletionPopupClamp(completion);
     }), editor);
     g_signal_connect(completion, "hide", G_CALLBACK(+[](GtkSourceCompletion*, gpointer data) { scheduleSignatureHint(GTK_WIDGET(data)); }), editor);
-    g_object_set(completion, "auto-complete-delay", 120, "show-headers", FALSE, nullptr);
+    g_object_set(completion, "auto-complete-delay", 180, "show-headers", FALSE, nullptr);
     if (lspEnabled) setCompletionProvider(editor, true);
+    scheduleCompletionIconWarmup();
     gtk_widget_set_has_tooltip(editor, true);
     g_signal_connect(editor, "query-tooltip", G_CALLBACK(editorQueryTooltip), nullptr);
     GtkTextBuffer* completionBuffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(editor));
     g_signal_connect(completionBuffer, "changed", G_CALLBACK(+[](GtkTextBuffer*, gpointer data) {
+        scheduleEditorSymbols(GTK_WIDGET(data));
         scheduleSignatureHint(GTK_WIDGET(data));
     }), editor);
     g_signal_connect(completionBuffer, "mark-set", G_CALLBACK(+[](GtkTextBuffer* buffer, GtkTextIter*, GtkTextMark* mark, gpointer data) {

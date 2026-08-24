@@ -1,5 +1,6 @@
 #include "TRemoteFrame.h"
 #include "TErrorWindow.h"
+#include "RemoteControlBuildDate.h"
 #include "TBackup.h"
 #include "TDebug.h"
 #ifdef _WIN32
@@ -283,18 +284,7 @@ GdkPixbuf* commandCompletionIcon(const char* command) {
     return result;
 }
 std::string remoteControlBuildDate() {
-    std::istringstream stream(REMOTE_CONTROL_BUILD_DATE);
-    std::string month;
-    int day = 0;
-    int year = 0;
-    stream >> month >> day >> year;
-    static const char* months[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
-    int monthNumber = 0;
-    for (int index = 0; index < 12; ++index) if (month == months[index]) { monthNumber = index + 1; break; }
-    if (monthNumber == 0 || day <= 0 || year <= 0) return REMOTE_CONTROL_BUILD_DATE;
-    std::ostringstream formatted;
-    formatted << year << '/' << std::setfill('0') << std::setw(2) << monthNumber << '/' << std::setw(2) << day;
-    return formatted.str();
+    return REMOTE_CONTROL_BUILD_DATE;
 }
 
 std::string remoteControlTitle(const std::string& server = {}, const std::string& players = {}, int syncProgress = -1) {
