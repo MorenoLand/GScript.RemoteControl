@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<style-scheme id="solarized" _name="Solarized Dark" version="1.0">
-  <author>Remote Control</author><_description>Solarized Dark inspired editor colors</_description>
-  <color name="background" value="#002b36"/><color name="foreground" value="#839496"/><color name="line" value="#073642"/>
-  <style name="text" foreground="foreground" background="background"/><style name="selection" background="#073642" foreground="#fdf6e3"/><style name="current-line" background="line"/><style name="line-numbers" foreground="#586e75" background="line"/>
-  <style name="def:comment" foreground="#586e75" italic="true"/><style name="def:keyword" foreground="#859900" bold="true"/><style name="def:type" foreground="#b58900"/><style name="def:function" foreground="#268bd2"/><style name="def:string" foreground="#2aa198"/><style name="def:constant" foreground="#d33682"/><style name="def:number" foreground="#d33682"/><style name="def:operator" foreground="#cb4b16"/><style name="def:preprocessor" foreground="#6c71c4"/>
-  <style name="Comment" foreground="#586e75"/><style name="String" foreground="#2aa198"/><style name="Decimal" foreground="#d33682"/><style name="Keyword" foreground="#859900" bold="true"/><style name="Others" foreground="#6c71c4"/><style name="Others 4" foreground="#b58900"/><style name="Others 5" foreground="#6c71c4"/><style name="Operators" foreground="#cb4b16"/><style name="Object Properties" foreground="#b58900"/><style name="Function" foreground="#268bd2"/>
-</style-scheme>
