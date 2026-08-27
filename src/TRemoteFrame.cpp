@@ -764,6 +764,7 @@ void TRemoteFrame::open(void* nextConnection, int serverIndex, const std::string
     awayStatusApplied = false;
     this->accountName = accountName;
     playerCommunityNames.clear();
+    nextNcConnectAttempt = 0;
     ncConnectionAttempted = false;
     ncManuallyDisconnected = false;
     rc_on_connected(connection, onConnected, this);
@@ -814,6 +815,8 @@ void TRemoteFrame::disconnect() {
     if (serverFlagsEditor != nullptr) serverFlagsEditor->setConnection(nullptr);
     if (folderConfigEditor != nullptr) folderConfigEditor->setConnection(nullptr);
     connection = nullptr;
+    nextNcConnectAttempt = 0;
+    ncConnectionAttempted = true;
     rc_disconnect(disconnectedConnection);
 }
 
@@ -1492,8 +1495,11 @@ gboolean TRemoteFrame::processEvents(gpointer data) {
                 frame->awayStatusApplied = true;
             }
         }
-        if (!frame->ncManuallyDisconnected && !frame->ncConnectionAttempted && rc_has_nc_server(frame->connection) != 0 && rc_is_nc_connected(frame->connection) == 0) {
+        const bool scheduledNcConnect = frame->nextNcConnectAttempt != 0 && g_get_monotonic_time() >= frame->nextNcConnectAttempt;
+        const bool automaticNcConnect = frame->nextNcConnectAttempt == 0 && !frame->ncConnectionAttempted;
+        if (!frame->ncManuallyDisconnected && (automaticNcConnect || scheduledNcConnect) && rc_has_nc_server(frame->connection) != 0 && rc_is_nc_connected(frame->connection) == 0) {
             frame->ncConnectionAttempted = true;
+            frame->nextNcConnectAttempt = 0;
             rc_connect_to_nc_server(frame->connection);
         }
         frame->updateNCUi(!frame->ncManuallyDisconnected && rc_is_nc_authenticated(frame->connection) != 0);
@@ -2557,12 +2563,29 @@ void TRemoteFrame::reconnectNPCServer() {
     updateNCUi(false);
     if (rc_is_nc_connected(connection) != 0) rc_disconnect_nc(connection);
     ncConnectionAttempted = true;
-    if (!rc_connect_to_nc_server(connection)) appendChat(rc_last_error(connection));
+    nextNcConnectAttempt = g_get_monotonic_time();
+    RCPlayer* players = nullptr;
+    const int playerCount = rc_get_players(connection, &players);
+    int npcServerId = -1;
+    for (int index = 0; index < playerCount; ++index) {
+        const char* account = players[index].account;
+        if (account != nullptr && g_ascii_strcasecmp(account, "(npcserver)") == 0) {
+            npcServerId = players[index].id;
+            break;
+        }
+    }
+    if (npcServerId < 0) return;
+    std::string query;
+    query.push_back(static_cast<char>((npcServerId >> 7) + 32));
+    query.push_back(static_cast<char>((npcServerId & 127) + 32));
+    query += "location";
+    if (rc_send_raw_packet(connection, PLI_NPCSERVERQUERY, query.data(), static_cast<int>(query.size()))) nextNcConnectAttempt = g_get_monotonic_time() + 500 * 1000;
 }
 
 void TRemoteFrame::disconnectNPCServer() {
     if (connection == nullptr) return;
     ncManuallyDisconnected = true;
+    nextNcConnectAttempt = 0;
     if (!rc_disconnect_nc(connection)) appendChat(rc_last_error(connection));
     ncConnectionAttempted = true;
     updateNCUi(false);
@@ -2571,6 +2594,7 @@ void TRemoteFrame::disconnectNPCServer() {
 void TRemoteFrame::reconnectServer() {
     if (connection == nullptr || currentServerIndex < 0) return;
     suppressReconnectDisconnect = rc_is_connected(connection) != 0;
+    nextNcConnectAttempt = 0;
     ncConnectionAttempted = false;
     if (!rc_connect_to_server(connection, currentServerIndex)) {
         suppressReconnectDisconnect = false;
