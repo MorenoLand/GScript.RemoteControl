@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<style-scheme id="catppuccin" _name="Catppuccin Mocha" version="1.0">
+  <author>Remote Control</author><_description>Catppuccin Mocha inspired editor colors</_description>
+  <color name="background" value="#1e1e2e"/><color name="foreground" value="#cdd6f4"/><color name="line" value="#181825"/>
+  <style name="text" foreground="foreground" background="background"/><style name="selection" background="#45475a" foreground="#f5e0e6"/><style name="current-line" background="line"/><style name="line-numbers" foreground="#7f849c" background="line"/>
+  <style name="def:comment" foreground="#7f849c" italic="true"/><style name="def:keyword" foreground="#cba6f7" bold="true"/><style name="def:type" foreground="#89dceb"/><style name="def:function" foreground="#89b4fa"/><style name="def:string" foreground="#a6e3a1"/><style name="def:constant" foreground="#fab387"/><style name="def:number" foreground="#fab387"/><style name="def:operator" foreground="#f38ba8"/><style name="def:preprocessor" foreground="#f5c2e7"/>
+  <style name="Comment" foreground="#7f849c"/><style name="String" foreground="#a6e3a1"/><style name="Decimal" foreground="#fab387"/><style name="Keyword" foreground="#cba6f7" bold="true"/><style name="Others" foreground="#89dceb"/><style name="Others 4" foreground="#f9e2af"/><style name="Others 5" foreground="#f5c2e7"/><style name="Operators" foreground="#f38ba8"/><style name="Object Properties" foreground="#94e2d5"/><style name="Function" foreground="#89b4fa"/>
+</style-scheme>

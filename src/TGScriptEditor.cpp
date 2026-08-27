@@ -1392,6 +1392,7 @@ namespace {
             const bool attachedCompletion = owner != nullptr && transient == owner;
             if (!namedCompletion && !attachedCompletion && !gtk_widget_get_visible(GTK_WIDGET(window))) continue;
             if (completionPopupTreeView(GTK_WIDGET(window)) == nullptr) continue;
+            if (!namedCompletion && !attachedCompletion && completionPopupProposalTreeView(GTK_WIDGET(window)) == nullptr) continue;
             if (attachedCompletion) { fallback = window; break; }
             if (gtk_widget_get_visible(GTK_WIDGET(window))) fallback = fallback == nullptr ? window : fallback;
         }
@@ -1490,7 +1491,7 @@ namespace {
             GtkWindow* transient = gtk_window_get_transient_for(window);
             const bool namedCompletion = typeName != nullptr && g_strrstr(typeName, "Completion") != nullptr;
             const bool attachedCompletion = owner != nullptr && window != owner && transient == owner;
-            if ((namedCompletion || attachedCompletion || gtk_widget_get_visible(GTK_WIDGET(window))) && window != owner && completionPopupTreeView(GTK_WIDGET(window)) != nullptr) {
+            if ((namedCompletion || attachedCompletion || (gtk_widget_get_visible(GTK_WIDGET(window)) && completionPopupProposalTreeView(GTK_WIDGET(window)) != nullptr)) && window != owner && completionPopupTreeView(GTK_WIDGET(window)) != nullptr) {
                 constrainCompletionPopupContents(GTK_WIDGET(window));
                 installCompletionPopupGeometry(window);
                 enforceCompletionPopupGeometry(window);

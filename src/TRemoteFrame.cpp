@@ -767,6 +767,7 @@ void TRemoteFrame::open(void* nextConnection, int serverIndex, const std::string
     nextNcConnectAttempt = 0;
     ncConnectionAttempted = false;
     ncManuallyDisconnected = false;
+    ncWasAuthenticated = false;
     rc_on_connected(connection, onConnected, this);
     rc_on_disconnected_ex(connection, onDisconnectedEx, this);
     rc_on_message(connection, onMessage, this);
@@ -817,6 +818,7 @@ void TRemoteFrame::disconnect() {
     connection = nullptr;
     nextNcConnectAttempt = 0;
     ncConnectionAttempted = true;
+    ncWasAuthenticated = false;
     rc_disconnect(disconnectedConnection);
 }
 
@@ -1495,14 +1497,21 @@ gboolean TRemoteFrame::processEvents(gpointer data) {
                 frame->awayStatusApplied = true;
             }
         }
-        const bool scheduledNcConnect = frame->nextNcConnectAttempt != 0 && g_get_monotonic_time() >= frame->nextNcConnectAttempt;
+        const gint64 now = g_get_monotonic_time();
+        const bool ncAuthenticated = rc_is_nc_authenticated(frame->connection) != 0;
+        if (ncAuthenticated) frame->ncWasAuthenticated = true;
+        else if (frame->ncWasAuthenticated) {
+            frame->ncWasAuthenticated = false;
+            if (!frame->ncManuallyDisconnected) frame->nextNcConnectAttempt = now + G_USEC_PER_SEC;
+        }
+        const bool scheduledNcConnect = frame->nextNcConnectAttempt != 0 && now >= frame->nextNcConnectAttempt;
         const bool automaticNcConnect = frame->nextNcConnectAttempt == 0 && !frame->ncConnectionAttempted;
         if (!frame->ncManuallyDisconnected && (automaticNcConnect || scheduledNcConnect) && rc_has_nc_server(frame->connection) != 0 && rc_is_nc_connected(frame->connection) == 0) {
             frame->ncConnectionAttempted = true;
             frame->nextNcConnectAttempt = 0;
-            rc_connect_to_nc_server(frame->connection);
+            if (!rc_connect_to_nc_server(frame->connection)) frame->nextNcConnectAttempt = now + 5 * G_USEC_PER_SEC;
         }
-        frame->updateNCUi(!frame->ncManuallyDisconnected && rc_is_nc_authenticated(frame->connection) != 0);
+        frame->updateNCUi(!frame->ncManuallyDisconnected && ncAuthenticated);
         if (frame->playersLabel != nullptr) {
             RCPlayer* players = nullptr;
             const int count = rc_get_players(frame->connection, &players);
@@ -2560,6 +2569,7 @@ void TRemoteFrame::reconnectNPCServer() {
     if (syncManager != nullptr) syncManager->setConnection(nullptr, serverName);
     if (connection == nullptr) return;
     ncManuallyDisconnected = false;
+    ncWasAuthenticated = false;
     updateNCUi(false);
     if (rc_is_nc_connected(connection) != 0) rc_disconnect_nc(connection);
     ncConnectionAttempted = true;
@@ -2586,6 +2596,7 @@ void TRemoteFrame::disconnectNPCServer() {
     if (connection == nullptr) return;
     ncManuallyDisconnected = true;
     nextNcConnectAttempt = 0;
+    ncWasAuthenticated = false;
     if (!rc_disconnect_nc(connection)) appendChat(rc_last_error(connection));
     ncConnectionAttempted = true;
     updateNCUi(false);
@@ -2596,6 +2607,7 @@ void TRemoteFrame::reconnectServer() {
     suppressReconnectDisconnect = rc_is_connected(connection) != 0;
     nextNcConnectAttempt = 0;
     ncConnectionAttempted = false;
+    ncWasAuthenticated = false;
     if (!rc_connect_to_server(connection, currentServerIndex)) {
         suppressReconnectDisconnect = false;
         appendChat(rc_last_error(connection));

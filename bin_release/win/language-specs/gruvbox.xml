@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<style-scheme id="gruvbox" _name="Gruvbox" version="1.0">
+  <author>Remote Control</author><_description>Gruvbox Dark inspired editor colors</_description>
+  <color name="background" value="#282828"/><color name="foreground" value="#ebdbb2"/><color name="line" value="#1d2021"/>
+  <style name="text" foreground="foreground" background="background"/><style name="selection" background="#504945" foreground="#fbf1c7"/><style name="current-line" background="line"/><style name="line-numbers" foreground="#928374" background="line"/>
+  <style name="def:comment" foreground="#928374" italic="true"/><style name="def:keyword" foreground="#fb4934" bold="true"/><style name="def:type" foreground="#8ec07c"/><style name="def:function" foreground="#fabd2f"/><style name="def:string" foreground="#b8bb26"/><style name="def:constant" foreground="#d3869b"/><style name="def:number" foreground="#d3869b"/><style name="def:operator" foreground="#fe8019"/><style name="def:preprocessor" foreground="#8ec07c"/>
+  <style name="Comment" foreground="#928374"/><style name="String" foreground="#b8bb26"/><style name="Decimal" foreground="#d3869b"/><style name="Keyword" foreground="#fb4934" bold="true"/><style name="Others" foreground="#8ec07c"/><style name="Others 4" foreground="#fabd2f"/><style name="Others 5" foreground="#8ec07c"/><style name="Operators" foreground="#fe8019"/><style name="Object Properties" foreground="#83a598"/><style name="Function" foreground="#fabd2f"/>
+</style-scheme>

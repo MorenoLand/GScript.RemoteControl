@@ -198,6 +198,7 @@ private:
     gint64 nextNcConnectAttempt = 0;
     bool ncConnectionAttempted = false;
     bool ncManuallyDisconnected = false;
+    bool ncWasAuthenticated = false;
     bool disconnectHandled = false;
     gint64 lastActivity = 0;
     bool awayNicknameApplied = false;
