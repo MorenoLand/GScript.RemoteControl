@@ -83,7 +83,7 @@ add_test(NAME ExtensionsTests COMMAND ExtensionsTests)
 
 set(REMOTE_CONTROL_BUILD_DATE_HEADER "${CMAKE_CURRENT_BINARY_DIR}/generated/RemoteControlBuildDate.h")
 add_custom_target(RemoteControlBuildDate
-    COMMAND ${CMAKE_COMMAND} "-DOUTPUT=${REMOTE_CONTROL_BUILD_DATE_HEADER}" -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/UpdateBuildDate.cmake"
+    COMMAND ${CMAKE_COMMAND} "-DOUTPUT=${REMOTE_CONTROL_BUILD_DATE_HEADER}" "-DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}" -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/UpdateBuildDate.cmake"
 )
 add_executable(RemoteControl src/TMain.cpp src/TCrashLogger.cpp src/TMcpServer.cpp src/TMcpProtocol.cpp src/TBackup.cpp src/TExtensions.cpp src/TExternalEditor.cpp src/TGScriptEditor.cpp src/TGS2Diagnostics.cpp src/TRCAccounts.cpp src/TEncryption.cpp src/TAccountPresentation.cpp src/TScriptEditorTracking.cpp src/TAccountsWindow.cpp src/TFileBrowser.cpp src/TFileBrowserTree.cpp src/TMng.cpp src/TListServerProfiles.cpp src/TLocalBanWindow.cpp src/TNPCList.cpp src/TLevelList.cpp src/TOptionsWindow.cpp src/TPlayerList.cpp src/TScriptList.cpp src/TSyncManager.cpp src/TRemoteFrame.cpp src/TServerList.cpp src/TServerPlayer.cpp src/TServerTextEditor.cpp src/TToallsWindow.cpp src/TStartFrame.cpp)
 add_dependencies(RemoteControl RemoteControlBuildDate)
