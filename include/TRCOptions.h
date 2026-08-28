@@ -31,6 +31,7 @@ namespace RC {
         bool syncenabled = false;
         bool levellistenabled = true;
         bool usenewbantype = true;
+        bool autoreconnectnc = true;
         bool dontsavepassword = false;
         bool graphicalmenu = true;
         bool darkmode = true;
