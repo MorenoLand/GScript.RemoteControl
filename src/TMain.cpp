@@ -44,6 +44,15 @@ void registerBundledFonts(const std::filesystem::path& applicationDirectory) {
 #ifdef _WIN32
     AddFontResourceExW(font.c_str(), FR_PRIVATE, nullptr);
     SendMessageW(HWND_BROADCAST, WM_FONTCHANGE, 0, 0);
+    const char* userCache = g_get_user_cache_dir();
+    const std::filesystem::path fontconfigRoot = userCache != nullptr && *userCache != '\0' ? std::filesystem::path(userCache) / "GScriptRC" : applicationDirectory / "cache";
+    const std::filesystem::path fontconfigCache = fontconfigRoot / "fontconfig";
+    std::error_code cacheError;
+    std::filesystem::create_directories(fontconfigCache, cacheError);
+    if (!cacheError) {
+        const auto fontconfigRootString = fontconfigRoot.u8string();
+        g_setenv("XDG_CACHE_HOME", reinterpret_cast<const char*>(fontconfigRootString.c_str()), TRUE);
+    }
     FcConfig* config = FcConfigCreate();
     wchar_t windowsPath[MAX_PATH] = {};
     if (config != nullptr && GetWindowsDirectoryW(windowsPath, MAX_PATH) != 0) {
