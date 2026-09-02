@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <cctype>
 #include <map>
-#include <regex>
 #include <set>
 #include <utility>
 
@@ -47,7 +46,32 @@ namespace {
         return result;
     }
 
-    bool identifierCharacter(char character) { return std::isalnum(static_cast<unsigned char>(character)) != 0 || character == '_'; }
+    bool identifierStart(char character) { return (character >= 'A' && character <= 'Z') || (character >= 'a' && character <= 'z') || character == '_'; }
+    bool identifierCharacter(char character) { return identifierStart(character) || (character >= '0' && character <= '9'); }
+
+    struct Identifier { std::size_t start; std::size_t end; };
+
+    void skipWhitespace(const std::string& text, std::size_t& position) { while (position < text.size() && std::isspace(static_cast<unsigned char>(text[position])) != 0) ++position; }
+
+    bool readIdentifier(const std::string& text, std::size_t& position, Identifier& identifier) {
+        skipWhitespace(text, position);
+        if (position >= text.size() || !identifierStart(text[position])) return false;
+        identifier.start = position++;
+        while (position < text.size() && identifierCharacter(text[position])) ++position;
+        identifier.end = position;
+        return true;
+    }
+
+    std::vector<Identifier> collectIdentifiers(const std::string& text) {
+        std::vector<Identifier> identifiers;
+        for (std::size_t position = 0; position < text.size();) {
+            if (!identifierStart(text[position]) || (position > 0 && identifierCharacter(text[position - 1]))) { ++position; continue; }
+            Identifier identifier;
+            readIdentifier(text, position, identifier);
+            identifiers.push_back(identifier);
+        }
+        return identifiers;
+    }
 
     std::size_t lineEnd(const std::string& text, std::size_t start) {
         const std::size_t end = text.find('\n', start);
@@ -70,11 +94,12 @@ namespace {
 
     std::vector<Call> collectCalls(const std::string& masked) {
         std::vector<Call> calls;
-        const std::regex callExpression(R"(\b([A-Za-z_][A-Za-z0-9_]*)\s*\()");
-        for (std::sregex_iterator match(masked.begin(), masked.end(), callExpression), end; match != end; ++match) {
-            const std::size_t start = static_cast<std::size_t>(match->position(1));
+        for (const Identifier& identifier : collectIdentifiers(masked)) {
+            const std::size_t start = identifier.start;
             if (start > 0 && masked[start - 1] == '.') continue;
-            const std::size_t open = masked.find('(', start + match->length(1));
+            std::size_t open = identifier.end;
+            skipWhitespace(masked, open);
+            if (open >= masked.size() || masked[open] != '(') continue;
             int depth = 1;
             std::size_t close = open + 1;
             for (; close < masked.size() && depth > 0; ++close) {
@@ -88,13 +113,40 @@ namespace {
             const std::size_t tokenEnd = previous;
             while (previous > 0 && identifierCharacter(masked[previous - 1])) --previous;
             const bool constructor = tokenEnd > previous && lower(masked.substr(previous, tokenEnd - previous)) == "new";
-            calls.push_back({match->str(1), start, open, close, argumentCount(masked, open, close), constructor});
+            calls.push_back({masked.substr(identifier.start, identifier.end - identifier.start), start, open, close, argumentCount(masked, open, close), constructor});
         }
         return calls;
     }
 
     void add(std::vector<GS2Diagnostic>& diagnostics, GS2DiagnosticSeverity severity, std::size_t start, std::size_t end, std::string message) {
         diagnostics.push_back({severity, start, std::max(start + 1, end), std::move(message)});
+    }
+
+    std::size_t singleAssignmentPosition(const std::string& text, std::size_t start, std::size_t end) {
+        for (std::size_t position = start; position < end; ++position) {
+            if (text[position] != '=') continue;
+            const char previous = position == start ? '\0' : text[position - 1];
+            const char next = position + 1 < end ? text[position + 1] : '\0';
+            if (previous != '=' && previous != '!' && previous != '<' && previous != '>' && next != '=') return position;
+        }
+        return std::string::npos;
+    }
+
+    bool isDeclarationPrefix(const std::string& text, std::size_t start) {
+        const std::size_t lineBreak = start == 0 ? std::string::npos : text.rfind('\n', start - 1);
+        const std::size_t lineStart = lineBreak == std::string::npos ? 0 : lineBreak + 1;
+        std::size_t end = start;
+        while (end > lineStart && std::isspace(static_cast<unsigned char>(text[end - 1])) != 0) --end;
+        std::size_t wordStart = end;
+        while (wordStart > lineStart && identifierCharacter(text[wordStart - 1])) --wordStart;
+        const std::string word = text.substr(wordStart, end - wordStart);
+        return word == "const" || word == "var" || word == "temp";
+    }
+
+    std::size_t assignmentOperatorLength(const std::string& text, std::size_t position) {
+        if (position + 1 < text.size() && (text[position] == '+' || text[position] == '-' || text[position] == '*' || text[position] == '/' || text[position] == '%') && text[position + 1] == '=') return 2;
+        if (position < text.size() && text[position] == '=' && (position + 1 >= text.size() || text[position + 1] != '=')) return 1;
+        return 0;
     }
 }
 
@@ -142,31 +194,50 @@ std::vector<GS2Diagnostic> analyzeGS2(const std::string& source, const std::vect
     for (const std::string& event : events) knownEvents.insert(lower(event));
     std::set<std::string> declarations;
     std::set<std::string> variables = {"this", "thiso", "player", "level", "clientr", "serverr", "client", "server", "global", "params", "npc"};
-    const std::regex functionDeclaration(R"(\b(?:public\s+)?function\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(([^)]*)\))");
-    for (std::sregex_iterator match(masked.begin(), masked.end(), functionDeclaration), end; match != end; ++match) {
-        const std::string name = match->str(1);
-        declarations.insert(lower(name));
-        const std::string parameters = match->str(2);
-        const std::regex identifier(R"([A-Za-z_][A-Za-z0-9_]*)");
-        for (std::sregex_iterator parameter(parameters.begin(), parameters.end(), identifier), parameterEnd; parameter != parameterEnd; ++parameter) variables.insert(lower(parameter->str()));
+    const std::vector<Identifier> identifiers = collectIdentifiers(masked);
+    for (const Identifier& identifier : identifiers) {
+        if (masked.compare(identifier.start, identifier.end - identifier.start, "function") != 0) continue;
+        std::size_t position = identifier.end;
+        if (position >= masked.size() || std::isspace(static_cast<unsigned char>(masked[position])) == 0) continue;
+        Identifier name;
+        if (!readIdentifier(masked, position, name)) continue;
+        skipWhitespace(masked, position);
+        if (position >= masked.size() || masked[position] != '(') continue;
+        const std::size_t close = masked.find(')', position + 1);
+        if (close == std::string::npos) continue;
+        declarations.insert(lower(masked.substr(name.start, name.end - name.start)));
+        const std::string parameters = masked.substr(position + 1, close - position - 1);
+        for (const Identifier& parameter : collectIdentifiers(parameters)) variables.insert(lower(parameters.substr(parameter.start, parameter.end - parameter.start)));
     }
-    const std::regex publicFunction(R"(\bpublic\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(([^)]*)\))");
-    for (std::sregex_iterator match(masked.begin(), masked.end(), publicFunction), end; match != end; ++match) {
-        if (lower(match->str(1)) == "function") continue;
-        declarations.insert(lower(match->str(1)));
+    for (const Identifier& identifier : identifiers) {
+        if (masked.compare(identifier.start, identifier.end - identifier.start, "public") != 0) continue;
+        std::size_t position = identifier.end;
+        if (position >= masked.size() || std::isspace(static_cast<unsigned char>(masked[position])) == 0) continue;
+        Identifier name;
+        if (!readIdentifier(masked, position, name)) continue;
+        skipWhitespace(masked, position);
+        if (position >= masked.size() || masked[position] != '(') continue;
+        if (masked.compare(name.start, name.end - name.start, "function") == 0) continue;
+        declarations.insert(lower(masked.substr(name.start, name.end - name.start)));
     }
-    const std::regex variableDeclaration(R"(\b(?:const|var|temp)\s+([A-Za-z_][A-Za-z0-9_]*))");
-    for (std::sregex_iterator match(masked.begin(), masked.end(), variableDeclaration), end; match != end; ++match) variables.insert(lower(match->str(1)));
-
-    const std::regex conditional(R"(\b(?:if|elseif)\s*\(([^)]*)\))");
-    const std::regex singleAssignment(R"((^|[^=!<>])=([^=]|$))");
-    for (std::sregex_iterator match(masked.begin(), masked.end(), conditional), end; match != end; ++match) {
-        const std::string condition = match->str(1);
-        std::smatch assignment;
-        if (std::regex_search(condition, assignment, singleAssignment)) {
-            const std::size_t offset = static_cast<std::size_t>(match->position(1) + assignment.position() + assignment.length(1));
-            add(diagnostics, GS2DiagnosticSeverity::Warning, offset, offset + 1, "Assignment inside condition; use == if comparison was intended");
-        }
+    for (const Identifier& identifier : identifiers) {
+        const std::string keyword = masked.substr(identifier.start, identifier.end - identifier.start);
+        if (keyword != "const" && keyword != "var" && keyword != "temp") continue;
+        std::size_t position = identifier.end;
+        if (position >= masked.size() || std::isspace(static_cast<unsigned char>(masked[position])) == 0) continue;
+        Identifier name;
+        if (readIdentifier(masked, position, name)) variables.insert(lower(masked.substr(name.start, name.end - name.start)));
+    }
+    for (const Identifier& identifier : identifiers) {
+        const std::string keyword = masked.substr(identifier.start, identifier.end - identifier.start);
+        if (keyword != "if" && keyword != "elseif") continue;
+        std::size_t position = identifier.end;
+        skipWhitespace(masked, position);
+        if (position >= masked.size() || masked[position] != '(') continue;
+        const std::size_t close = masked.find(')', position + 1);
+        if (close == std::string::npos) continue;
+        const std::size_t assignment = singleAssignmentPosition(masked, position + 1, close);
+        if (assignment != std::string::npos) add(diagnostics, GS2DiagnosticSeverity::Warning, assignment, assignment + 1, "Assignment inside condition; use == if comparison was intended");
     }
 
     std::map<std::string, FunctionSignature> signatures = {
@@ -187,8 +258,14 @@ std::vector<GS2Diagnostic> analyzeGS2(const std::string& source, const std::vect
         if (name == "join") {
             std::string className;
             const std::string arguments = source.substr(call.open + 1, call.close - call.open - 1);
-            std::smatch classMatch;
-            if (std::regex_search(arguments, classMatch, std::regex(R"(^\s*["']([^"']+)["'])"))) className = " '" + classMatch.str(1) + "'";
+            std::size_t position = 0;
+            skipWhitespace(arguments, position);
+            if (position < arguments.size() && (arguments[position] == '"' || arguments[position] == '\'')) {
+                const char quote = arguments[position++];
+                const std::size_t start = position;
+                while (position < arguments.size() && arguments[position] != quote && arguments[position] != '"' && arguments[position] != '\'') ++position;
+                if (position < arguments.size() && arguments[position] == quote && position > start) className = " '" + arguments.substr(start, position - start) + "'";
+            }
             add(diagnostics, GS2DiagnosticSeverity::Info, call.start, call.start + call.name.size(), "join() imports members from class" + className + "; availability depends on the connected server");
         }
         const auto signature = signatures.find(name);
@@ -199,18 +276,23 @@ std::vector<GS2Diagnostic> analyzeGS2(const std::string& source, const std::vect
         if (!call.constructor && reportUnknownFunctions && signature == signatures.end() && knownCalls.count(name) == 0 && declarations.count(name) == 0 && knownEvents.count(name) == 0) add(diagnostics, GS2DiagnosticSeverity::Warning, call.start, call.start + call.name.size(), "Unknown function '" + call.name + "'");
     }
 
-    const std::regex assignment(R"(\b([A-Za-z_][A-Za-z0-9_]*)\s*(?:\+=|-=|\*=|\/=|%=|=(?!=)))");
-    for (std::sregex_iterator match(masked.begin(), masked.end(), assignment), end; match != end; ++match) {
-        const std::size_t start = static_cast<std::size_t>(match->position(1));
+    for (const Identifier& identifier : identifiers) {
+        std::size_t operatorPosition = identifier.end;
+        skipWhitespace(masked, operatorPosition);
+        if (assignmentOperatorLength(masked, operatorPosition) == 0) continue;
+        const std::size_t start = identifier.start;
         if (start > 0 && (masked[start - 1] == '.' || masked[start - 1] == '#')) continue;
-        const std::string name = lower(match->str(1));
+        const std::string name = lower(masked.substr(identifier.start, identifier.end - identifier.start));
         const std::size_t lineStart = masked.rfind('\n', start) == std::string::npos ? 0 : masked.rfind('\n', start) + 1;
-        const std::string prefix = masked.substr(lineStart, start - lineStart);
-        if (variables.count(name) == 0 && !std::regex_search(prefix, std::regex(R"(\b(?:const|var|temp)\s*$)"))) add(diagnostics, GS2DiagnosticSeverity::Info, start, start + match->length(1), "Likely implicit variable '" + match->str(1) + "'; declare it if local");
+        if (variables.count(name) == 0 && !isDeclarationPrefix(masked, start)) add(diagnostics, GS2DiagnosticSeverity::Info, start, identifier.end, "Likely implicit variable '" + masked.substr(identifier.start, identifier.end - identifier.start) + "'; declare it if local");
     }
 
-    const std::regex hashSyntax(R"(#[a-zA-Z]\s*\()");
-    for (std::sregex_iterator match(masked.begin(), masked.end(), hashSyntax), end; match != end; ++match) add(diagnostics, GS2DiagnosticSeverity::Warning, static_cast<std::size_t>(match->position()), static_cast<std::size_t>(match->position() + match->length()), "Deprecated GS1 hash-string syntax");
+    for (std::size_t position = 0; position + 1 < masked.size(); ++position) {
+        if (masked[position] != '#' || !((masked[position + 1] >= 'A' && masked[position + 1] <= 'Z') || (masked[position + 1] >= 'a' && masked[position + 1] <= 'z'))) continue;
+        std::size_t open = position + 2;
+        skipWhitespace(masked, open);
+        if (open < masked.size() && masked[open] == '(') add(diagnostics, GS2DiagnosticSeverity::Warning, position, open + 1, "Deprecated GS1 hash-string syntax");
+    }
     std::sort(diagnostics.begin(), diagnostics.end(), [](const GS2Diagnostic& left, const GS2Diagnostic& right) { return left.start < right.start || (left.start == right.start && left.severity > right.severity); });
     return diagnostics;
 }
