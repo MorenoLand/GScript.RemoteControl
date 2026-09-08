@@ -1053,7 +1053,8 @@ void TSyncManager::requestNextFileDownload() {
 
 void TSyncManager::onFileReceived(const char* path, const void* content, int length, void* data) {
     auto* manager = static_cast<TSyncManager*>(data);
-    if (path == nullptr || content == nullptr || length < 0 || manager->activeFileDownload.empty()) return;
+    if (path == nullptr || length < 0 || (content == nullptr && length != 0) || manager->activeFileDownload.empty()) return;
+    const void* safeContent = content == nullptr ? static_cast<const void*>("") : content;
     const std::string received = normalizeRemotePath(path);
     const std::string expected = normalizeRemotePath(manager->activeFileDownload);
     const bool matches = received == expected || expected.ends_with("/" + received) || received.ends_with("/" + expected);
@@ -1064,7 +1065,7 @@ void TSyncManager::onFileReceived(const char* path, const void* content, int len
         const std::filesystem::path localPath = manager->workspace / entry.relativePath;
         const std::string local = readFile(localPath);
         const std::size_t currentHash = contentHash(local);
-        const std::string server(static_cast<const char*>(content), static_cast<std::size_t>(length));
+        const std::string server(static_cast<const char*>(safeContent), static_cast<std::size_t>(length));
         if (entry.localHash == 0 || currentHash == entry.localHash) {
             if (local != server && writeFile(localPath, server)) ++manager->downloadedChanges;
             applyModifiedTime(localPath, entry.serverModified);

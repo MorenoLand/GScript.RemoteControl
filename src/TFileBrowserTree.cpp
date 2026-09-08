@@ -1931,7 +1931,7 @@ void TFileBrowserTree::onFileReceived(const char* path, const void* content, int
     const bool editPathMatches = pathMatches(browser->pendingEditPath, receivedPath);
     if (!browser->pendingEditPath.empty() && editPathMatches) {
         browser->pendingEditPath.clear();
-        browser->showTextEditor(path, content, length);
+        browser->showTextEditor(path, safeContent, length);
         return;
     }
     bool userDownload = false;
@@ -1954,7 +1954,7 @@ void TFileBrowserTree::onFileReceived(const char* path, const void* content, int
     gchar* basename = g_path_get_basename(path);
     gchar* destination = g_build_filename(destinationFolder.c_str(), basename, nullptr);
     g_free(basename);
-    if (!g_file_set_contents(destination, static_cast<const gchar*>(content), length, nullptr)) {
+    if (!g_file_set_contents(destination, static_cast<const gchar*>(safeContent), length, nullptr)) {
         g_free(destination);
         browser->appendLog("Could not save downloaded file.");
         return;
