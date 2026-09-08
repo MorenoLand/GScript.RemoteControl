@@ -498,7 +498,7 @@ struct TExtensionsManager::LaunchResult {
 #ifdef _WIN32
 struct TExtensionsManager::ReaderLine {
     std::shared_ptr<AsyncState> state;
-    std::size_t index = 0;
+    std::shared_ptr<ExtensionState::ReaderState> reader;
     bool protocol = false;
     std::string line;
 };
@@ -828,11 +828,11 @@ void TExtensionsManager::finishLaunch(std::size_t index, RC::ExtensionProcess pr
     g_io_channel_set_encoding(extensions[index].input, "UTF-8", nullptr);
     if (extensions[index].manifest.runtime != "gs2engine-stdio") sendRequest(index, "{\"type\":\"start\",\"protocol\":\"json-lines\"}");
 #ifdef _WIN32
-    const auto startReader = [this, index](gint fd, bool protocol) {
+    const auto startReader = [this](gint fd, bool protocol) {
         auto reader = std::make_shared<ExtensionState::ReaderState>();
         reader->fd = fd;
         const auto state = asyncState;
-        reader->worker = std::thread([reader, state, index, protocol]() {
+        reader->worker = std::thread([reader, state, protocol]() {
             std::string pending;
             char buffer[4096];
             while (!reader->stop.load()) {
@@ -841,11 +841,11 @@ void TExtensionsManager::finishLaunch(std::size_t index, RC::ExtensionProcess pr
                 pending.append(buffer, count);
                 std::size_t newline = 0;
                 while ((newline = pending.find('\n')) != std::string::npos) {
-                    g_main_context_invoke_full(nullptr, G_PRIORITY_DEFAULT, onReaderLine, new ReaderLine{state, index, protocol, pending.substr(0, newline)}, +[](gpointer data) { delete static_cast<ReaderLine*>(data); });
+                    g_main_context_invoke_full(nullptr, G_PRIORITY_DEFAULT, onReaderLine, new ReaderLine{state, reader, protocol, pending.substr(0, newline)}, +[](gpointer data) { delete static_cast<ReaderLine*>(data); });
                     pending.erase(0, newline + 1);
                 }
             }
-            if (!pending.empty() && !reader->stop.load()) g_main_context_invoke_full(nullptr, G_PRIORITY_DEFAULT, onReaderLine, new ReaderLine{state, index, protocol, pending}, +[](gpointer data) { delete static_cast<ReaderLine*>(data); });
+            if (!pending.empty() && !reader->stop.load()) g_main_context_invoke_full(nullptr, G_PRIORITY_DEFAULT, onReaderLine, new ReaderLine{state, reader, protocol, pending}, +[](gpointer data) { delete static_cast<ReaderLine*>(data); });
         });
         return reader;
     };
@@ -930,11 +930,14 @@ gboolean TExtensionsManager::onReaderLine(gpointer data) {
     auto* result = static_cast<ReaderLine*>(data);
     TExtensionsManager* manager = nullptr;
     { std::lock_guard<std::mutex> lock(result->state->mutex); manager = result->state->owner; }
-    if (manager == nullptr || result->index >= manager->extensions.size()) return G_SOURCE_REMOVE;
-    auto& extension = manager->extensions[result->index];
+    if (manager == nullptr) return G_SOURCE_REMOVE;
+    std::size_t index = 0;
+    while (index < manager->extensions.size() && manager->extensions[index].outputReader != result->reader && manager->extensions[index].errorReader != result->reader) ++index;
+    if (index >= manager->extensions.size()) return G_SOURCE_REMOVE;
+    auto& extension = manager->extensions[index];
     const std::string raw = trim(result->line);
     const std::string display = result->protocol ? extensionDisplayLine(raw) : raw;
-    if (result->protocol) manager->handleProtocolLine(result->index, raw);
+    if (result->protocol) manager->handleProtocolLine(index, raw);
     if (!display.empty()) { RC::appendExtensionLog(extension.log, display); if (extension.outputToTab && manager->outputCallback) manager->outputCallback(extension.manifest.name, display); }
     return G_SOURCE_REMOVE;
 }
