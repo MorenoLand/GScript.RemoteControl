@@ -2318,7 +2318,16 @@ void TFileBrowserTree::appendLog(const char* message) {
     GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(log));
     GtkTextIter end;
     gtk_text_buffer_get_end_iter(buffer, &end);
-    gtk_text_buffer_insert(buffer, &end, (std::string(message) + "\n").c_str(), -1);
+    gtk_text_buffer_insert(buffer, &end, (std::string(message == nullptr ? "" : message) + "\n").c_str(), -1);
+    while (gtk_text_buffer_get_line_count(buffer) > 5000 || gtk_text_buffer_get_char_count(buffer) > 2 * 1024 * 1024) {
+        const gint lineCount = gtk_text_buffer_get_line_count(buffer);
+        const gint characterCount = gtk_text_buffer_get_char_count(buffer);
+        GtkTextIter start;
+        gtk_text_buffer_get_start_iter(buffer, &start);
+        if (lineCount > 5000) gtk_text_buffer_get_iter_at_line(buffer, &end, lineCount - 5000);
+        else gtk_text_buffer_get_iter_at_offset(buffer, &end, characterCount - 2 * 1024 * 1024);
+        gtk_text_buffer_delete(buffer, &start, &end);
+    }
     gtk_text_buffer_get_end_iter(buffer, &end);
     gtk_text_view_scroll_to_iter(GTK_TEXT_VIEW(log), &end, 0.0, false, 0.0, 1.0);
 }
