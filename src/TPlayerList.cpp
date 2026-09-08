@@ -219,10 +219,19 @@ namespace {
         return output.str();
     }
 
+    std::string safePMHistoryFilename(const std::string& value) {
+        std::ostringstream result;
+        for (unsigned char character : value) {
+            if (std::isalnum(character) != 0) result << static_cast<char>(character);
+            else result << '%' << std::setw(3) << std::setfill('0') << static_cast<unsigned int>(character);
+        }
+        return result.str();
+    }
+
     void writePMHistory(const std::filesystem::path& directory, const std::string& account, const std::string& sender, const char* message) {
         if (account.empty() || sender.empty() || message == nullptr || *message == '\0') return;
         std::filesystem::create_directories(directory);
-        std::ofstream output(directory / (account + ".txt"), std::ios::app | std::ios::binary);
+        std::ofstream output(directory / (safePMHistoryFilename(account) + ".txt"), std::ios::app | std::ios::binary);
         output << sender << " (" << pmHistoryTimestamp() << "):\n" << stripPMLabel(message) << "\n\n";
     }
 
@@ -272,7 +281,7 @@ namespace {
         g_signal_connect(find, "clicked", G_CALLBACK(editorFind), field);
         addEditorFindShortcut(field);
         addGScriptEditorLineStatus(GTK_DIALOG(history), field);
-        const std::filesystem::path path = windowData->historyDirectory / (windowData->account + ".txt");
+        const std::filesystem::path path = windowData->historyDirectory / (safePMHistoryFilename(windowData->account) + ".txt");
         std::ifstream input(path, std::ios::binary);
         std::ostringstream content;
         content << input.rdbuf();
