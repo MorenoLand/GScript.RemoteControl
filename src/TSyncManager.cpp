@@ -88,6 +88,14 @@ std::string normalizeRemotePath(std::string path) {
     return path == "." ? "" : path;
 }
 
+bool isSafeRelativePath(const std::filesystem::path& path) {
+    if (path.empty() || path.is_absolute() || path.has_root_name() || path.has_root_directory()) return false;
+    const std::filesystem::path normalized = path.lexically_normal();
+    if (normalized.empty() || normalized == ".") return false;
+    for (const auto& part : normalized) if (part == "..") return false;
+    return true;
+}
+
 std::vector<std::string> splitFolders(const std::string& value) {
     std::vector<std::string> folders;
     std::string current;
@@ -361,6 +369,16 @@ void TSyncManager::loadManifest() {
         gchar* levelValue = g_key_file_get_string(file, group.c_str(), "level", nullptr);
         gchar* pathValue = g_key_file_get_string(file, group.c_str(), "path", nullptr);
         gchar* hashValue = g_key_file_get_string(file, group.c_str(), "localHash", nullptr);
+        if (pathValue == nullptr || !isSafeRelativePath(std::filesystem::path(pathValue))) {
+            g_free(typeValue);
+            g_free(nameValue);
+            g_free(imageValue);
+            g_free(npcTypeValue);
+            g_free(levelValue);
+            g_free(pathValue);
+            g_free(hashValue);
+            continue;
+        }
         if (typeValue != nullptr && std::string(typeValue) == "config" && nameValue != nullptr && pathValue != nullptr) {
             ConfigEntry entry;
             entry.type = nameValue;
@@ -379,8 +397,19 @@ void TSyncManager::loadManifest() {
             continue;
         }
         if (typeValue != nullptr && std::string(typeValue) == "file" && nameValue != nullptr && pathValue != nullptr) {
+            const std::string remotePath = normalizeRemotePath(nameValue);
+            if (remotePath.empty()) {
+                g_free(typeValue);
+                g_free(nameValue);
+                g_free(imageValue);
+                g_free(npcTypeValue);
+                g_free(levelValue);
+                g_free(pathValue);
+                g_free(hashValue);
+                continue;
+            }
             FileEntry entry;
-            entry.remotePath = nameValue;
+            entry.remotePath = remotePath;
             entry.relativePath = pathValue;
             entry.serverSize = g_key_file_get_integer(file, group.c_str(), "size", nullptr);
             entry.serverModified = g_key_file_get_integer(file, group.c_str(), "modified", nullptr);
