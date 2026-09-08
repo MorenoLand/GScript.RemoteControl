@@ -8,6 +8,7 @@
 
 namespace {
     enum AccountColumns { AccountNameColumn, AccountMarkupColumn, AccountDetailColumn, AccountIndexColumn, AccountColumnCount };
+    struct AccountManageHideRequest { TStartFrame* frame; std::shared_ptr<bool> alive; };
 
     std::vector<std::string> splitServers(const std::string& value) {
         std::vector<std::string> servers;
@@ -216,7 +217,7 @@ TStartFrame::TStartFrame(RC::RCOptions& options, const std::filesystem::path& ap
     requestedAccountIndex = -1;
 }
 
-TStartFrame::~TStartFrame() { if (window != nullptr) gtk_widget_destroy(window); }
+TStartFrame::~TStartFrame() { *callbackAlive = false; if (window != nullptr) gtk_widget_destroy(window); }
 void TStartFrame::show() { gtk_widget_show_all(window); gtk_window_present(GTK_WINDOW(window)); }
 void TStartFrame::toggleVisibility() { if (gtk_widget_get_visible(window)) gtk_widget_hide(window); else show(); }
 bool TStartFrame::mcpVisible() const { return gtk_widget_get_visible(window); }
@@ -290,34 +291,30 @@ gboolean TStartFrame::onAccountPointerEnter(GtkWidget*, GdkEventCrossing*, gpoin
 gboolean TStartFrame::onAccountPointerLeave(GtkWidget*, GdkEventCrossing* event, gpointer data) {
     TStartFrame* frame = static_cast<TStartFrame*>(data);
     if (event->detail != GDK_NOTIFY_INFERIOR) frame->accountHovered = false;
-    g_idle_add(+[](gpointer value) -> gboolean {
-        TStartFrame* frame = static_cast<TStartFrame*>(value);
-        if (!frame->accountHovered && !frame->accountManageHovered && !gtk_widget_has_focus(frame->accountField) && !gtk_widget_has_focus(frame->accountManageButton)) gtk_widget_hide(frame->accountManageButton);
-        return G_SOURCE_REMOVE;
-    }, frame);
+    frame->scheduleAccountManageHide();
     return false;
 }
 gboolean TStartFrame::onAccountManagePointerEnter(GtkWidget*, GdkEventCrossing*, gpointer data) { TStartFrame* frame = static_cast<TStartFrame*>(data); frame->accountManageHovered = true; gtk_widget_show(frame->accountManageButton); return false; }
 gboolean TStartFrame::onAccountManagePointerLeave(GtkWidget*, GdkEventCrossing*, gpointer data) {
     TStartFrame* frame = static_cast<TStartFrame*>(data);
     frame->accountManageHovered = false;
-    g_idle_add(+[](gpointer value) -> gboolean {
-        TStartFrame* frame = static_cast<TStartFrame*>(value);
-        if (!frame->accountHovered && !frame->accountManageHovered && !gtk_widget_has_focus(frame->accountField) && !gtk_widget_has_focus(frame->accountManageButton)) gtk_widget_hide(frame->accountManageButton);
-        return G_SOURCE_REMOVE;
-    }, frame);
+    frame->scheduleAccountManageHide();
     return false;
 }
 gboolean TStartFrame::onAccountFocusIn(GtkWidget*, GdkEventFocus*, gpointer data) { gtk_widget_show(static_cast<TStartFrame*>(data)->accountManageButton); return false; }
 gboolean TStartFrame::onAccountFocusOut(GtkWidget*, GdkEventFocus*, gpointer data) {
     TStartFrame* frame = static_cast<TStartFrame*>(data);
-    g_idle_add(+[](gpointer value) -> gboolean {
-        TStartFrame* frame = static_cast<TStartFrame*>(value);
-        if (!frame->accountHovered && !frame->accountManageHovered && !gtk_widget_has_focus(frame->accountField) && !gtk_widget_has_focus(frame->accountManageButton)) gtk_widget_hide(frame->accountManageButton);
-        return G_SOURCE_REMOVE;
-    }, frame);
+    frame->scheduleAccountManageHide();
     return false;
 }
+gboolean TStartFrame::onAccountManageHideLater(gpointer data) {
+    auto* request = static_cast<AccountManageHideRequest*>(data);
+    if (!*request->alive) return G_SOURCE_REMOVE;
+    TStartFrame* frame = request->frame;
+    if (frame->window != nullptr && !frame->accountHovered && !frame->accountManageHovered && !gtk_widget_has_focus(frame->accountField) && !gtk_widget_has_focus(frame->accountManageButton)) gtk_widget_hide(frame->accountManageButton);
+    return G_SOURCE_REMOVE;
+}
+void TStartFrame::scheduleAccountManageHide() { g_idle_add_full(G_PRIORITY_DEFAULT_IDLE, onAccountManageHideLater, new AccountManageHideRequest{this, callbackAlive}, +[](gpointer data) { delete static_cast<AccountManageHideRequest*>(data); }); }
 void TStartFrame::onCancel(GtkButton*, gpointer) { if (gtk_main_level() > 0) gtk_main_quit(); }
 void TStartFrame::onDestroy(GtkWidget*, gpointer data) { static_cast<TStartFrame*>(data)->window = nullptr; if (gtk_main_level() > 0) gtk_main_quit(); }
 gboolean TStartFrame::onDelete(GtkWidget*, GdkEvent*, gpointer) { return false; }

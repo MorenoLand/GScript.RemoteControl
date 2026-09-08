@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <functional>
 #include <gtk/gtk.h>
+#include <memory>
 #include <string>
 #include <cstdint>
 
@@ -43,6 +44,7 @@ private:
     static gboolean onAccountManagePointerLeave(GtkWidget*, GdkEventCrossing*, gpointer data);
     static gboolean onAccountFocusIn(GtkWidget*, GdkEventFocus*, gpointer data);
     static gboolean onAccountFocusOut(GtkWidget*, GdkEventFocus*, gpointer data);
+    static gboolean onAccountManageHideLater(gpointer data);
     static void onCancel(GtkButton*, gpointer data);
     static void onDestroy(GtkWidget*, gpointer data);
     static gboolean onDelete(GtkWidget*, GdkEvent*, gpointer data);
@@ -52,6 +54,7 @@ private:
     void updateAccountTitle(int accountIndex);
     void refreshAccountMenu();
     void openAccountManager();
+    void scheduleAccountManageHide();
     std::string getText(GtkWidget* widget) const;
 
     RC::RCOptions& options;
@@ -69,6 +72,7 @@ private:
     bool accountHovered = false;
     bool accountManageHovered = false;
     bool accountSelectionInProgress = false;
+    std::shared_ptr<bool> callbackAlive = std::make_shared<bool>(true);
     int selectedAccountIndex = -1;
     int requestedAccountIndex = -1;
     GtkWidget* passwordField = nullptr;
