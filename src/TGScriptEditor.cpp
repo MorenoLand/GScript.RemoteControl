@@ -756,6 +756,8 @@ namespace {
         return "";
     }
 
+    constexpr std::size_t maxCompletionSourceBytes = 8 * 1024 * 1024;
+
     std::vector<ApiDefinition> fetchCompletionDefinitionsFromSource(const std::string& source) {
         if (source.rfind("http://", 0) != 0 && source.rfind("https://", 0) != 0) {
             gchar* contents = nullptr;
@@ -768,7 +770,10 @@ namespace {
                 path = localPath;
                 g_free(localPath);
             }
+            std::error_code fileError;
+            if (std::filesystem::file_size(path, fileError) > maxCompletionSourceBytes && !fileError) return {};
             if (!g_file_get_contents(path.c_str(), &contents, &length, &error)) { if (error != nullptr) g_error_free(error); return {}; }
+            if (length > maxCompletionSourceBytes) { g_free(contents); return {}; }
             const std::string json(contents, length);
             const auto result = completionDefinitions(json);
             g_free(contents);
@@ -807,7 +812,11 @@ namespace {
         if (BIO_write(connection, request.data(), static_cast<int>(request.size())) != static_cast<int>(request.size())) return {};
         std::string response;
         char buffer[8192];
-        for (int count; (count = BIO_read(connection, buffer, sizeof(buffer))) > 0;) response.append(buffer, count);
+        for (int count; (count = BIO_read(connection, buffer, sizeof(buffer))) > 0;) {
+            const std::size_t chunkSize = static_cast<std::size_t>(count);
+            if (chunkSize > maxCompletionSourceBytes || response.size() > maxCompletionSourceBytes - chunkSize) return {};
+            response.append(buffer, chunkSize);
+        }
         const std::size_t body = response.find("\r\n\r\n");
         if (body == std::string::npos) return {};
         const std::string payload = response.substr(body + 4);
