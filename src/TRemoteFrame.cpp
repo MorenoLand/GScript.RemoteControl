@@ -2465,6 +2465,7 @@ bool TRemoteFrame::appendFindResult(const std::string& message) {
         GtkTextIter end;
         gtk_text_buffer_get_end_iter(buffer, &end);
         gtk_text_buffer_insert(buffer, &end, (message + "\n").c_str(), -1);
+        trimChatBuffer(buffer);
         return true;
     }
     if (findResultsField == nullptr) return false;
@@ -2477,6 +2478,7 @@ bool TRemoteFrame::appendFindResult(const std::string& message) {
         GtkTextIter end;
         gtk_text_buffer_get_end_iter(buffer, &end);
         gtk_text_buffer_insert(buffer, &end, (message + "\n").c_str(), -1);
+        trimChatBuffer(buffer);
         return true;
     }
     const std::string filename = message.substr(contentStart, separator - contentStart);
@@ -2494,6 +2496,7 @@ bool TRemoteFrame::appendFindResult(const std::string& message) {
     gtk_text_buffer_insert(buffer, &end, message.substr(0, contentStart).c_str(), -1);
     gtk_text_buffer_insert_with_tags(buffer, &end, filename.c_str(), -1, link, nullptr);
     gtk_text_buffer_insert(buffer, &end, (message.substr(separator) + "\n").c_str(), -1);
+    trimChatBuffer(buffer);
     return true;
 }
 
