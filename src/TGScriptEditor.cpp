@@ -757,6 +757,8 @@ namespace {
     }
 
     constexpr std::size_t maxCompletionSourceBytes = 8 * 1024 * 1024;
+    constexpr int completionSourceTimeoutSeconds = 15;
+    constexpr unsigned int completionSourcePollMilliseconds = 100;
 
     std::vector<ApiDefinition> fetchCompletionDefinitionsFromSource(const std::string& source) {
         if (source.rfind("http://", 0) != 0 && source.rfind("https://", 0) != 0) {
@@ -807,12 +809,27 @@ namespace {
             BIO_get_ssl(connection, &ssl);
             if (ssl == nullptr || SSL_set_tlsext_host_name(ssl, host) != 1) return {};
         }
-        if (BIO_do_connect(connection) != 1 || (secure && SSL_get_verify_result(ssl) != X509_V_OK)) return {};
+        BIO_set_nbio(connection, 1);
+        if (BIO_do_connect_retry(connection, completionSourceTimeoutSeconds, completionSourcePollMilliseconds) != 1 || (secure && SSL_get_verify_result(ssl) != X509_V_OK)) return {};
         const std::string request = "GET " + requestPath + " HTTP/1.1\r\nHost: " + host + "\r\nUser-Agent: RemoteControl/1.0\r\nAccept: application/json\r\nConnection: close\r\n\r\n";
-        if (BIO_write(connection, request.data(), static_cast<int>(request.size())) != static_cast<int>(request.size())) return {};
+        const gint64 deadline = g_get_monotonic_time() + static_cast<gint64>(completionSourceTimeoutSeconds) * G_USEC_PER_SEC;
+        std::size_t written = 0;
+        while (written < request.size()) {
+            const int count = BIO_write(connection, request.data() + written, static_cast<int>(request.size() - written));
+            if (count > 0) { written += static_cast<std::size_t>(count); continue; }
+            if (!BIO_should_retry(connection) || g_get_monotonic_time() >= deadline) return {};
+            BIO_wait(connection, 1, completionSourcePollMilliseconds);
+        }
         std::string response;
         char buffer[8192];
-        for (int count; (count = BIO_read(connection, buffer, sizeof(buffer))) > 0;) {
+        for (;;) {
+            const int count = BIO_read(connection, buffer, sizeof(buffer));
+            if (count == 0 && !BIO_should_retry(connection)) break;
+            if (count <= 0) {
+                if (!BIO_should_retry(connection) || g_get_monotonic_time() >= deadline) return {};
+                BIO_wait(connection, 1, completionSourcePollMilliseconds);
+                continue;
+            }
             const std::size_t chunkSize = static_cast<std::size_t>(count);
             if (chunkSize > maxCompletionSourceBytes || response.size() > maxCompletionSourceBytes - chunkSize) return {};
             response.append(buffer, chunkSize);
