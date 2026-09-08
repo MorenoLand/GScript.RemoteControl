@@ -63,6 +63,7 @@ namespace {
 
     bool isAdminPlayer(const RCPlayer& player) { if (player.level == nullptr) return true; for (const unsigned char* value = reinterpret_cast<const unsigned char*>(player.level); *value != '\0'; ++value) if (std::isspace(*value) == 0) return false; return true; }
     constexpr std::size_t maxPendingPrivateMessages = 500;
+    constexpr guint maxPrivateMessageRows = 500;
 
     struct PMWindowData {
         TPlayerList* owner;
@@ -170,6 +171,12 @@ namespace {
         gtk_box_pack_start(GTK_BOX(data->received), row, false, false, 0);
         gtk_widget_show_all(row);
         gtk_widget_hide(timeLabel);
+        GList* children = gtk_container_get_children(GTK_CONTAINER(data->received));
+        const guint childCount = g_list_length(children);
+        const guint removeCount = childCount > maxPrivateMessageRows ? childCount - maxPrivateMessageRows : 0;
+        GList* child = children;
+        for (guint index = 0; index < removeCount && child != nullptr; ++index, child = child->next) gtk_widget_destroy(GTK_WIDGET(child->data));
+        g_list_free(children);
         GtkWidget* scrolled = gtk_widget_get_ancestor(data->received, GTK_TYPE_SCROLLED_WINDOW);
         if (scrolled != nullptr) {
             GtkAdjustment* adjustment = gtk_scrolled_window_get_vadjustment(GTK_SCROLLED_WINDOW(scrolled));
