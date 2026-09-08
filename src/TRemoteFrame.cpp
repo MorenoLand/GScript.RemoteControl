@@ -294,6 +294,22 @@ std::string remoteControlTitle(const std::string& server = {}, const std::string
     return title + " - " + remoteControlBuildDate();
 }
 
+constexpr gint maxChatLines = 10000;
+constexpr gint maxChatCharacters = 4 * 1024 * 1024;
+void trimChatBuffer(GtkTextBuffer* buffer) {
+    if (buffer == nullptr) return;
+    while (gtk_text_buffer_get_line_count(buffer) > maxChatLines || gtk_text_buffer_get_char_count(buffer) > maxChatCharacters) {
+        const gint lineCount = gtk_text_buffer_get_line_count(buffer);
+        const gint characterCount = gtk_text_buffer_get_char_count(buffer);
+        GtkTextIter start;
+        GtkTextIter end;
+        gtk_text_buffer_get_start_iter(buffer, &start);
+        if (lineCount > maxChatLines) gtk_text_buffer_get_iter_at_line(buffer, &end, lineCount - maxChatLines);
+        else gtk_text_buffer_get_iter_at_offset(buffer, &end, characterCount - maxChatCharacters);
+        gtk_text_buffer_delete(buffer, &start, &end);
+    }
+}
+
 }
 
 gboolean TRemoteFrame::scrollChannelToBottom(gpointer data) {
@@ -1847,6 +1863,7 @@ void TRemoteFrame::appendChat(const std::string& message, bool suppressUrgency, 
     GtkTextIter linkEnd;
     gtk_text_buffer_get_end_iter(buffer, &linkEnd);
     applyChatUrls(buffer, startOffset, gtk_text_iter_get_offset(&linkEnd));
+    trimChatBuffer(buffer);
     if (alert && !hasActiveRemoteControlWindow()) {
         gtk_window_set_urgency_hint(GTK_WINDOW(window), true);
         if (options.notificationsounds) gdk_beep();
@@ -2386,6 +2403,7 @@ void TRemoteFrame::appendChannelMessage(const std::string& channel, const std::s
     GtkTextIter linkEnd;
     gtk_text_buffer_get_end_iter(buffer, &linkEnd);
     applyChatUrls(buffer, startOffset, gtk_text_iter_get_offset(&linkEnd));
+    trimChatBuffer(buffer);
     if (alert && !hasActiveRemoteControlWindow()) {
         if (!hasActiveRemoteControlWindow()) gtk_window_set_urgency_hint(GTK_WINDOW(window), true);
         if (options.notificationsounds) gdk_beep();
