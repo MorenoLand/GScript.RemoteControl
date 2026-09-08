@@ -70,7 +70,7 @@ TNPCList::~TNPCList() { if (window != nullptr) gtk_widget_destroy(window); if (s
 void TNPCList::setServerName(const std::string& server) { serverName = server; gtk_window_set_title(GTK_WINDOW(window), serverName.empty() ? "NPCs" : ("NPCs - " + serverName).c_str()); }
 void TNPCList::hide() { if (window != nullptr) gtk_widget_hide(window); }
 void TNPCList::open(void* nextConnection) { connection = nextConnection; rc_on_npc_added(connection, onNPCChanged, this); rc_on_npc_deleted(connection, [](int, void* data) { static_cast<TNPCList*>(data)->refresh(); }, this); refresh(); gtk_widget_show_all(window); gtk_window_present(GTK_WINDOW(window)); }
-void TNPCList::setConnection(void* nextConnection) { connection = nextConnection; }
+void TNPCList::setConnection(void* nextConnection) { if (connection != nullptr && connection != nextConnection) TScriptList::restoreScriptReceiver(connection); connection = nextConnection; }
 void TNPCList::onRefresh(GtkButton*, gpointer data) { static_cast<TNPCList*>(data)->refresh(); }
 void TNPCList::onAdd(GtkButton*, gpointer data) {
     TNPCList* list = static_cast<TNPCList*>(data);
@@ -176,7 +176,7 @@ gboolean TNPCList::onTreeButton(GtkWidget* widget, GdkEventButton* event, gpoint
 void TNPCList::onEditScript(GtkMenuItem*, gpointer data) {
     TNPCList* list = static_cast<TNPCList*>(data);
     if (list->selectedNPCId < 0) return;
-    rc_on_script_received(list->connection, onNPCScript, list);
+    TScriptList::registerNPCScriptReceiver(list->connection, onNPCScript, list);
     rc_request_npc_script(list->connection, list->selectedNPCId);
 }
 void TNPCList::onEditFlags(GtkMenuItem*, gpointer data) {
@@ -455,7 +455,7 @@ void TNPCList::onNPCChanged(int id, const char* name, void* data) {
     if (list->pendingCreateId != id || list->connection == nullptr) return;
     list->pendingCreateId = -1;
     list->pendingCreateName.clear();
-    rc_on_script_received(list->connection, onNPCScript, list);
+    TScriptList::registerNPCScriptReceiver(list->connection, onNPCScript, list);
     const int result = rc_request_npc_script(list->connection, id);
     remoteControlDebugLog("script create: type=npcs name=%s id=%d request result=%d", name == nullptr ? "" : name, id, result);
     if (result <= 0) list->pendingCreateId = id;

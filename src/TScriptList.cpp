@@ -14,10 +14,92 @@
 #include <filesystem>
 #include <cstring>
 #include <utility>
+#include <algorithm>
+#include <fstream>
+#include <system_error>
+#include <unordered_map>
 
 namespace {
-    TScriptList* classList = nullptr;
-    TScriptList* weaponList = nullptr;
+    struct ScriptReceiverState { TScriptList* classList = nullptr; TScriptList* weaponList = nullptr; void (*npcCallback)(const char*, const char*, int, const char*, void*) = nullptr; void* npcData = nullptr; };
+    std::unordered_map<void*, std::unique_ptr<ScriptReceiverState>> scriptReceivers;
+
+    struct ScriptWindowRecord { std::string session; std::string type; std::string name; int x = 0; int y = 0; int width = 0; int height = 0; };
+
+    std::string scriptSessionKey(const std::string& server, const std::string& account) { return server + "\x1f" + account; }
+    std::filesystem::path scriptStatePath(const std::filesystem::path& applicationDirectory) { return RC::rcOptionsDirectory(applicationDirectory) / "script-windows.txt"; }
+
+    std::string encodeScriptStateField(const std::string& value) {
+        static constexpr char digits[] = "0123456789ABCDEF";
+        std::string result;
+        for (const unsigned char character : value) {
+            if (character == '%' || character == '\t' || character == '\r' || character == '\n' || character < 0x20) { result += '%'; result += digits[character >> 4]; result += digits[character & 0x0F]; }
+            else result += static_cast<char>(character);
+        }
+        return result;
+    }
+
+    int scriptStateHex(char character) { if (character >= '0' && character <= '9') return character - '0'; if (character >= 'A' && character <= 'F') return character - 'A' + 10; if (character >= 'a' && character <= 'f') return character - 'a' + 10; return -1; }
+    std::string decodeScriptStateField(const std::string& value) {
+        std::string result;
+        for (std::size_t index = 0; index < value.size(); ++index) {
+            if (value[index] == '%' && index + 2 < value.size()) { const int high = scriptStateHex(value[index + 1]); const int low = scriptStateHex(value[index + 2]); if (high >= 0 && low >= 0) { result += static_cast<char>((high << 4) | low); index += 2; continue; } }
+            result += value[index];
+        }
+        return result;
+    }
+
+    std::vector<std::string> splitScriptStateFields(const std::string& line) {
+        std::vector<std::string> fields;
+        std::size_t start = 0;
+        while (start <= line.size()) { const std::size_t end = line.find('\t', start); fields.push_back(decodeScriptStateField(line.substr(start, end == std::string::npos ? std::string::npos : end - start))); if (end == std::string::npos) break; start = end + 1; }
+        return fields;
+    }
+
+    std::vector<ScriptWindowRecord> loadScriptWindowRecords(const std::filesystem::path& path) {
+        std::vector<ScriptWindowRecord> records;
+        std::ifstream input(path);
+        for (std::string line; std::getline(input, line);) {
+            const std::vector<std::string> fields = splitScriptStateFields(line);
+            if (fields.size() != 7 || fields[0].empty() || fields[1].empty() || fields[2].empty()) continue;
+            try { records.push_back({fields[0], fields[1], fields[2], std::stoi(fields[3]), std::stoi(fields[4]), std::stoi(fields[5]), std::stoi(fields[6])}); } catch (...) { }
+        }
+        return records;
+    }
+
+    void saveScriptWindowRecords(const std::filesystem::path& path, const std::vector<ScriptWindowRecord>& records) {
+        std::error_code error;
+        std::filesystem::create_directories(path.parent_path(), error);
+        if (error) return;
+        std::ofstream output(path, std::ios::trunc);
+        if (!output) return;
+        for (const ScriptWindowRecord& record : records) output << encodeScriptStateField(record.session) << '\t' << encodeScriptStateField(record.type) << '\t' << encodeScriptStateField(record.name) << '\t' << record.x << '\t' << record.y << '\t' << record.width << '\t' << record.height << '\n';
+    }
+
+    void updateScriptWindowRecord(const std::filesystem::path& path, const ScriptWindowRecord& record) {
+        std::vector<ScriptWindowRecord> records = loadScriptWindowRecords(path);
+        const auto existing = std::find_if(records.begin(), records.end(), [&](const ScriptWindowRecord& value) { return value.session == record.session && value.type == record.type && value.name == record.name; });
+        if (existing == records.end()) records.push_back(record); else *existing = record;
+        saveScriptWindowRecords(path, records);
+    }
+
+    void removeScriptWindowRecord(const std::filesystem::path& path, const std::string& session, const std::string& type, const std::string& name) {
+        std::vector<ScriptWindowRecord> records = loadScriptWindowRecords(path);
+        records.erase(std::remove_if(records.begin(), records.end(), [&](const ScriptWindowRecord& value) { return value.session == session && value.type == type && value.name == name; }), records.end());
+        saveScriptWindowRecords(path, records);
+    }
+
+    bool findScriptWindowRecord(const std::filesystem::path& path, const std::string& session, const std::string& type, const std::string& name, ScriptWindowRecord& record) {
+        const auto records = loadScriptWindowRecords(path);
+        const auto found = std::find_if(records.begin(), records.end(), [&](const ScriptWindowRecord& value) { return value.session == session && value.type == type && value.name == name; });
+        if (found == records.end()) return false;
+        record = *found;
+        return true;
+    }
+
+    bool hasScriptWindowRecords(const std::filesystem::path& path, const std::string& session) {
+        const auto records = loadScriptWindowRecords(path);
+        return std::any_of(records.begin(), records.end(), [&](const ScriptWindowRecord& value) { return value.session == session; });
+    }
 
     std::size_t scriptByteCount(const char* script) { return script == nullptr ? 0 : std::strlen(script); }
     std::size_t scriptLineCount(const char* script) {
@@ -105,7 +187,7 @@ namespace {
     }
 }
 
-TScriptList::TScriptList(std::string nextType, RC::RCOptions* nextOptions, TExtensionsManager* nextExtensions) : type(std::move(nextType)), options(nextOptions), extensionsManager(nextExtensions) {
+TScriptList::TScriptList(std::string nextType, RC::RCOptions* nextOptions, TExtensionsManager* nextExtensions, const std::filesystem::path& applicationDirectory) : type(std::move(nextType)), options(nextOptions), extensionsManager(nextExtensions), scriptWindowStatePath(scriptStatePath(applicationDirectory)) {
     window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
     gtk_window_set_title(GTK_WINDOW(window), (type == "classes" ? "Classes" : "Weapon/GUI-Script List"));
     gtk_window_set_default_size(GTK_WINDOW(window), 540, 460);
@@ -152,15 +234,15 @@ TScriptList::TScriptList(std::string nextType, RC::RCOptions* nextOptions, TExte
 
 void TScriptList::setServerName(const std::string& server) { serverName = server; const std::string base = type == "classes" ? "Classes" : "Weapon/GUI-Script List"; gtk_window_set_title(GTK_WINDOW(window), serverName.empty() ? base.c_str() : (base + " - " + serverName).c_str()); }
 
-TScriptList::~TScriptList() { if (pendingCreateTimer != 0) g_source_remove(pendingCreateTimer); if (classList == this) classList = nullptr; if (weaponList == this) weaponList = nullptr; if (window != nullptr) gtk_widget_destroy(window); if (store != nullptr) g_object_unref(store); }
+TScriptList::~TScriptList() { cancelRestoredEditors(); unregisterScriptReceiver(); if (pendingCreateTimer != 0) g_source_remove(pendingCreateTimer); if (window != nullptr) gtk_widget_destroy(window); if (store != nullptr) g_object_unref(store); }
 void TScriptList::hide() { if (window != nullptr) gtk_widget_hide(window); }
 
 void TScriptList::open(void* nextConnection) {
-    connection = nextConnection;
+    setConnection(nextConnection);
+    opened = true;
+    registerScriptReceiver();
     remoteControlDebugLog("script list: open type=%s connection=%p server=%s", type.c_str(), connection, serverName.c_str());
     if (type == "classes") {
-        classList = this;
-        restoreScriptReceiver(connection);
         rc_on_class_added(connection, onClassAdded, this);
         rc_on_class_deleted(connection, onClassDeleted, this);
         refresh();
@@ -168,15 +250,57 @@ void TScriptList::open(void* nextConnection) {
         gtk_window_present(GTK_WINDOW(window));
         return;
     }
-    weaponList = this;
-    restoreScriptReceiver(connection);
     rc_on_weapon_added(connection, onWeaponAdded, this);
     rc_on_weapon_deleted(connection, onWeaponDeleted, this);
     rc_on_weapon_list_received(connection, onWeaponListReceived, this);
     rc_request_weapon_list(connection);
 }
-void TScriptList::setConnection(void* nextConnection) { connection = nextConnection; }
-void TScriptList::restoreScriptReceiver(void* connection) { rc_on_script_received(connection, onScript, nullptr); }
+void TScriptList::setConnection(void* nextConnection) {
+    if (nextConnection == nullptr) cancelRestoredEditors();
+    if (connection == nextConnection) { if (opened && connection != nullptr) registerScriptReceiver(); return; }
+    unregisterScriptReceiver();
+    connection = nextConnection;
+    if (opened && connection != nullptr) registerScriptReceiver();
+}
+void TScriptList::setSession(const std::string& server, const std::string& account) { sessionKey = scriptSessionKey(server, account); }
+bool TScriptList::hasSavedEditors(const std::filesystem::path& applicationDirectory, const std::string& server, const std::string& account) { return hasScriptWindowRecords(scriptStatePath(applicationDirectory), scriptSessionKey(server, account)); }
+void TScriptList::restoreScriptReceiver(void* connection) {
+    if (connection == nullptr) return;
+    const auto found = scriptReceivers.find(connection);
+    if (found == scriptReceivers.end()) { rc_on_script_received(connection, onScript, nullptr); return; }
+    found->second->npcCallback = nullptr;
+    found->second->npcData = nullptr;
+    rc_on_script_received(connection, onScript, found->second.get());
+}
+void TScriptList::registerNPCScriptReceiver(void* connection, void (*callback)(const char*, const char*, int, const char*, void*), void* data) {
+    if (connection == nullptr) return;
+    auto& state = scriptReceivers[connection];
+    if (state == nullptr) state = std::make_unique<ScriptReceiverState>();
+    state->npcCallback = callback;
+    state->npcData = data;
+    rc_on_script_received(connection, onScript, state.get());
+}
+void TScriptList::registerScriptReceiver() {
+    if (connection == nullptr) return;
+    auto& state = scriptReceivers[connection];
+    if (state == nullptr) state = std::make_unique<ScriptReceiverState>();
+    if (type == "classes") state->classList = this; else state->weaponList = this;
+    rc_on_script_received(connection, onScript, state.get());
+    scriptReceiverRegistered = true;
+}
+void TScriptList::unregisterScriptReceiver() {
+    if (!scriptReceiverRegistered || connection == nullptr) { scriptReceiverRegistered = false; return; }
+    const auto found = scriptReceivers.find(connection);
+    if (found == scriptReceivers.end()) { scriptReceiverRegistered = false; return; }
+    ScriptReceiverState* state = found->second.get();
+    if (state->classList == this) state->classList = nullptr;
+    if (state->weaponList == this) state->weaponList = nullptr;
+    if (state->classList == nullptr && state->weaponList == nullptr && state->npcCallback == nullptr) {
+        rc_on_script_received(connection, onScript, nullptr);
+        scriptReceivers.erase(found);
+    } else rc_on_script_received(connection, onScript, state);
+    scriptReceiverRegistered = false;
+}
 
 void TScriptList::onWeaponListReceived(int, void* data) {
     TScriptList* list = static_cast<TScriptList*>(data);
@@ -240,6 +364,65 @@ gboolean TScriptList::onWeaponMutationPoll(gpointer data) {
     if (list == nullptr || list->connection == nullptr || (list->pendingCreateName.empty() && list->pendingDeleteName.empty()) || ++list->pendingCreateAttempts > 20) { if (list != nullptr) { list->pendingCreateName.clear(); list->pendingDeleteName.clear(); list->pendingCreateTimer = 0; } return G_SOURCE_REMOVE; }
     rc_request_weapon_list(list->connection);
     return G_SOURCE_CONTINUE;
+}
+
+void TScriptList::restoreOpenEditors() {
+    opened = true;
+    registerScriptReceiver();
+    if (connection == nullptr || sessionKey.empty() || restoringEditors) return;
+    pendingRestoreNames.clear();
+    pendingRestoreIndex = 0;
+    const std::string scriptType = type == "classes" ? "class" : "weapon";
+    for (const ScriptWindowRecord& record : loadScriptWindowRecords(scriptWindowStatePath)) if (record.session == sessionKey && record.type == scriptType && !record.name.empty()) pendingRestoreNames.push_back(record.name);
+    if (pendingRestoreNames.empty()) return;
+    restoringEditors = true;
+    requestNextRestoredEditor();
+}
+
+void TScriptList::requestNextRestoredEditor() {
+    if (pendingRestoreTimer != 0) { g_source_remove(pendingRestoreTimer); pendingRestoreTimer = 0; }
+    if (!restoringEditors || connection == nullptr) return;
+    const std::string scriptType = type == "classes" ? "class" : "weapon";
+    while (pendingRestoreIndex < pendingRestoreNames.size()) {
+        pendingScriptName = pendingRestoreNames[pendingRestoreIndex];
+        pendingScriptRequestAt = std::chrono::steady_clock::now();
+        registerScriptReceiver();
+        const int result = type == "weapons" ? rc_request_weapon_script(connection, pendingScriptName.c_str()) : rc_request_class_script(connection, pendingScriptName.c_str());
+        remoteControlDebugLog("script restore request: type=%s name=%s result=%d connection=%p", scriptType.c_str(), pendingScriptName.c_str(), result, connection);
+        if (result > 0) { pendingRestoreTimer = g_timeout_add_seconds(10, onRestoreTimeout, this); return; }
+        pendingScriptName.clear();
+        ++pendingRestoreIndex;
+    }
+    restoringEditors = false;
+    pendingRestoreNames.clear();
+    pendingRestoreIndex = 0;
+}
+
+void TScriptList::cancelRestoredEditors() {
+    if (pendingRestoreTimer != 0) { g_source_remove(pendingRestoreTimer); pendingRestoreTimer = 0; }
+    restoringEditors = false;
+    pendingRestoreNames.clear();
+    pendingRestoreIndex = 0;
+    pendingScriptName.clear();
+}
+
+gboolean TScriptList::onRestoreTimeout(gpointer data) {
+    auto* list = static_cast<TScriptList*>(data);
+    if (list == nullptr || !list->restoringEditors) return G_SOURCE_REMOVE;
+    list->pendingRestoreTimer = 0;
+    remoteControlDebugLog("script restore timeout: type=%s name=%s connection=%p", list->type.c_str(), list->pendingScriptName.c_str(), list->connection);
+    list->pendingScriptName.clear();
+    ++list->pendingRestoreIndex;
+    list->requestNextRestoredEditor();
+    return G_SOURCE_REMOVE;
+}
+
+void TScriptList::restoreEditorWindowState(const std::string& name, GtkWidget* dialog) const {
+    if (sessionKey.empty() || name.empty() || dialog == nullptr || !GTK_IS_WINDOW(dialog)) return;
+    ScriptWindowRecord record;
+    if (!findScriptWindowRecord(scriptWindowStatePath, sessionKey, type == "classes" ? "class" : "weapon", name, record) || record.width <= 0 || record.height <= 0) return;
+    gtk_window_resize(GTK_WINDOW(dialog), record.width, record.height);
+    gtk_window_move(GTK_WINDOW(dialog), record.x, record.y);
 }
 
 void TScriptList::onEdit(GtkButton*, gpointer data) { static_cast<TScriptList*>(data)->edit(); }
@@ -319,11 +502,14 @@ void TScriptList::edit() {
         remoteControlDebugLog("script request: selected row has no script name type=%s connection=%p", type.c_str(), connection);
         return;
     }
+    cancelRestoredEditors();
+    registerScriptReceiver();
     pendingScriptName = name;
     pendingScriptRequestAt = std::chrono::steady_clock::now();
     remoteControlDebugLog("script request: type=%s name=%s connection=%p", type.c_str(), name, connection);
     const int result = type == "weapons" ? rc_request_weapon_script(connection, name) : rc_request_class_script(connection, name);
     remoteControlDebugLog("script request: type=%s name=%s result=%d", type.c_str(), name, result);
+    if (result <= 0) pendingScriptName.clear();
     g_free(name);
 }
 
@@ -354,19 +540,24 @@ void TScriptList::deleteSelected() {
 
 void TScriptList::onScript(const char* scriptType, const char* name, int id, const char* script, void* data) {
     const std::string callbackType = scriptType == nullptr ? "" : scriptType;
-    TScriptList* list = callbackType == "weapon" ? weaponList : classList;
+    auto* receiver = static_cast<ScriptReceiverState*>(data);
+    if (receiver != nullptr && callbackType == "npc" && receiver->npcCallback != nullptr) { receiver->npcCallback(scriptType, name, id, script, receiver->npcData); return; }
+    TScriptList* list = receiver == nullptr ? nullptr : (callbackType == "weapon" ? receiver->weaponList : callbackType == "class" ? receiver->classList : nullptr);
     const std::size_t bytes = scriptByteCount(script);
     const std::size_t lines = scriptLineCount(script);
-    remoteControlDebugLog("script received: callbackType=%s id=%d name=%s bytes=%zu lines=%zu classList=%p weaponList=%p data=%p", callbackType.c_str(), id, name == nullptr ? "" : name, bytes, lines, classList, weaponList, data);
-    if (list == nullptr) {
-        remoteControlDebugLog("script received: dropped because no active %s list", callbackType.c_str());
+    remoteControlDebugLog("script received: callbackType=%s id=%d name=%s bytes=%zu lines=%zu classList=%p weaponList=%p data=%p", callbackType.c_str(), id, name == nullptr ? "" : name, bytes, lines, receiver == nullptr ? nullptr : receiver->classList, receiver == nullptr ? nullptr : receiver->weaponList, data);
+    if (list == nullptr || name == nullptr || list->pendingScriptName != name) {
+        remoteControlDebugLog("script received: dropped because no matching request for %s", name == nullptr ? "" : name);
         return;
     }
     long long elapsedMs = -1;
     if (!list->pendingScriptName.empty() && name != nullptr && list->pendingScriptName == name) elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - list->pendingScriptRequestAt).count();
     remoteControlDebugLog("script received: routing list=%p requested=%s elapsed_ms=%lld", list, list->pendingScriptName.c_str(), elapsedMs);
+    if (list->pendingRestoreTimer != 0) { g_source_remove(list->pendingRestoreTimer); list->pendingRestoreTimer = 0; }
+    const bool restoring = list->restoringEditors;
     list->showEditor(name == nullptr ? "" : name, script == nullptr ? "" : script);
-    if (!list->pendingScriptName.empty() && name != nullptr && list->pendingScriptName == name) list->pendingScriptName.clear();
+    list->pendingScriptName.clear();
+    if (restoring) { ++list->pendingRestoreIndex; list->requestNextRestoredEditor(); }
 }
 
 void TScriptList::showEditor(const char* name, const char* script) {
@@ -392,7 +583,7 @@ void TScriptList::showEditor(const char* name, const char* script) {
         remoteControlDebugLog("script editor: external open dispatched type=%s name=%s", type.c_str(), scriptName.c_str());
         return;
     }
-    struct EditorState { void* connection; bool weapon; std::string name; GtkWidget* editor; GtkWidget* icon; };
+    struct EditorState { void* connection; bool weapon; std::string name; GtkWidget* editor; GtkWidget* icon; GtkWidget* dialog; std::filesystem::path statePath; std::string session; std::string type; guint geometryTimer; };
     const std::string editorTitle = (type == "weapons" ? "Weapon: " : "Class: ") + scriptName + (serverName.empty() ? "" : " (" + serverName + ")");
     GtkWidget* dialog = gtk_dialog_new_with_buttons(editorTitle.c_str(), nullptr, static_cast<GtkDialogFlags>(0), "Apply", GTK_RESPONSE_ACCEPT, "Close", GTK_RESPONSE_CANCEL, nullptr);
     gtk_window_set_type_hint(GTK_WINDOW(dialog), GDK_WINDOW_TYPE_HINT_NORMAL);
@@ -449,7 +640,7 @@ void TScriptList::showEditor(const char* name, const char* script) {
         return static_cast<gboolean>(FALSE);
     }), dialog);
     g_signal_connect(editor, "key-release-event", G_CALLBACK(releaseEditorCtrlS), nullptr);
-    auto* state = new EditorState{connection, type == "weapons", scriptName, editor, icon};
+    auto* state = new EditorState{connection, type == "weapons", scriptName, editor, icon, dialog, scriptWindowStatePath, sessionKey, type == "weapons" ? "weapon" : "class", 0};
     g_signal_connect(dialog, "response", G_CALLBACK(+[](GtkDialog* responseDialog, gint response, gpointer data) {
         auto* editorState = static_cast<EditorState*>(data);
         if (response == GTK_RESPONSE_ACCEPT) {
@@ -468,8 +659,19 @@ void TScriptList::showEditor(const char* name, const char* script) {
             markScriptEditorSaved(editorBuffer);
         } else gtk_widget_destroy(GTK_WIDGET(responseDialog));
     }), state);
-    g_signal_connect(dialog, "destroy", G_CALLBACK(+[](GtkWidget*, gpointer data) { delete static_cast<EditorState*>(data); }), state);
+    g_signal_connect(dialog, "configure-event", G_CALLBACK(+[](GtkWidget* configured, GdkEventConfigure*, gpointer data) -> gboolean {
+        auto* state = static_cast<EditorState*>(data);
+        if (state->geometryTimer == 0) state->geometryTimer = g_timeout_add(250, +[](gpointer timerData) -> gboolean {
+            auto* state = static_cast<EditorState*>(timerData);
+            state->geometryTimer = 0;
+            if (state->dialog != nullptr) { gint x = 0; gint y = 0; gint width = 0; gint height = 0; gtk_window_get_position(GTK_WINDOW(state->dialog), &x, &y); gtk_window_get_size(GTK_WINDOW(state->dialog), &width, &height); if (!state->session.empty() && width > 0 && height > 0) updateScriptWindowRecord(state->statePath, {state->session, state->type, state->name, x, y, width, height}); }
+            return G_SOURCE_REMOVE;
+        }, state);
+        return false;
+    }), state);
+    g_signal_connect(dialog, "destroy", G_CALLBACK(+[](GtkWidget*, gpointer data) { auto* state = static_cast<EditorState*>(data); if (state->geometryTimer != 0) g_source_remove(state->geometryTimer); if (!state->session.empty()) removeScriptWindowRecord(state->statePath, state->session, state->type, state->name); delete state; }), state);
     gtk_widget_show_all(dialog);
+    restoreEditorWindowState(scriptName, dialog);
     remoteControlDebugLog("script editor: GTK dialog presented type=%s name=%s dialog=%p", type.c_str(), scriptName.c_str(), dialog);
     if (icon != nullptr) {
         gtk_editable_select_region(GTK_EDITABLE(icon), 0, 0);

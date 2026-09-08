@@ -210,6 +210,8 @@ private:
     TFileBrowserTree* fileBrowser = nullptr;
     TScriptList* classList = nullptr;
     TScriptList* weaponList = nullptr;
+    std::string scriptEditorsRestoredSession;
+    bool scriptEditorsRestorePending = false;
     TServerTextEditor* serverOptionsEditor = nullptr;
     TServerTextEditor* serverFlagsEditor = nullptr;
     TServerTextEditor* folderConfigEditor = nullptr;

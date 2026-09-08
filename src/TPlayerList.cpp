@@ -20,6 +20,8 @@
 #include <iomanip>
 #include <map>
 #include <cctype>
+#include <cerrno>
+#include <cmath>
 
 #include <gtksourceview/gtksource.h>
 
@@ -32,6 +34,16 @@ namespace {
     constexpr int PlayerLevelColumn = 3;
     constexpr int PlayerIdColumn = 4;
     constexpr int PlayerOrderColumn = 5;
+
+    bool parseFiniteCoordinate(const char* text, float& value) {
+        if (text == nullptr) return false;
+        errno = 0;
+        char* end = nullptr;
+        value = std::strtof(text, &end);
+        if (end == text || errno == ERANGE || !std::isfinite(value)) return false;
+        while (*end != '\0') { if (std::isspace(static_cast<unsigned char>(*end)) == 0) return false; ++end; }
+        return true;
+    }
 
     gint comparePlayerIconColumn(GtkTreeModel* model, GtkTreeIter* left, GtkTreeIter* right, gpointer) {
         gchar* leftNick = nullptr;
@@ -1803,10 +1815,16 @@ void TPlayerList::warpSelectedPlayer() {
     GtkTreeModel* model = nullptr;
     GtkTreeIter row;
     if (!gtk_tree_selection_get_selected(gtk_tree_view_get_selection(GTK_TREE_VIEW(tree)), &model, &row)) return;
-    int playerId = 0;
+    GtkTreePath* rowPath = gtk_tree_model_get_path(model, &row);
+    const int rowDepth = rowPath == nullptr ? 0 : gtk_tree_path_get_depth(rowPath);
+    if (rowPath != nullptr) gtk_tree_path_free(rowPath);
+    if (rowDepth != 2) return;
+    int playerId = -1;
     gtk_tree_model_get(model, &row, PlayerIdColumn, &playerId, -1);
-    if (playerId == 0) return;
-    struct WarpState { TPlayerList* list; int playerId; GtkWidget* level; GtkWidget* x; GtkWidget* y; };
+    if (playerId < 0) return;
+    gchar* selectedLevel = nullptr;
+    gtk_tree_model_get(model, &row, PlayerLevelColumn, &selectedLevel, -1);
+    struct WarpState { TPlayerList* list; int playerId; GtkWidget* level; GtkWidget* x; GtkWidget* y; GtkWidget* error; };
     GtkWidget* dialog = gtk_dialog_new_with_buttons("Warp Player", nullptr, GTK_DIALOG_MODAL, "Cancel", GTK_RESPONSE_CANCEL, "Warp", GTK_RESPONSE_ACCEPT, nullptr);
     GtkWidget* grid = gtk_grid_new();
     gtk_container_set_border_width(GTK_CONTAINER(grid), 8);
@@ -1815,20 +1833,37 @@ void TPlayerList::warpSelectedPlayer() {
     GtkWidget* level = gtk_entry_new();
     GtkWidget* x = gtk_entry_new();
     GtkWidget* y = gtk_entry_new();
+    GtkWidget* error = gtk_label_new("");
+    gtk_label_set_xalign(GTK_LABEL(error), 0.0F);
+    gtk_label_set_line_wrap(GTK_LABEL(error), true);
+    gtk_widget_set_hexpand(error, true);
+    gtk_widget_set_no_show_all(error, true);
     gtk_entry_set_text(GTK_ENTRY(x), "0");
     gtk_entry_set_text(GTK_ENTRY(y), "0");
+    if (selectedLevel != nullptr && *selectedLevel != '\0' && g_ascii_strcasecmp(selectedLevel, "Offline") != 0) gtk_entry_set_text(GTK_ENTRY(level), selectedLevel);
+    g_free(selectedLevel);
     gtk_grid_attach(GTK_GRID(grid), gtk_label_new("Level:"), 0, 0, 1, 1);
     gtk_grid_attach(GTK_GRID(grid), level, 1, 0, 1, 1);
     gtk_grid_attach(GTK_GRID(grid), gtk_label_new("X:"), 0, 1, 1, 1);
     gtk_grid_attach(GTK_GRID(grid), x, 1, 1, 1, 1);
     gtk_grid_attach(GTK_GRID(grid), gtk_label_new("Y:"), 0, 2, 1, 1);
     gtk_grid_attach(GTK_GRID(grid), y, 1, 2, 1, 1);
+    gtk_grid_attach(GTK_GRID(grid), error, 0, 3, 2, 1);
     gtk_container_add(GTK_CONTAINER(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), grid);
-    auto* state = new WarpState{this, playerId, level, x, y};
+    auto* state = new WarpState{this, playerId, level, x, y, error};
     g_signal_connect(dialog, "response", G_CALLBACK(+[](GtkDialog* responseDialog, gint response, gpointer userData) {
         auto* state = static_cast<WarpState*>(userData);
-        if (response == GTK_RESPONSE_ACCEPT) rc_warp_player(state->list->connection, state->playerId, gtk_entry_get_text(GTK_ENTRY(state->level)), std::strtof(gtk_entry_get_text(GTK_ENTRY(state->x)), nullptr), std::strtof(gtk_entry_get_text(GTK_ENTRY(state->y)), nullptr));
-        gtk_widget_destroy(GTK_WIDGET(responseDialog));
+        if (response == GTK_RESPONSE_ACCEPT) {
+            const char* levelText = gtk_entry_get_text(GTK_ENTRY(state->level));
+            float xValue = 0.0F;
+            float yValue = 0.0F;
+            auto showError = [state](const char* message) { gtk_label_set_text(GTK_LABEL(state->error), message == nullptr || *message == '\0' ? "Warp request failed." : message); gtk_widget_show(state->error); };
+            if (levelText == nullptr || *levelText == '\0') showError("Enter a destination level.");
+            else if (!parseFiniteCoordinate(gtk_entry_get_text(GTK_ENTRY(state->x)), xValue) || !parseFiniteCoordinate(gtk_entry_get_text(GTK_ENTRY(state->y)), yValue)) showError("X and Y must be finite numbers.");
+            else if (state->list->connection == nullptr) showError("The server connection is unavailable.");
+            else if (!rc_warp_player(state->list->connection, state->playerId, levelText, xValue, yValue)) showError(rc_last_error(state->list->connection));
+            else gtk_widget_destroy(GTK_WIDGET(responseDialog));
+        } else gtk_widget_destroy(GTK_WIDGET(responseDialog));
     }), state);
     g_signal_connect(dialog, "destroy", G_CALLBACK(+[](GtkWidget*, gpointer userData) { delete static_cast<WarpState*>(userData); }), state);
     gtk_widget_show_all(dialog);

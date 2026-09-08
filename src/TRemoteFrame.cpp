@@ -763,6 +763,23 @@ void TRemoteFrame::open(void* nextConnection, int serverIndex, const std::string
     awayNicknameApplied = false;
     awayStatusApplied = false;
     this->accountName = accountName;
+    if (classList != nullptr) { classList->setServerName(serverName); classList->setSession(serverName, accountName); }
+    if (weaponList != nullptr) { weaponList->setServerName(serverName); weaponList->setSession(serverName, accountName); }
+    const std::string scriptSession = serverName + "\x1f" + accountName;
+    if (scriptEditorsRestoredSession != scriptSession) {
+        scriptEditorsRestoredSession = scriptSession;
+        scriptEditorsRestorePending = TScriptList::hasSavedEditors(applicationDirectory, serverName, accountName);
+        if (scriptEditorsRestorePending) {
+            if (classList == nullptr) classList = new TScriptList("classes", &options, extensionsManager.get(), applicationDirectory);
+            if (weaponList == nullptr) weaponList = new TScriptList("weapons", &options, extensionsManager.get(), applicationDirectory);
+            classList->setConnection(connection);
+            weaponList->setConnection(connection);
+            classList->setServerName(serverName);
+            weaponList->setServerName(serverName);
+            classList->setSession(serverName, accountName);
+            weaponList->setSession(serverName, accountName);
+        }
+    }
     playerCommunityNames.clear();
     nextNcConnectAttempt = 0;
     nextNcKeepalive = 0;
@@ -785,6 +802,11 @@ void TRemoteFrame::open(void* nextConnection, int serverIndex, const std::string
     rc_on_player_attributes(connection, onPlayerAttributes, this);
     rc_on_ban_data(connection, onBanData, this);
     rc_on_ban_list_data(connection, onBanListData, this);
+    if (scriptEditorsRestorePending && rc_is_nc_authenticated(connection) != 0) {
+        scriptEditorsRestorePending = false;
+        if (classList != nullptr) classList->restoreOpenEditors();
+        if (weaponList != nullptr) weaponList->restoreOpenEditors();
+    }
     setNCChannelVisible(options.separatenc);
     const std::string serverText = options.labelservers.empty() ? serverName : options.labelservers + " " + serverName;
     if (serverLabel != nullptr) gtk_label_set_text(GTK_LABEL(serverLabel), serverText.c_str());
@@ -966,16 +988,18 @@ void TRemoteFrame::onFileBrowser(GtkMenuItem*, gpointer data) {
 void TRemoteFrame::onClasses(GtkMenuItem*, gpointer data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
     if (frame->connection == nullptr || rc_is_nc_authenticated(frame->connection) == 0) return;
-    if (frame->classList == nullptr) frame->classList = new TScriptList("classes", &frame->options, frame->extensionsManager.get());
+    if (frame->classList == nullptr) frame->classList = new TScriptList("classes", &frame->options, frame->extensionsManager.get(), frame->applicationDirectory);
     frame->classList->setServerName(frame->serverName);
+    frame->classList->setSession(frame->serverName, frame->accountName);
     frame->classList->open(frame->connection);
 }
 
 void TRemoteFrame::onWeapons(GtkMenuItem*, gpointer data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
     if (frame->connection == nullptr || rc_is_nc_authenticated(frame->connection) == 0) return;
-    if (frame->weaponList == nullptr) frame->weaponList = new TScriptList("weapons", &frame->options, frame->extensionsManager.get());
+    if (frame->weaponList == nullptr) frame->weaponList = new TScriptList("weapons", &frame->options, frame->extensionsManager.get(), frame->applicationDirectory);
     frame->weaponList->setServerName(frame->serverName);
+    frame->weaponList->setSession(frame->serverName, frame->accountName);
     frame->weaponList->open(frame->connection);
 }
 
@@ -1566,6 +1590,11 @@ void TRemoteFrame::onConnected(void* data) {
     }
     frame->updateMassPMAcceptance();
     rc_execute(frame->connection, (std::string("/npc newrc,") + remoteControlBuildDate()).c_str());
+    if (frame->scriptEditorsRestorePending) {
+        frame->scriptEditorsRestorePending = false;
+        if (frame->classList != nullptr) frame->classList->restoreOpenEditors();
+        if (frame->weaponList != nullptr) frame->weaponList->restoreOpenEditors();
+    }
 }
 
 void TRemoteFrame::onDisconnected(const char* reason, void* data) {

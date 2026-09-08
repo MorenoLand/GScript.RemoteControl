@@ -19,9 +19,15 @@ namespace {
     std::map<std::string, std::string> valuesFromText(const char* content) {
         std::map<std::string, std::string> values;
         std::istringstream input(content == nullptr ? "" : content);
+        std::string activeKey;
         for (std::string line; std::getline(input, line);) {
+            if (!line.empty() && line.back() == '\r') line.pop_back();
             const size_t equals = line.find('=');
-            if (equals != std::string::npos) values[line.substr(0, equals)] = line.substr(equals + 1);
+            const std::string key = equals == std::string::npos ? "" : line.substr(0, equals);
+            const bool knownKey = key == "account" || key == "password" || key == "email" || key == "admin_level" || key == "admin_worlds" || key == "banned" || key == "guest" || key == "ban_length" || key == "ban_reason";
+            if (knownKey) { activeKey = key; values[key] = line.substr(equals + 1); }
+            else if (activeKey == "ban_reason") values[activeKey] += "\n" + line;
+            else activeKey.clear();
         }
         return values;
     }

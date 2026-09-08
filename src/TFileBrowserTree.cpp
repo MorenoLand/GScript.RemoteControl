@@ -233,9 +233,10 @@ namespace {
                 return S_OK;
             }
             if (format->cfFormat == contentsFormat() && (format->tymed & (TYMED_ISTREAM | TYMED_HGLOBAL)) != 0) {
-                if (format->lindex < 0 || static_cast<size_t>(format->lindex) >= names.size() || !contentProvider) return DV_E_LINDEX;
+                const LONG index = format->lindex == -1 && names.size() == 1 ? 0 : format->lindex;
+                if (index < 0 || static_cast<size_t>(index) >= names.size() || !contentProvider) return DV_E_LINDEX;
                 std::vector<guint8> content;
-                if (!contentProvider(static_cast<size_t>(format->lindex), content)) return E_FAIL;
+                if (!contentProvider(static_cast<size_t>(index), content)) return E_FAIL;
                 HGLOBAL global = GlobalAlloc(GMEM_MOVEABLE, std::max<std::size_t>(content.size(), 1));
                 if (global == nullptr) return E_OUTOFMEMORY;
                 void* buffer = GlobalLock(global);
@@ -264,7 +265,7 @@ namespace {
         HRESULT __stdcall QueryGetData(FORMATETC* format) override {
             if (format == nullptr) return E_POINTER;
             if (format->cfFormat == descriptorFormat() && (format->tymed & TYMED_HGLOBAL) != 0) return S_OK;
-            if (format->cfFormat == contentsFormat() && (format->tymed & (TYMED_ISTREAM | TYMED_HGLOBAL)) != 0 && (format->lindex == -1 || (format->lindex >= 0 && static_cast<size_t>(format->lindex) < names.size()))) return S_OK;
+            if (format->cfFormat == contentsFormat() && (format->tymed & (TYMED_ISTREAM | TYMED_HGLOBAL)) != 0 && ((format->lindex >= 0 && static_cast<size_t>(format->lindex) < names.size()) || (format->lindex == -1 && names.size() == 1))) return S_OK;
             return DV_E_FORMATETC;
         }
         HRESULT __stdcall GetCanonicalFormatEtc(FORMATETC* format, FORMATETC* result) override { if (format == nullptr || result == nullptr) return E_POINTER; *result = *format; result->ptd = nullptr; return DATA_S_SAMEFORMATETC; }
@@ -562,6 +563,16 @@ TFileBrowserTree::TFileBrowserTree(const std::filesystem::path& nextApplicationD
     setModernFileBrowser(false);
 }
 
+void TFileBrowserTree::cleanupDragState() {
+    for (const std::string& path : pendingDragLocalPaths) g_remove(path.c_str());
+    for (const std::string& path : completedDragDownloads) g_remove(path.c_str());
+    if (!dragStagingFolder.empty()) { g_rmdir(dragStagingFolder.c_str()); dragStagingFolder.clear(); }
+    pendingDragDownloads.clear();
+    pendingNativeDragContents.clear();
+    completedDragDownloads.clear();
+    pendingDragLocalPaths.clear();
+}
+
 TFileBrowserTree::~TFileBrowserTree() {
     previewAsyncState->browser = nullptr;
     ++previewAsyncState->generation;
@@ -578,9 +589,7 @@ TFileBrowserTree::~TFileBrowserTree() {
     if (thumbnailLoadId != 0) g_source_remove(thumbnailLoadId);
     clearModernBuild();
     clearPreviewCache();
-    for (const std::string& path : pendingDragLocalPaths) g_remove(path.c_str());
-    for (const std::string& path : completedDragDownloads) g_remove(path.c_str());
-    if (!dragStagingFolder.empty()) g_rmdir(dragStagingFolder.c_str());
+    cleanupDragState();
     if (closedFolderIcon != nullptr) g_object_unref(closedFolderIcon);
     if (openFolderIcon != nullptr) g_object_unref(openFolderIcon);
     if (closedFolderLargeIcon != nullptr) g_object_unref(closedFolderLargeIcon);
@@ -713,7 +722,7 @@ void TFileBrowserTree::resetState() {
     pendingPreviewDownloads.clear();
     previewTransferPaths.clear();
     pendingDragSelectionPaths.clear();
-    pendingDragDownloads.clear();
+    cleanupDragState();
     pendingUserDownloads.clear();
     pendingEditPath.clear();
     pendingExternalPath.clear();
@@ -1369,19 +1378,15 @@ gboolean TFileBrowserTree::onPreviewDecoded(gpointer data) {
         }
         if (browser->hoverPreviews && browser->hoveredPreviewPath == request->path) browser->showPreview(request->path, browser->previewRootX, browser->previewRootY);
     }
+    if (request->thumbnail != nullptr) { g_object_unref(request->thumbnail); request->thumbnail = nullptr; }
+    if (request->preview != nullptr) { g_object_unref(request->preview); request->preview = nullptr; }
     if (browser != nullptr) browser->startNextPreviewDownload();
     return G_SOURCE_REMOVE;
 }
 
 #ifdef _WIN32
 void TFileBrowserTree::startNativeDrag(GtkWidget* widget) {
-    for (const std::string& path : pendingDragLocalPaths) g_remove(path.c_str());
-    for (const std::string& path : completedDragDownloads) g_remove(path.c_str());
-    if (!dragStagingFolder.empty()) { g_rmdir(dragStagingFolder.c_str()); dragStagingFolder.clear(); }
-    pendingDragDownloads.clear();
-    pendingNativeDragContents.clear();
-    completedDragDownloads.clear();
-    pendingDragLocalPaths.clear();
+    cleanupDragState();
     pendingExternalPath.clear();
     GtkTreeModel* model = GTK_IS_ICON_VIEW(widget) ? gtk_icon_view_get_model(GTK_ICON_VIEW(widget)) : gtk_tree_view_get_model(GTK_TREE_VIEW(widget));
     GList* rows = nullptr;
@@ -1423,7 +1428,8 @@ void TFileBrowserTree::startNativeDrag(GtkWidget* widget) {
         if (index >= remotePaths.size()) return false;
         const std::string& remotePath = remotePaths[index];
         if (!pendingNativeDragContents.contains(remotePath)) {
-            if (!rc_filebrowser_download(connection, remotePath.c_str())) { appendLog(rc_last_error(connection)); return false; }
+            pendingNativeDragContents.emplace(remotePath, std::vector<guint8>());
+            if (!rc_filebrowser_download(connection, remotePath.c_str())) { pendingNativeDragContents.erase(remotePath); appendLog(rc_last_error(connection)); return false; }
             const gint64 deadline = g_get_monotonic_time() + 10 * G_TIME_SPAN_SECOND;
             while (!pendingNativeDragContents.contains(remotePath) && g_get_monotonic_time() < deadline) {
                 while (gtk_events_pending()) gtk_main_iteration();
@@ -1441,13 +1447,7 @@ void TFileBrowserTree::startNativeDrag(GtkWidget* widget) {
         appendLog(error.str().c_str());
     }
     hideDragPreview();
-    for (const std::string& path : pendingDragLocalPaths) g_remove(path.c_str());
-    if (!dragStagingFolder.empty()) g_rmdir(dragStagingFolder.c_str());
-    pendingDragDownloads.clear();
-    pendingNativeDragContents.clear();
-    completedDragDownloads.clear();
-    pendingDragLocalPaths.clear();
-    dragStagingFolder.clear();
+    cleanupDragState();
     for (GList* node = rows; node != nullptr; node = node->next) gtk_tree_path_free(static_cast<GtkTreePath*>(node->data));
     g_list_free(rows);
 }
@@ -1469,12 +1469,7 @@ void TFileBrowserTree::onFileDragBegin(GtkWidget* widget, GdkDragContext* contex
         }
         browser->pendingDragSelectionPaths.clear();
     }
-    for (const std::string& path : browser->pendingDragLocalPaths) g_remove(path.c_str());
-    for (const std::string& path : browser->completedDragDownloads) g_remove(path.c_str());
-    if (!browser->dragStagingFolder.empty()) { g_rmdir(browser->dragStagingFolder.c_str()); browser->dragStagingFolder.clear(); }
-    browser->pendingDragDownloads.clear();
-    browser->completedDragDownloads.clear();
-    browser->pendingDragLocalPaths.clear();
+    browser->cleanupDragState();
     browser->pendingExternalPath.clear();
     GtkTreeModel* model = nullptr;
     GList* rows = selectedRows(widget, &model);
@@ -1534,8 +1529,7 @@ void TFileBrowserTree::onFileDragBegin(GtkWidget* widget, GdkDragContext* contex
 void TFileBrowserTree::onFileDragEnd(GtkWidget*, GdkDragContext*, gpointer data) {
     TFileBrowserTree* browser = static_cast<TFileBrowserTree*>(data);
     browser->pendingDragSelectionPaths.clear();
-    browser->pendingDragDownloads.clear();
-    browser->completedDragDownloads.clear();
+    browser->cleanupDragState();
 }
 
 void TFileBrowserTree::onFileDragDataGet(GtkWidget* widget, GdkDragContext*, GtkSelectionData* selection, guint, guint targetInfo, gpointer data) {

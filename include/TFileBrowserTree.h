@@ -102,6 +102,7 @@ private:
     void hidePreview();
     void showPreview(const std::string& path, int rootX, int rootY);
     bool canAutoPreview(const std::string& path) const;
+    void cleanupDragState();
     void hideDragPreview();
     void showDragPreview(int rootX, int rootY);
     void cachePreview(const std::string& path, const void* content, int length);

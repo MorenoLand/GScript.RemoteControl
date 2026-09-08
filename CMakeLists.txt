@@ -148,3 +148,25 @@ endif()
 set(REMOTE_CONTROL_RUNTIME_SOURCE_DIR "${CMAKE_SOURCE_DIR}/assets/runtime" CACHE PATH "Path to Remote Control runtime assets")
 add_custom_command(TARGET RemoteControl POST_BUILD COMMAND ${CMAKE_COMMAND} "-DREMOTE_CONTROL_RUNTIME_SOURCE_DIRECTORY=${REMOTE_CONTROL_RUNTIME_SOURCE_DIR}" "-DREMOTE_CONTROL_OUTPUT_DIRECTORY=$<TARGET_FILE_DIR:RemoteControl>" -P "${CMAKE_SOURCE_DIR}/cmake/StageRuntimeAssets.cmake")
 add_custom_command(TARGET RemoteControl POST_BUILD COMMAND ${CMAKE_COMMAND} -E rm -f "$<TARGET_FILE_DIR:RemoteControl>/RemoteControl.ico")
+
+if(WIN32)
+    find_program(REMOTE_CONTROL_7Z_EXECUTABLE NAMES 7z 7z.exe HINTS "C:/Program Files/7-Zip" "C:/Program Files (x86)/7-Zip")
+    if(REMOTE_CONTROL_7Z_EXECUTABLE)
+        get_filename_component(REMOTE_CONTROL_7Z_DIRECTORY "${REMOTE_CONTROL_7Z_EXECUTABLE}" DIRECTORY)
+        find_file(REMOTE_CONTROL_7Z_SFX_MODULE NAMES 7z.sfx PATHS "${REMOTE_CONTROL_7Z_DIRECTORY}" NO_DEFAULT_PATH)
+        if(REMOTE_CONTROL_7Z_SFX_MODULE)
+            add_custom_target(RemoteControlSingleFile
+                COMMAND ${CMAKE_COMMAND}
+                    "-DREMOTE_CONTROL_VERSION_HEADER=${REMOTE_CONTROL_BUILD_DATE_HEADER}"
+                    "-DREMOTE_CONTROL_7Z_EXECUTABLE=${REMOTE_CONTROL_7Z_EXECUTABLE}"
+                    "-DREMOTE_CONTROL_7Z_SFX_MODULE=${REMOTE_CONTROL_7Z_SFX_MODULE}"
+                    "-DREMOTE_CONTROL_RUNTIME_DIRECTORY=$<TARGET_FILE_DIR:RemoteControl>"
+                    "-DREMOTE_CONTROL_STAGING_DIRECTORY=${CMAKE_BINARY_DIR}"
+                    "-DREMOTE_CONTROL_OUTPUT_DIRECTORY=$<TARGET_FILE_DIR:RemoteControl>"
+                    -P "${CMAKE_SOURCE_DIR}/cmake/BuildSingleFile.cmake"
+                DEPENDS RemoteControl
+                VERBATIM
+            )
+        endif()
+    endif()
+endif()
