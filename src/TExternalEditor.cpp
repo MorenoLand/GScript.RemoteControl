@@ -10,7 +10,10 @@
 namespace {
 std::string safePathPart(std::string value) {
     for (char& character : value) if (character == '<' || character == '>' || character == ':' || character == '"' || character == '/' || character == '\\' || character == '|' || character == '?' || character == '*') character = '_';
-    return value.empty() ? "untitled" : value;
+    if (value.empty()) return "untitled";
+    if (value == ".") return "_";
+    if (value == "..") return "__";
+    return value;
 }
 }
 
