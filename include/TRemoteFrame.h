@@ -90,6 +90,7 @@ private:
     static gboolean onDelete(GtkWidget*, GdkEvent*, gpointer data);
     static gboolean onConfigure(GtkWidget*, GdkEventConfigure*, gpointer data);
     static gboolean onWindowState(GtkWidget*, GdkEventWindowState*, gpointer data);
+    static gboolean onGraphicalRepositionLater(gpointer data);
       static gboolean onGraphicalDraw(GtkWidget*, cairo_t*, gpointer data);
       static void onGraphicalAllocate(GtkWidget*, GdkRectangle*, gpointer data);
       void repositionGraphicalButtons(int requestedWidth = 0);

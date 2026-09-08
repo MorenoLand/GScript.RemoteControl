@@ -49,6 +49,7 @@ struct CompletionPopupRequest { GtkWidget* entry = nullptr; GtkTreeModel* model 
 struct DisconnectDispatch { std::shared_ptr<bool> alive; TRemoteFrame* frame = nullptr; void* handle = nullptr; std::uint64_t generation = 0; std::string reason; };
 struct ChannelFieldLifetime { std::shared_ptr<bool> alive; TRemoteFrame* frame = nullptr; };
 struct ChannelTabLifetime { std::shared_ptr<bool> alive; TRemoteFrame* frame = nullptr; };
+struct GraphicalRepositionRequest { TRemoteFrame* frame; std::shared_ptr<bool> alive; bool restore; };
 GtkWidget* currentNotebookPage(GtkWidget* notebook) {
     if (notebook == nullptr || !GTK_IS_NOTEBOOK(notebook)) return nullptr;
     const gint page = gtk_notebook_get_current_page(GTK_NOTEBOOK(notebook));
@@ -668,25 +669,33 @@ gboolean TRemoteFrame::onWindowState(GtkWidget*, GdkEventWindowState* event, gpo
     }
 #endif
     if (frame->windowMaximized && !maximized) {
-        g_idle_add(+[](gpointer value) -> gboolean {
-            TRemoteFrame* target = static_cast<TRemoteFrame*>(value);
-            target->windowMaximized = false;
-#ifdef _WIN32
-            GdkWindow* nativeWindow = gtk_widget_get_window(target->window);
-            HWND handle = nativeWindow == nullptr ? nullptr : reinterpret_cast<HWND>(GDK_WINDOW_HWND(nativeWindow));
-            if (target->hasNativeNormalWindowGeometry && handle != nullptr) SetWindowPos(handle, nullptr, target->normalWindowX, target->normalWindowY, target->normalWindowWidth, target->normalWindowHeight, SWP_NOACTIVATE | SWP_NOZORDER);
-            else gtk_window_resize(GTK_WINDOW(target->window), target->normalWindowWidth, target->normalWindowHeight);
-#else
-            gtk_window_resize(GTK_WINDOW(target->window), target->normalWindowWidth, target->normalWindowHeight);
-#endif
-            target->repositionGraphicalButtons(target->normalWindowWidth);
-            return G_SOURCE_REMOVE;
-        }, frame);
+        g_idle_add_full(G_PRIORITY_DEFAULT, onGraphicalRepositionLater, new GraphicalRepositionRequest{frame, frame->callbackAlive, true}, +[](gpointer data) { delete static_cast<GraphicalRepositionRequest*>(data); });
         return false;
     }
     frame->windowMaximized = maximized;
-    g_idle_add(+[](gpointer value) -> gboolean { static_cast<TRemoteFrame*>(value)->repositionGraphicalButtons(); return G_SOURCE_REMOVE; }, frame);
+    g_idle_add_full(G_PRIORITY_DEFAULT, onGraphicalRepositionLater, new GraphicalRepositionRequest{frame, frame->callbackAlive, false}, +[](gpointer data) { delete static_cast<GraphicalRepositionRequest*>(data); });
     return false;
+}
+
+gboolean TRemoteFrame::onGraphicalRepositionLater(gpointer data) {
+    auto* request = static_cast<GraphicalRepositionRequest*>(data);
+    if (!*request->alive || request->frame->window == nullptr) return G_SOURCE_REMOVE;
+    TRemoteFrame* target = request->frame;
+    if (request->restore) {
+        target->windowMaximized = false;
+#ifdef _WIN32
+        GdkWindow* nativeWindow = gtk_widget_get_window(target->window);
+        HWND handle = nativeWindow == nullptr ? nullptr : reinterpret_cast<HWND>(GDK_WINDOW_HWND(nativeWindow));
+        if (target->hasNativeNormalWindowGeometry && handle != nullptr) SetWindowPos(handle, nullptr, target->normalWindowX, target->normalWindowY, target->normalWindowWidth, target->normalWindowHeight, SWP_NOACTIVATE | SWP_NOZORDER);
+        else gtk_window_resize(GTK_WINDOW(target->window), target->normalWindowWidth, target->normalWindowHeight);
+#else
+        gtk_window_resize(GTK_WINDOW(target->window), target->normalWindowWidth, target->normalWindowHeight);
+#endif
+        target->repositionGraphicalButtons(target->normalWindowWidth);
+        return G_SOURCE_REMOVE;
+    }
+    target->repositionGraphicalButtons();
+    return G_SOURCE_REMOVE;
 }
 
 gboolean TRemoteFrame::onGraphicalDraw(GtkWidget* widget, cairo_t* context, gpointer data) {
