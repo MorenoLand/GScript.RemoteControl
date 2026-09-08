@@ -55,6 +55,7 @@ private:
     };
 
     struct LoadResult {
+        std::shared_ptr<std::atomic<bool>> alive;
         TServerList* serverList;
         std::vector<ServerEntry> entries;
         std::string error;

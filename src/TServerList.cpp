@@ -661,6 +661,7 @@ gboolean TServerList::onDelete(GtkWidget*, GdkEvent*, gpointer data) {
 
 gboolean TServerList::finishLoad(gpointer data) {
     std::unique_ptr<LoadResult> result(static_cast<LoadResult*>(data));
+    if (!result->alive->load()) return G_SOURCE_REMOVE;
     if (result->serverList->worker.joinable()) result->serverList->worker.join();
     result->serverList->entries = std::move(result->entries);
     gtk_list_store_clear(result->serverList->store);
@@ -732,7 +733,7 @@ void TServerList::refresh() {
             if (connection != nullptr) rc_disconnect(connection);
             connection = nextConnection;
         }
-        g_idle_add_full(G_PRIORITY_DEFAULT, finishLoad, new LoadResult{this, std::move(nextEntries), std::move(error)}, +[](gpointer data) { delete static_cast<LoadResult*>(data); });
+        g_idle_add_full(G_PRIORITY_DEFAULT, finishLoad, new LoadResult{callbackAlive, this, std::move(nextEntries), std::move(error)}, +[](gpointer data) { delete static_cast<LoadResult*>(data); });
     });
 }
 
