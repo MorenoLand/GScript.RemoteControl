@@ -34,6 +34,7 @@ void TExternalEditor::open(const std::string& server, const std::string& categor
     std::ofstream stream(path, std::ios::binary | std::ios::trunc);
     stream << content;
     stream.close();
+    sessions.erase(std::remove_if(sessions.begin(), sessions.end(), [&](const auto& existing) { return existing->path == path; }), sessions.end());
     auto session = std::make_unique<Session>();
     session->path = path;
     session->content = content;
