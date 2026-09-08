@@ -1791,9 +1791,12 @@ void TRemoteFrame::onServerData(const char* type, const char* content, void* dat
 }
 
 gboolean TRemoteFrame::scrollChatToBottom(gpointer data) {
-    TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
-    GtkAdjustment* adjustment = gtk_scrolled_window_get_vadjustment(GTK_SCROLLED_WINDOW(frame->chatScrolled));
-    gtk_adjustment_set_value(adjustment, gtk_adjustment_get_upper(adjustment) - gtk_adjustment_get_page_size(adjustment));
+    GtkWidget* scrolled = GTK_WIDGET(data);
+    if (GTK_IS_SCROLLED_WINDOW(scrolled)) {
+        GtkAdjustment* adjustment = gtk_scrolled_window_get_vadjustment(GTK_SCROLLED_WINDOW(scrolled));
+        gtk_adjustment_set_value(adjustment, gtk_adjustment_get_upper(adjustment) - gtk_adjustment_get_page_size(adjustment));
+    }
+    g_object_unref(scrolled);
     return G_SOURCE_REMOVE;
 }
 
@@ -1870,7 +1873,7 @@ void TRemoteFrame::appendChat(const std::string& message, bool suppressUrgency, 
     }
     gtk_text_buffer_get_end_iter(buffer, &end);
     gtk_text_view_scroll_to_iter(GTK_TEXT_VIEW(chatField), &end, 0.0, false, 0.0, 1.0);
-    g_idle_add(scrollChatToBottom, this);
+    g_idle_add(scrollChatToBottom, g_object_ref(chatScrolled));
     appendChatLog(message);
 }
 
