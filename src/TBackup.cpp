@@ -33,7 +33,7 @@ void setBackupServerName(const std::string& serverName) { currentServer = server
 
 void backupEditorText(const std::string& type, const std::string& target, const std::string& content, bool modified) {
     if (currentServer.empty() || !shouldBackup(type)) return;
-    const std::filesystem::path path = backupRoot() / "backups" / currentServer / (modified ? "modified" : "original") / type / ((target.empty() ? type : escapedFilename(target)) + ".txt");
+    const std::filesystem::path path = backupRoot() / "backups" / escapedFilename(currentServer) / (modified ? "modified" : "original") / type / ((target.empty() ? type : escapedFilename(target)) + ".txt");
     std::error_code error;
     std::filesystem::create_directories(path.parent_path(), error);
     if (error) return;
