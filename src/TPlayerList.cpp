@@ -62,6 +62,7 @@ namespace {
     }
 
     bool isAdminPlayer(const RCPlayer& player) { if (player.level == nullptr) return true; for (const unsigned char* value = reinterpret_cast<const unsigned char*>(player.level); *value != '\0'; ++value) if (std::isspace(*value) == 0) return false; return true; }
+    constexpr std::size_t maxPendingPrivateMessages = 500;
 
     struct PMWindowData {
         TPlayerList* owner;
@@ -1463,7 +1464,9 @@ std::string TPlayerList::notePrivateMessage(int playerId, const char* account, c
         return nickText.empty() || nickText == accountText ? accountText : nickText + " (" + accountText + ")";
     }
     pmPlayers[playerId] = {accountText, nickText};
-    pmMessages[playerId].push_back(message == nullptr ? "" : message);
+    auto& pendingMessages = pmMessages[playerId];
+    pendingMessages.push_back(message == nullptr ? "" : message);
+    if (pendingMessages.size() > maxPendingPrivateMessages) pendingMessages.erase(pendingMessages.begin(), pendingMessages.end() - maxPendingPrivateMessages);
     latestPMPlayerId = playerId;
     pmTypes[playerId] = type == nullptr ? "normal" : type;
     pmIconsVisible = true;
