@@ -406,6 +406,13 @@ namespace {
         std::ofstream(runtimeCache, std::ios::binary | std::ios::trunc) << loaderCacheContent;
         g_setenv("GDK_PIXBUF_MODULE_FILE", runtimeCache.string().c_str(), true);
         g_setenv("GSETTINGS_SCHEMA_DIR", (applicationDirectory / "share" / "glib-2.0" / "schemas").string().c_str(), true);
+#elif defined(__APPLE__)
+        const std::string sharedData = (applicationDirectory / "share").string();
+        const std::string loaders = (applicationDirectory / "lib" / "gdk-pixbuf-2.0" / "2.10.0" / "loaders").string();
+        g_setenv("XDG_DATA_DIRS", sharedData.c_str(), true);
+        g_setenv("GDK_PIXBUF_MODULEDIR", loaders.c_str(), true);
+        g_setenv("GDK_PIXBUF_MODULE_FILE", (applicationDirectory / "lib" / "gdk-pixbuf-2.0" / "2.10.0" / "loaders.cache").string().c_str(), true);
+        g_setenv("GSETTINGS_SCHEMA_DIR", (applicationDirectory / "share" / "glib-2.0" / "schemas").string().c_str(), true);
 #endif
     }
 
