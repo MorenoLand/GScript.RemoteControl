@@ -854,13 +854,20 @@ gboolean TFileBrowserTree::onFileButtonPress(GtkWidget* widget, GdkEventButton* 
         GtkTreePath* path = nullptr;
         if (gtk_tree_view_get_path_at_pos(GTK_TREE_VIEW(widget), static_cast<gint>(event->x), static_cast<gint>(event->y), &path, nullptr, nullptr, nullptr)) {
             GtkTreeSelection* selection = gtk_tree_view_get_selection(GTK_TREE_VIEW(widget));
-            if (gtk_tree_selection_path_is_selected(selection, path)) {
+            const bool manualDragPress = (event->state & (GDK_CONTROL_MASK | GDK_SHIFT_MASK)) == 0;
+            if (manualDragPress && !gtk_tree_selection_path_is_selected(selection, path)) {
+                gtk_tree_selection_unselect_all(selection);
+                gtk_tree_selection_select_path(selection, path);
+            }
+            if (manualDragPress && gtk_tree_selection_path_is_selected(selection, path)) {
                 GList* selectedRows = gtk_tree_selection_get_selected_rows(selection, nullptr);
                 const bool multiple = selectedRows != nullptr && selectedRows->next != nullptr;
 #ifdef _WIN32
                 browser->nativeDragButton = event->button;
                 browser->nativeDragX = static_cast<gint>(event->x);
                 browser->nativeDragY = static_cast<gint>(event->y);
+                GdkWindow* surface = gtk_widget_get_window(widget);
+                if (surface != nullptr) SetCapture(reinterpret_cast<HWND>(GDK_WINDOW_HWND(surface)));
 #endif
                 browser->pendingDragSelectionPaths.clear();
                 if (multiple) for (GList* node = selectedRows; node != nullptr; node = node->next) {
@@ -1161,7 +1168,7 @@ gboolean TFileBrowserTree::onFileButtonRelease(GtkWidget* widget, GdkEventButton
 gboolean TFileBrowserTree::onFileLeave(GtkWidget* widget, GdkEventCrossing* event, gpointer data) {
     TFileBrowserTree* browser = static_cast<TFileBrowserTree*>(data);
 #ifdef _WIN32
-    if ((widget == browser->modernView || widget == browser->folderView) && browser->nativeDragButton != 0) {
+    if ((widget == browser->fileView || widget == browser->modernView || widget == browser->folderView) && browser->nativeDragButton != 0) {
         GdkWindow* browserWindow = gtk_widget_get_window(browser->window);
         gint browserX = 0;
         gint browserY = 0;
@@ -1171,7 +1178,7 @@ gboolean TFileBrowserTree::onFileLeave(GtkWidget* widget, GdkEventCrossing* even
         gtk_tree_view_set_drag_dest_row(GTK_TREE_VIEW(browser->folderView), nullptr, GTK_TREE_VIEW_DROP_BEFORE);
         gtk_icon_view_set_drag_dest_item(GTK_ICON_VIEW(browser->modernView), nullptr, GTK_ICON_VIEW_DROP_INTO);
         browser->hidePreview();
-        browser->startNativeDrag(browser->modernView);
+        browser->startNativeDrag(widget == browser->fileView ? browser->fileView : browser->modernView);
         browser->nativeDragButton = 0;
         return true;
     }
