@@ -1482,6 +1482,11 @@ void TFileBrowserTree::startNativeDrag(GtkWidget* widget) {
     pendingDragSelectionPaths.clear();
     if (rows == nullptr) rows = selectedRows(widget, nullptr);
     if (rows == nullptr) return;
+    const auto releaseRows = [&rows] {
+        for (GList* node = rows; node != nullptr; node = node->next) gtk_tree_path_free(static_cast<GtkTreePath*>(node->data));
+        g_list_free(rows);
+        rows = nullptr;
+    };
     std::vector<std::string> remotePaths;
     std::vector<std::wstring> names;
     std::vector<ULONGLONG> sizes;
@@ -1509,25 +1514,37 @@ void TFileBrowserTree::startNativeDrag(GtkWidget* widget) {
     const auto dropAccepted = std::make_shared<bool>(false);
     GdkWindow* previewSurface = dragPreviewWindow == nullptr ? nullptr : gtk_widget_get_window(dragPreviewWindow);
     HWND previewHandle = previewSurface == nullptr ? nullptr : reinterpret_cast<HWND>(GDK_WINDOW_HWND(previewSurface));
-    const HRESULT dragResult = nativeFileDrag(names, sizes, [this, remotePaths](size_t index, std::vector<guint8>& content) {
-        if (connection == nullptr) return false;
+    const auto lifetime = previewAsyncState;
+    const HRESULT dragResult = nativeFileDrag(names, sizes, [lifetime, remotePaths](size_t index, std::vector<guint8>& content) {
+        if (lifetime == nullptr || lifetime->browser == nullptr) return false;
+        TFileBrowserTree* browser = lifetime->browser;
+        if (browser->connection == nullptr) return false;
         if (index >= remotePaths.size()) return false;
         const std::string& remotePath = remotePaths[index];
-        if (!pendingNativeDragContents.contains(remotePath)) {
-            pendingNativeDragContents.emplace(remotePath, std::vector<guint8>());
-            pendingNativeDragDownloadsReady.erase(remotePath);
-            if (!rc_filebrowser_download(connection, remotePath.c_str())) { pendingNativeDragContents.erase(remotePath); pendingNativeDragDownloadsReady.erase(remotePath); appendLog(rc_last_error(connection)); return false; }
+        if (!browser->pendingNativeDragContents.contains(remotePath)) {
+            browser->pendingNativeDragContents.emplace(remotePath, std::vector<guint8>());
+            browser->pendingNativeDragDownloadsReady.erase(remotePath);
+            if (!rc_filebrowser_download(browser->connection, remotePath.c_str())) { browser->pendingNativeDragContents.erase(remotePath); browser->pendingNativeDragDownloadsReady.erase(remotePath); browser->appendLog(rc_last_error(browser->connection)); return false; }
             const gint64 deadline = g_get_monotonic_time() + 10 * G_TIME_SPAN_SECOND;
-            while (!pendingNativeDragDownloadsReady.contains(remotePath) && g_get_monotonic_time() < deadline) {
-                while (gtk_events_pending()) gtk_main_iteration();
+            while (lifetime->browser == browser && !browser->pendingNativeDragDownloadsReady.contains(remotePath) && g_get_monotonic_time() < deadline) {
+                while (gtk_events_pending()) {
+                    gtk_main_iteration();
+                    if (lifetime->browser != browser) return false;
+                }
+                if (lifetime->browser != browser) return false;
                 g_usleep(10000);
             }
         }
-        const auto received = pendingNativeDragContents.find(remotePath);
-        if (received == pendingNativeDragContents.end() || !pendingNativeDragDownloadsReady.contains(remotePath)) { appendLog((std::string("Timed out downloading dragged file ") + remotePath).c_str()); return false; }
+        if (lifetime->browser != browser) return false;
+        const auto received = browser->pendingNativeDragContents.find(remotePath);
+        if (received == browser->pendingNativeDragContents.end() || !browser->pendingNativeDragDownloadsReady.contains(remotePath)) { browser->appendLog((std::string("Timed out downloading dragged file ") + remotePath).c_str()); return false; }
         content = received->second;
         return true;
     }, dropAccepted, previewHandle);
+    if (lifetime == nullptr || lifetime->browser != this) {
+        releaseRows();
+        return;
+    }
     if (FAILED(dragResult)) {
         std::ostringstream error;
         error << "Could not start Windows file drag (0x" << std::hex << std::uppercase << static_cast<unsigned long>(dragResult) << ").";
@@ -1535,8 +1552,7 @@ void TFileBrowserTree::startNativeDrag(GtkWidget* widget) {
     }
     hideDragPreview();
     cleanupDragState();
-    for (GList* node = rows; node != nullptr; node = node->next) gtk_tree_path_free(static_cast<GtkTreePath*>(node->data));
-    g_list_free(rows);
+    releaseRows();
 }
 #endif
 
@@ -1622,13 +1638,19 @@ void TFileBrowserTree::onFileDragEnd(GtkWidget*, GdkDragContext*, gpointer data)
 
 void TFileBrowserTree::onFileDragDataGet(GtkWidget* widget, GdkDragContext*, GtkSelectionData* selection, guint, guint targetInfo, gpointer data) {
     TFileBrowserTree* browser = static_cast<TFileBrowserTree*>(data);
-    if (browser->connection == nullptr) return;
+    const auto lifetime = browser->previewAsyncState;
+    if (browser->connection == nullptr || lifetime == nullptr || lifetime->browser != browser) return;
     if (targetInfo == 2) {
         const gint64 deadline = g_get_monotonic_time() + 10 * G_TIME_SPAN_SECOND;
-        while (!browser->pendingDragDownloads.empty() && g_get_monotonic_time() < deadline) {
-            while (gtk_events_pending()) gtk_main_iteration();
+        while (lifetime->browser == browser && !browser->pendingDragDownloads.empty() && g_get_monotonic_time() < deadline) {
+            while (gtk_events_pending()) {
+                gtk_main_iteration();
+                if (lifetime->browser != browser) return;
+            }
+            if (lifetime->browser != browser) return;
             g_usleep(10000);
         }
+        if (lifetime->browser != browser) return;
         std::vector<gchar*> uris;
         for (const std::string& localPath : browser->pendingDragLocalPaths) {
             if (!g_file_test(localPath.c_str(), G_FILE_TEST_EXISTS)) continue;
