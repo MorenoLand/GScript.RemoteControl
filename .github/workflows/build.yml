@@ -278,7 +278,7 @@ jobs:
           if-no-files-found: error
 
   publish:
-    if: ${{ inputs.target == 'all' && needs.build.result == 'success' && needs.windows.result == 'success' && needs.macos.result == 'success' }}
+    if: ${{ always() && ((inputs.target == 'windows' && needs.windows.result == 'success') || (inputs.target == 'linux' && needs.build.result == 'success') || (inputs.target == 'macos' && needs.macos.result == 'success') || (inputs.target == 'all' && needs.build.result == 'success' && needs.windows.result == 'success' && needs.macos.result == 'success')) }}
     needs: [build, windows, macos]
     runs-on: ubuntu-latest
     steps:
