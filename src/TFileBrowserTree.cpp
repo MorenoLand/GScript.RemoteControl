@@ -461,9 +461,12 @@ TFileBrowserTree::TFileBrowserTree(const std::filesystem::path& nextApplicationD
     gtk_paned_pack2(GTK_PANED(filePanes), fileViewStack, true, true);
     GtkWidget* logScrolled = gtk_scrolled_window_new(nullptr, nullptr);
     gtk_scrolled_window_set_shadow_type(GTK_SCROLLED_WINDOW(logScrolled), GTK_SHADOW_IN);
+    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(logScrolled), GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
     log = gtk_text_view_new();
     gtk_text_view_set_editable(GTK_TEXT_VIEW(log), false);
     gtk_text_view_set_cursor_visible(GTK_TEXT_VIEW(log), false);
+    gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(log), GTK_WRAP_WORD_CHAR);
+    gtk_text_view_set_right_margin(GTK_TEXT_VIEW(log), 10);
     gtk_container_add(GTK_CONTAINER(logScrolled), log);
     gtk_paned_pack2(GTK_PANED(panes), logScrolled, true, true);
     statusLabel = gtk_label_new("0 files");
