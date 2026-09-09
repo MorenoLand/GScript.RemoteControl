@@ -110,10 +110,15 @@ private:
     std::map<int, std::pair<std::string, std::string>> pmPlayers;
     std::map<int, std::vector<std::string>> pmMessages;
     std::map<int, void*> pmWindows;
+    void disablePMCursorBlink(GtkWidget* widget);
+    void restorePMCursorBlink();
     std::map<int, TServerPlayer> serverPlayersById;
     int latestPMPlayerId = 0;
     guint pmBlinkSource = 0;
     bool pmIconsVisible = true;
+    GtkSettings* pmCursorSettings = nullptr;
+    gboolean pmCursorBlink = true;
+    bool pmCursorBlinkOverride = false;
     void* connection = nullptr;
     std::filesystem::path applicationDirectory;
     std::string accountName;

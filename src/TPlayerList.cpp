@@ -509,7 +509,7 @@ TPlayerList::TPlayerList(const std::filesystem::path& nextApplicationDirectory, 
     g_signal_connect(window, "delete-event", G_CALLBACK(onDelete), this);
 }
 
-TPlayerList::~TPlayerList() { if (pmBlinkSource != 0) g_source_remove(pmBlinkSource); while (!pmWindows.empty()) { PMWindowData* data = static_cast<PMWindowData*>(pmWindows.begin()->second); pmWindows.erase(pmWindows.begin()); data->owner = nullptr; gtk_widget_destroy(data->window); } delete localBanWindow; for (GdkPixbuf* icon : statusIcons) if (icon != nullptr) g_object_unref(icon); if (onlineIcon != nullptr) g_object_unref(onlineIcon); if (channelIcon != nullptr) g_object_unref(channelIcon); if (channelClosedIcon != nullptr) g_object_unref(channelClosedIcon); if (pmNormalIcon != nullptr) g_object_unref(pmNormalIcon); if (pmGuildIcon != nullptr) g_object_unref(pmGuildIcon); if (pmAdminIcon != nullptr) g_object_unref(pmAdminIcon); if (pmMassIcon != nullptr) g_object_unref(pmMassIcon); if (window != nullptr) gtk_widget_destroy(window); if (store != nullptr) g_object_unref(store); if (guildStore != nullptr) g_object_unref(guildStore); if (serverStore != nullptr) g_object_unref(serverStore); if (channelStore != nullptr) g_object_unref(channelStore); }
+TPlayerList::~TPlayerList() { if (pmBlinkSource != 0) g_source_remove(pmBlinkSource); while (!pmWindows.empty()) { PMWindowData* data = static_cast<PMWindowData*>(pmWindows.begin()->second); pmWindows.erase(pmWindows.begin()); data->owner = nullptr; gtk_widget_destroy(data->window); } restorePMCursorBlink(); delete localBanWindow; for (GdkPixbuf* icon : statusIcons) if (icon != nullptr) g_object_unref(icon); if (onlineIcon != nullptr) g_object_unref(onlineIcon); if (channelIcon != nullptr) g_object_unref(channelIcon); if (channelClosedIcon != nullptr) g_object_unref(channelClosedIcon); if (pmNormalIcon != nullptr) g_object_unref(pmNormalIcon); if (pmGuildIcon != nullptr) g_object_unref(pmGuildIcon); if (pmAdminIcon != nullptr) g_object_unref(pmAdminIcon); if (pmMassIcon != nullptr) g_object_unref(pmMassIcon); if (window != nullptr) gtk_widget_destroy(window); if (store != nullptr) g_object_unref(store); if (guildStore != nullptr) g_object_unref(guildStore); if (serverStore != nullptr) g_object_unref(serverStore); if (channelStore != nullptr) g_object_unref(channelStore); }
 void TPlayerList::open(void* nextConnection) { setConnection(nextConnection); rc_on_pm_servers_updated(connection, onPMServers, this); rc_on_pm_guilds_updated(connection, onPMGuilds, this); rc_on_pm_server_players(connection, onPMServerPlayers, this); refresh(); gtk_widget_show_all(window); gtk_window_present(GTK_WINDOW(window)); }
 void TPlayerList::setConnection(void* nextConnection) { connection = nextConnection; for (const auto& [playerId, value] : pmWindows) static_cast<PMWindowData*>(value)->connection = connection; }
 void TPlayerList::setUseNewBanType(bool enabled) { useNewBanType = enabled; if (localBanWindow != nullptr) localBanWindow->setUseNewBanType(enabled); }
@@ -1560,6 +1560,7 @@ void TPlayerList::openPrivateMessage(int playerId, const char* account, const ch
     g_signal_connect(data->window, "delete-event", G_CALLBACK(onPMWindowDelete), data);
     g_signal_connect(data->window, "destroy", G_CALLBACK(onPMWindowDestroy), data);
     pmWindows[playerId] = data;
+    disablePMCursorBlink(data->reply);
     if (unread != pmMessages.end()) {
         for (const std::string& message : unread->second) appendPMConversationMessage(data, data->nick.empty() ? data->account : data->nick, message, false);
         markPrivateMessageRead(playerId);
@@ -1574,9 +1575,25 @@ void TPlayerList::openPrivateMessageHistory(const char* account, const char* nic
     onPMHistory(nullptr, &data);
 }
 
+void TPlayerList::disablePMCursorBlink(GtkWidget* widget) {
+    if (!pmCursorBlinkOverride) {
+        pmCursorSettings = widget == nullptr ? nullptr : gtk_widget_get_settings(widget);
+        if (pmCursorSettings == nullptr) return;
+        g_object_get(pmCursorSettings, "gtk-cursor-blink", &pmCursorBlink, nullptr);
+        pmCursorBlinkOverride = true;
+    }
+    g_object_set(pmCursorSettings, "gtk-cursor-blink", FALSE, nullptr);
+}
+void TPlayerList::restorePMCursorBlink() {
+    if (!pmCursorBlinkOverride) return;
+    if (pmCursorSettings != nullptr) g_object_set(pmCursorSettings, "gtk-cursor-blink", pmCursorBlink, nullptr);
+    pmCursorSettings = nullptr;
+    pmCursorBlinkOverride = false;
+}
 void TPlayerList::pmWindowClosed(int playerId, void* data) {
     const auto window = pmWindows.find(playerId);
     if (window != pmWindows.end() && window->second == data) pmWindows.erase(window);
+    if (pmWindows.empty()) restorePMCursorBlink();
 }
 
 void TPlayerList::markPrivateMessageRead(int playerId) {
