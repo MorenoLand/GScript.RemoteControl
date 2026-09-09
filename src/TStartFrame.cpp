@@ -377,6 +377,7 @@ void TStartFrame::refreshAccountMenu() {
 
 bool TStartFrame::editAccount(const std::string& accountName, GtkWindow* parent, int accountIndex) {
     GtkWidget* dialog = gtk_dialog_new_with_buttons(accountName.empty() ? "Add Account" : "Edit Account", nullptr, static_cast<GtkDialogFlags>(0), "Close", GTK_RESPONSE_CANCEL, "Save", GTK_RESPONSE_OK, nullptr);
+    if (parent != nullptr) gtk_window_set_transient_for(GTK_WINDOW(dialog), parent);
     applyGtkButtonIcon(gtk_dialog_get_widget_for_response(GTK_DIALOG(dialog), GTK_RESPONSE_CANCEL), GTK_STOCK_CLOSE);
     applyGtkButtonIcon(gtk_dialog_get_widget_for_response(GTK_DIALOG(dialog), GTK_RESPONSE_OK), GTK_STOCK_SAVE);
     gtk_window_set_position(GTK_WINDOW(dialog), GTK_WIN_POS_CENTER);
