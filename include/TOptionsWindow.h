@@ -30,6 +30,7 @@ private:
     static void onPageChanged(GtkNotebook*, GtkWidget*, guint, gpointer data);
     static gboolean onDelete(GtkWidget*, GdkEvent*, gpointer data);
     void save();
+    void applyOptionsStyle();
     void applyThemeSelection();
     void applySyntaxThemeSelection();
     void applySyntaxThemeSync();
@@ -119,5 +120,6 @@ private:
     RC::RCOptions& options;
     std::filesystem::path applicationDirectory;
     std::function<void(const RC::RCOptions&)> onSaved;
+    GtkCssProvider* optionsStyleProvider = nullptr;
     bool saving = false;
 };

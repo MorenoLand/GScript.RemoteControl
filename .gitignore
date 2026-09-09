@@ -1,5 +1,6 @@
 *.exe
 bin/
+bin.old/
 bin_release/
 *.obj
 *.log

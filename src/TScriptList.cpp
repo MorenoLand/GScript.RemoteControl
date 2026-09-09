@@ -657,7 +657,7 @@ void TScriptList::showEditor(const char* name, const char* script) {
             }
             g_free(updated);
             markScriptEditorSaved(editorBuffer);
-        } else gtk_widget_destroy(GTK_WIDGET(responseDialog));
+        } else { if (!editorState->session.empty()) removeScriptWindowRecord(editorState->statePath, editorState->session, editorState->type, editorState->name); gtk_widget_destroy(GTK_WIDGET(responseDialog)); }
     }), state);
     g_signal_connect(dialog, "configure-event", G_CALLBACK(+[](GtkWidget* configured, GdkEventConfigure*, gpointer data) -> gboolean {
         auto* state = static_cast<EditorState*>(data);
@@ -669,9 +669,17 @@ void TScriptList::showEditor(const char* name, const char* script) {
         }, state);
         return false;
     }), state);
-    g_signal_connect(dialog, "destroy", G_CALLBACK(+[](GtkWidget*, gpointer data) { auto* state = static_cast<EditorState*>(data); if (state->geometryTimer != 0) g_source_remove(state->geometryTimer); if (!state->session.empty()) removeScriptWindowRecord(state->statePath, state->session, state->type, state->name); delete state; }), state);
+    g_signal_connect(dialog, "delete-event", G_CALLBACK(+[](GtkWidget*, GdkEvent*, gpointer data) -> gboolean { auto* state = static_cast<EditorState*>(data); if (!state->session.empty()) removeScriptWindowRecord(state->statePath, state->session, state->type, state->name); return false; }), state);
+    g_signal_connect(dialog, "destroy", G_CALLBACK(+[](GtkWidget*, gpointer data) { auto* state = static_cast<EditorState*>(data); if (state->geometryTimer != 0) g_source_remove(state->geometryTimer); delete state; }), state);
     gtk_widget_show_all(dialog);
     restoreEditorWindowState(scriptName, dialog);
+    gint x = 0;
+    gint y = 0;
+    gint width = 0;
+    gint height = 0;
+    gtk_window_get_position(GTK_WINDOW(dialog), &x, &y);
+    gtk_window_get_size(GTK_WINDOW(dialog), &width, &height);
+    if (!state->session.empty() && width > 0 && height > 0) updateScriptWindowRecord(state->statePath, {state->session, state->type, state->name, x, y, width, height});
     remoteControlDebugLog("script editor: GTK dialog presented type=%s name=%s dialog=%p", type.c_str(), scriptName.c_str(), dialog);
     if (icon != nullptr) {
         gtk_editable_select_region(GTK_EDITABLE(icon), 0, 0);
