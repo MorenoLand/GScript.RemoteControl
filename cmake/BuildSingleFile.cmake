@@ -15,7 +15,7 @@ execute_process(COMMAND "${REMOTE_CONTROL_7Z_EXECUTABLE}" a -t7z "${payload}" "*
 if(NOT archive_result EQUAL 0)
     message(FATAL_ERROR "Unable to create the single-file payload: ${archive_error}")
 endif()
-file(WRITE "${config}" ";!@Install@!UTF-8!\nGUIMode=\"2\"\nOverwriteMode=\"1\"\nInstallPath=\"%LOCALAPPDATA%\\MorenoLand\\RemoteControl\\${version}\"\nRunProgram=\"RemoteControl.exe\"\n;!@InstallEnd@!\n")
+file(WRITE "${config}" ";!@Install@!UTF-8!\nGUIMode=\"2\"\nOverwriteMode=\"1\"\nInstallPath=\"RC\"\nRunProgram=\"RemoteControl.exe\"\n;!@InstallEnd@!\n")
 execute_process(COMMAND "${CMAKE_COMMAND}" -E cat "${REMOTE_CONTROL_7Z_SFX_MODULE}" "${config}" "${payload}" OUTPUT_FILE "${output}" RESULT_VARIABLE sfx_result ERROR_VARIABLE sfx_error)
 if(NOT sfx_result EQUAL 0)
     message(FATAL_ERROR "Unable to assemble the single-file executable: ${sfx_error}")
