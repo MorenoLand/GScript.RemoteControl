@@ -119,7 +119,7 @@ TOptionsWindow::TOptionsWindow(RC::RCOptions& nextOptions, const std::filesystem
     window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
     gtk_widget_set_name(window, "OptionsWindow");
     gtk_window_set_title(GTK_WINDOW(window), "Options");
-    gtk_window_set_default_size(GTK_WINDOW(window), 580, 420);
+    gtk_window_set_default_size(GTK_WINDOW(window), 550, 420);
     gtk_window_set_resizable(GTK_WINDOW(window), false);
     GtkWidget* root = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
     gtk_container_add(GTK_CONTAINER(window), root);
