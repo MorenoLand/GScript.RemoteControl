@@ -456,7 +456,10 @@ void TStartFrame::openAccountManager() {
     GtkWidget* heading = gtk_label_new(nullptr);
     gtk_label_set_markup(GTK_LABEL(heading), "<b>Select an account to sign in</b>");
     gtk_label_set_xalign(GTK_LABEL(heading), 0.0F);
-    gtk_container_set_border_width(GTK_CONTAINER(heading), 10);
+    gtk_widget_set_margin_start(heading, 10);
+    gtk_widget_set_margin_end(heading, 10);
+    gtk_widget_set_margin_top(heading, 10);
+    gtk_widget_set_margin_bottom(heading, 10);
     gtk_box_pack_start(GTK_BOX(content), heading, false, false, 0);
     GtkWidget* list = gtk_list_box_new();
     gtk_widget_set_name(list, "AccountsList");
