@@ -55,6 +55,24 @@ struct PreviewDecodeRequest {
 
 namespace {
 
+    constexpr guint64 maximumLocalTransferBytes = 256ULL * 1024ULL * 1024ULL;
+    constexpr gint maximumEditorBytes = 64 * 1024 * 1024;
+    bool readLocalTransferFile(const gchar* filename, gchar** contents, gsize* length, GError** error) {
+        if (filename == nullptr || contents == nullptr || length == nullptr) return false;
+        GStatBuf status{};
+        if (g_stat(filename, &status) == 0 && status.st_size >= 0 && static_cast<guint64>(status.st_size) > maximumLocalTransferBytes) {
+            if (error != nullptr) g_set_error(error, G_FILE_ERROR, G_FILE_ERROR_FAILED, "Selected file exceeds the 256 MiB transfer limit.");
+            return false;
+        }
+        if (!g_file_get_contents(filename, contents, length, error)) return false;
+        if (*length <= maximumLocalTransferBytes) return true;
+        g_free(*contents);
+        *contents = nullptr;
+        *length = 0;
+        if (error != nullptr) g_set_error(error, G_FILE_ERROR, G_FILE_ERROR_FAILED, "Selected file exceeds the 256 MiB transfer limit.");
+        return false;
+    }
+
     std::string safeDownloadComponent(const std::string& value, const std::string& fallback) {
         std::string result;
         for (const char character : value) {
@@ -1696,7 +1714,7 @@ void TFileBrowserTree::onDropDataReceived(GtkWidget* widget, GdkDragContext* con
                 gchar* filename = g_filename_from_uri(uris[index], nullptr, &error);
                 gchar* contents = nullptr;
                 gsize length = 0;
-                if (filename == nullptr || !g_file_get_contents(filename, &contents, &length, &error)) {
+                if (filename == nullptr || !readLocalTransferFile(filename, &contents, &length, &error)) {
                     success = false;
                     if (error != nullptr) { browser->appendLog(error->message); g_error_free(error); }
                 } else {
@@ -1912,7 +1930,7 @@ void TFileBrowserTree::onUpload(GtkMenuItem*, gpointer data) {
             gsize length = 0;
             GError* error = nullptr;
             const gchar* filename = static_cast<const gchar*>(node->data);
-            if (!g_file_get_contents(filename, &contents, &length, &error)) {
+            if (!readLocalTransferFile(filename, &contents, &length, &error)) {
                 browser->appendLog(error == nullptr ? "Unable to read selected file" : error->message);
                 if (error != nullptr) g_error_free(error);
             } else {
@@ -2057,7 +2075,7 @@ gboolean TFileBrowserTree::watchExternalFile(gpointer data) {
     gchar* contents = nullptr;
     gsize length = 0;
     GError* error = nullptr;
-    if (!g_file_get_contents(browser->watchExternalPath.c_str(), &contents, &length, &error)) {
+    if (!readLocalTransferFile(browser->watchExternalPath.c_str(), &contents, &length, &error)) {
         browser->appendLog(error == nullptr ? "Could not read changed file." : error->message);
         if (error != nullptr) g_error_free(error);
         return G_SOURCE_CONTINUE;
@@ -2081,6 +2099,7 @@ gboolean TFileBrowserTree::beginInlineRename(gpointer data) {
 }
 
 void TFileBrowserTree::showTextEditor(const char* path, const void* content, int length) {
+    if (length < 0 || length > maximumEditorBytes) { appendLog("File is too large to open in the built-in editor."); return; }
     struct EditorState { void* connection; std::string path; GtkWidget* editor; };
     const std::string editorTitle = downloadServer.empty() ? std::string(path) : std::string(path) + " - " + downloadServer;
     GtkWidget* dialog = gtk_dialog_new_with_buttons(editorTitle.c_str(), nullptr, static_cast<GtkDialogFlags>(0), "Cancel", GTK_RESPONSE_CANCEL, "Save", GTK_RESPONSE_ACCEPT, nullptr);
