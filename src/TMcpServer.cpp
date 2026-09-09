@@ -9,6 +9,7 @@
 #include <ctime>
 #include <fstream>
 #include <iostream>
+#include <memory>
 #include <mutex>
 #include <sstream>
 #include <string>
@@ -168,9 +169,53 @@ namespace {
         if (tool == "rc_focused_window_action" && canAdmin) { const std::string action = stringField(request, "action"); if (!approve("Focused window action: " + action)) { audit(method, tool, "approval-denied"); return errorResponse(id, -32002, "Mutation denied by user"); } GList* windows = gtk_window_list_toplevels(); GtkWindow* active = nullptr; for (GList* item = windows; item != nullptr && active == nullptr; item = item->next) if (gtk_window_is_active(GTK_WINDOW(item->data))) active = GTK_WINDOW(item->data); if (active != nullptr && action == "present") gtk_window_present(active); else if (active != nullptr && action == "close") gtk_window_close(active); g_list_free(windows); const bool ok = active != nullptr && (action == "present" || action == "close"); audit(method, tool, ok ? "ok" : "failed"); return response(id, toolResult(ok ? "Focused window action invoked" : "No focused window or invalid action", !ok)); }
         audit(method, tool, "scope-disabled"); return errorResponse(id, -32602, "Tool unavailable or disabled by MCP scope");
     }
-    struct Pending { std::string request; std::string response; std::mutex mutex; std::condition_variable condition; bool done = false; };
-    gboolean dispatch(gpointer data) { auto* pending = static_cast<Pending*>(data); const std::string value = processRequest(pending->request); { std::lock_guard<std::mutex> lock(pending->mutex); pending->response = value; pending->done = true; } pending->condition.notify_one(); return G_SOURCE_REMOVE; }
-    std::string dispatchToGui(const std::string& request) { Pending pending; pending.request = request; g_idle_add(dispatch, &pending); std::unique_lock<std::mutex> lock(pending.mutex); pending.condition.wait(lock, [&] { return pending.done; }); return pending.response; }
+    struct Pending { std::string request; std::string response; std::mutex mutex; std::condition_variable condition; bool done = false; bool cancelled = false; };
+    std::mutex pendingDispatchMutex;
+    std::vector<std::shared_ptr<Pending>> pendingDispatches;
+    void removePendingDispatch(const std::shared_ptr<Pending>& pending) { std::lock_guard<std::mutex> lock(pendingDispatchMutex); pendingDispatches.erase(std::remove(pendingDispatches.begin(), pendingDispatches.end(), pending), pendingDispatches.end()); }
+    void cancelPendingDispatches() {
+        std::lock_guard<std::mutex> dispatchLock(pendingDispatchMutex);
+        for (const auto& pending : pendingDispatches) {
+            std::lock_guard<std::mutex> lock(pending->mutex);
+            pending->cancelled = true;
+            pending->done = true;
+            pending->condition.notify_one();
+        }
+    }
+    void destroyPendingDispatch(gpointer data) { delete static_cast<std::shared_ptr<Pending>*>(data); }
+    gboolean dispatch(gpointer data) {
+        const auto pending = *static_cast<std::shared_ptr<Pending>*>(data);
+        {
+            std::lock_guard<std::mutex> lock(pending->mutex);
+            if (pending->cancelled) { pending->done = true; pending->condition.notify_one(); return G_SOURCE_REMOVE; }
+        }
+        const std::string value = processRequest(pending->request);
+        {
+            std::lock_guard<std::mutex> lock(pending->mutex);
+            if (!pending->cancelled) pending->response = value;
+            pending->done = true;
+        }
+        pending->condition.notify_one();
+        return G_SOURCE_REMOVE;
+    }
+    std::string dispatchToGui(const std::string& request) {
+        if (bridgeStopping) return {};
+        const auto pending = std::make_shared<Pending>();
+        pending->request = request;
+        {
+            std::lock_guard<std::mutex> lock(pendingDispatchMutex);
+            if (bridgeStopping) return {};
+            pendingDispatches.push_back(pending);
+        }
+        g_idle_add_full(G_PRIORITY_DEFAULT, dispatch, new std::shared_ptr<Pending>(pending), destroyPendingDispatch);
+        std::unique_lock<std::mutex> lock(pending->mutex);
+        pending->condition.wait(lock, [&] { return pending->done || bridgeStopping.load(); });
+        if (!pending->done) { pending->cancelled = true; pending->done = true; }
+        const std::string response = pending->response;
+        lock.unlock();
+        removePendingDispatch(pending);
+        return response;
+    }
 #ifdef _WIN32
     std::string pipeName(unsigned long processId) { return PipePrefix + std::to_string(processId); }
     HANDLE connectBridgePipe(unsigned long processId) {
@@ -386,6 +431,7 @@ void updateMcpGuiBridgeOptions(const RC::RCOptions& options) { bridgeOptions = o
 
 void stopMcpGuiBridge() {
     bridgeStopping = true;
+    cancelPendingDispatches();
 #ifdef _WIN32
     const std::string name = pipeName(GetCurrentProcessId());
     HANDLE wake = CreateFileA(name.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_EXISTING, 0, nullptr); if (wake != INVALID_HANDLE_VALUE) CloseHandle(wake);
