@@ -12,7 +12,7 @@ inline GtkWidget* createErrorWindow(const char* title, const char* message, GtkW
     gtk_widget_set_name(window, "ErrorWindow");
     gtk_container_set_border_width(GTK_CONTAINER(window), 5);
     gtk_window_set_title(GTK_WINDOW(window), title == nullptr ? "Question" : title);
-    if (parent != nullptr) gtk_window_set_modal(GTK_WINDOW(window), true);
+    if (parent != nullptr) { gtk_window_set_modal(GTK_WINDOW(window), true); gtk_window_set_transient_for(GTK_WINDOW(window), parent); }
     gtk_window_set_position(GTK_WINDOW(window), GTK_WIN_POS_CENTER);
     gtk_window_set_default_size(GTK_WINDOW(window), 400, 120);
     GtkWidget* box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
