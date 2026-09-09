@@ -13,8 +13,7 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            setup: sudo apt-get update && sudo apt-get install -y cmake ninja-build pkg-config libgtk-3-dev libgtksourceview-3.0-dev libssl-dev pax-utils patchelf zip
-            bundle: RemoteControl-linux-x86_64
+            setup: sudo apt-get update && sudo apt-get install -y cmake ninja-build pkg-config libgtk-3-dev libgtksourceview-3.0-dev libssl-dev pax-utils patchelf curl squashfs-tools
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -35,41 +34,61 @@ jobs:
           strip remotecontrol/bin/RemoteControl
       - name: Test
         run: ctest --test-dir remotecontrol/build --output-on-failure
-      - name: Stage Linux bundle
-        if: runner.os == 'Linux'
+      - name: Stage Linux AppImage
         run: |
-          bundle="${{ matrix.bundle }}"
-          mkdir -p "$bundle/lib"
+          set -euo pipefail
+          appdir="$GITHUB_WORKSPACE/RemoteControl.AppDir"
+          rm -rf "$appdir" RemoteControl-linux-x86_64.AppImage
+          mkdir -p "$appdir/lib"
           grclib="$(find grclib/bin -type f -name 'grclib.so*' -print -quit)"
           test -n "$grclib"
-          cp remotecontrol/bin/RemoteControl "$bundle/"
-          cp "$grclib" "$bundle/lib/"
-          cp -a remotecontrol/assets/runtime/fonts remotecontrol/assets/runtime/images remotecontrol/assets/runtime/language-specs remotecontrol/assets/runtime/sounds "$bundle/"
-          for asset in rcicon_channelopen.png rcicon_channelclosed.png plisticononline.png rcicon_gold.png rcicon_silver.png rcicon_bronze.png rcicon_uc.png; do
-            test -f "$bundle/images/$asset"
+          cp remotecontrol/bin/RemoteControl "$appdir/RemoteControl"
+          cp "$grclib" "$appdir/"
+          for asset in extensions fonts images language-specs sounds; do
+            if [ -d "remotecontrol/assets/runtime/$asset" ]; then cp -a "remotecontrol/assets/runtime/$asset" "$appdir/"; fi
           done
-          cp remotecontrol/bin/control2config.txt "$bundle/"
+          if [ -f remotecontrol/bin/control2config.txt ]; then cp remotecontrol/bin/control2config.txt "$appdir/"; fi
+          cp remotecontrol/assets/appimage/AppRun "$appdir/AppRun"
+          cp remotecontrol/assets/appimage/RemoteControl.desktop "$appdir/RemoteControl.desktop"
+          cp remotecontrol/assets/runtime/images/rcicon.png "$appdir/RemoteControl.png"
+          chmod +x "$appdir/AppRun"
           sourceview="$(pkg-config --variable=libdir gtksourceview-3.0)/libgtksourceview-3.0.so.1"
           pixbuf="$(pkg-config --variable=libdir gdk-pixbuf-2.0)/gdk-pixbuf-2.0"
           test -f "$sourceview"
-          cp -a "$pixbuf" "$bundle/lib/"
-          { lddtree -l remotecontrol/bin/RemoteControl; lddtree -l "$grclib"; lddtree -l "$sourceview"; find "$pixbuf" -type f -name '*.so' -exec lddtree -l {} \;; } | sort -u | while read -r library; do
+          test -d "$pixbuf"
+          cp -L "$sourceview" "$appdir/lib/"
+          cp -a "$pixbuf" "$appdir/lib/"
+          {
+            lddtree -l remotecontrol/bin/RemoteControl
+            lddtree -l "$grclib"
+            lddtree -l "$sourceview"
+            find "$appdir/lib/gdk-pixbuf-2.0/2.10.0/loaders" -type f -name '*.so' -exec lddtree -l {} \;
+          } | sort -u | while IFS= read -r library; do
             [ -f "$library" ] || continue
             case "$(basename "$library")" in
               ld-linux-*|libc.so.*|libm.so.*|libpthread.so.*|libdl.so.*|librt.so.*|libgcc_s.so.*|libstdc++.so.*) continue ;;
             esac
-            cp -n "$library" "$bundle/lib/" || true
+            cp -n "$library" "$appdir/lib/" || true
           done
-          cp -a /usr/share/glib-2.0/schemas "$bundle/share-schemas" || true
-          patchelf --set-rpath '$ORIGIN/lib' "$bundle/RemoteControl"
-          find "$bundle/lib" -type f -name '*.so*' -exec patchelf --set-rpath '$ORIGIN' {} +
-          if find "$bundle/lib" -type f -name '*.so*' -exec sh -c 'ldd "$1" | grep -q "not found"' _ {} \; -print -quit | grep -q .; then echo "Bundled Linux dependency is unresolved."; exit 1; fi
-          (cd "$bundle" && zip -r "../$bundle.zip" .)
+          cp -a /usr/share/glib-2.0/schemas "$appdir/share-schemas" || true
+          patchelf --set-rpath '$ORIGIN/lib' "$appdir/RemoteControl"
+          find "$appdir/lib" -type f -name '*.so*' -exec patchelf --set-rpath '$ORIGIN' {} +
+          loader_dir="$appdir/lib/gdk-pixbuf-2.0/2.10.0/loaders"
+          loader_cache="$appdir/lib/gdk-pixbuf-2.0/2.10.0/loaders.cache"
+          gdk-pixbuf-query-loaders "$loader_dir"/*.so > "$loader_cache"
+          sed -i "s|$appdir|.|g" "$loader_cache"
+          if find "$appdir/lib" -type f -name '*.so*' -exec sh -c 'ldd "$1" | grep -q "not found"' _ {} \; -print -quit | grep -q .; then
+            echo "Bundled Linux dependency is unresolved."
+            exit 1
+          fi
+          curl --fail --location --retry 3 --output appimagetool.AppImage https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-x86_64.AppImage
+          chmod +x appimagetool.AppImage
+          ARCH=x86_64 APPIMAGE_EXTRACT_AND_RUN=1 ./appimagetool.AppImage "$appdir" RemoteControl-linux-x86_64.AppImage
+          test -x RemoteControl-linux-x86_64.AppImage
       - uses: actions/upload-artifact@v4
-        if: runner.os == 'Linux'
         with:
-          name: ${{ matrix.bundle }}
-          path: ${{ matrix.bundle }}.zip
+          name: RemoteControl-linux-x86_64
+          path: RemoteControl-linux-x86_64.AppImage
           if-no-files-found: error
 
   windows:
@@ -90,24 +109,163 @@ jobs:
           install: >-
             mingw-w64-x86_64-gcc mingw-w64-x86_64-cmake mingw-w64-x86_64-ninja
             mingw-w64-x86_64-gtk3 mingw-w64-x86_64-gtksourceview3
-            mingw-w64-x86_64-openssl git zip
-      - name: Configure, build, and test
+            mingw-w64-x86_64-openssl git
+      - name: Configure, build, test, and package
         shell: msys2 {0}
         run: |
+          set -euo pipefail
           cmake -S remotecontrol -B remotecontrol/build -G Ninja -DCMAKE_BUILD_TYPE=Release -DGRCLIB_SOURCE_DIR="$PWD/grclib"
           cmake --build remotecontrol/build --parallel
           strip remotecontrol/bin/RemoteControl.exe
           ctest --test-dir remotecontrol/build --output-on-failure
-          cd remotecontrol/bin
-          zip -r ../../RemoteControl-windows-x86_64.zip .
+          targets="$(cmake --build remotecontrol/build --target help)"
+          printf '%s\n' "$targets" | grep -q 'RemoteControlSingleFile' || { echo "7-Zip SFX target is unavailable."; exit 1; }
+          cmake --build remotecontrol/build --target RemoteControlSingleFile --parallel
+          sfx="$(find remotecontrol/bin -maxdepth 1 -type f -name 'GScript.RC-*.exe' -print -quit)"
+          test -n "$sfx"
+          cp "$sfx" RemoteControl-windows-x86_64.exe
       - uses: actions/upload-artifact@v4
         with:
           name: RemoteControl-windows-x86_64
-          path: RemoteControl-windows-x86_64.zip
+          path: RemoteControl-windows-x86_64.exe
+
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: remotecontrol
+      - uses: actions/checkout@v4
+        with:
+          repository: MorenoLand/GScript.GRClib
+          token: ${{ secrets.RC_RELEASES_TOKEN }}
+          path: grclib
+      - name: Install dependencies
+        run: brew install cmake ninja pkgconf gtk+3 gtksourceview3 openssl@3 libpng libtiff webp fontconfig gdk-pixbuf dylibbundler adwaita-icon-theme
+      - name: Configure, build, and test
+        run: |
+          export PKG_CONFIG_PATH="$(brew --prefix openssl@3)/lib/pkgconfig:$(brew --prefix libpng)/lib/pkgconfig:$(brew --prefix libtiff)/lib/pkgconfig:$(brew --prefix webp)/lib/pkgconfig:$(brew --prefix fontconfig)/lib/pkgconfig:$PKG_CONFIG_PATH"
+          cmake -S remotecontrol -B remotecontrol/build -G Ninja -DCMAKE_BUILD_TYPE=Release -DGRCLIB_SOURCE_DIR="$PWD/grclib" -DOPENSSL_ROOT_DIR="$(brew --prefix openssl@3)"
+          cmake --build remotecontrol/build --parallel
+          ctest --test-dir remotecontrol/build --output-on-failure
+      - name: Stage, sign, notarize, and package macOS app
+        env:
+          MACOS_CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          MACOS_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+          MACOS_NOTARY_APPLE_ID: ${{ secrets.MACOS_NOTARY_APPLE_ID }}
+          MACOS_NOTARY_PASSWORD: ${{ secrets.MACOS_NOTARY_PASSWORD }}
+          MACOS_TEAM_ID: ${{ secrets.MACOS_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          if [ -z "$MACOS_CERTIFICATE_P12" ] || [ -z "$MACOS_CERTIFICATE_PASSWORD" ] || [ -z "$MACOS_SIGNING_IDENTITY" ] || [ -z "$MACOS_NOTARY_APPLE_ID" ] || [ -z "$MACOS_NOTARY_PASSWORD" ] || [ -z "$MACOS_TEAM_ID" ]; then
+            echo "Developer ID signing and notarization secrets are required for the macOS release."
+            exit 1
+          fi
+          app="$GITHUB_WORKSPACE/RemoteControl.app"
+          macos_dir="$app/Contents/MacOS"
+          lib_dir="$macos_dir/lib"
+          rm -rf "$app" RemoteControl-macos.zip
+          mkdir -p "$macos_dir" "$app/Contents/Resources"
+          cp remotecontrol/bin/RemoteControl "$macos_dir/RemoteControl"
+          grclib="$(find grclib -type f \( -name '*grclib*.dylib' -o -name '*grclib*.so' \) -print -quit)"
+          test -n "$grclib"
+          grclib_name="$(basename "$grclib")"
+          cp "$grclib" "$macos_dir/$grclib_name"
+          for asset in extensions fonts images language-specs sounds; do
+            if [ -d "remotecontrol/bin/$asset" ]; then cp -a "remotecontrol/bin/$asset" "$macos_dir/"; fi
+          done
+          if [ -f remotecontrol/bin/control2config.txt ]; then cp remotecontrol/bin/control2config.txt "$macos_dir/"; fi
+          mkdir -p "$macos_dir/share/glib-2.0" "$macos_dir/certs"
+          gtk_prefix="$(brew --prefix gtk+3)"
+          glib_prefix="$(brew --prefix glib)"
+          adwaita_prefix="$(brew --prefix adwaita-icon-theme)"
+          for prefix in "$gtk_prefix" "$adwaita_prefix"; do
+            for asset in icons gtk-3.0; do
+              if [ -d "$prefix/share/$asset" ]; then cp -a "$prefix/share/$asset" "$macos_dir/share/"; fi
+            done
+          done
+          if [ -d "$glib_prefix/share/glib-2.0/schemas" ]; then cp -a "$glib_prefix/share/glib-2.0/schemas" "$macos_dir/share/glib-2.0/"; fi
+          if [ -f /etc/ssl/cert.pem ]; then cp /etc/ssl/cert.pem "$macos_dir/certs/ca-bundle.crt"; fi
+          brew_prefix="$(brew --prefix)"
+          dylibbundler -od -b -x "$macos_dir/RemoteControl" -x "$macos_dir/$grclib_name" -d "$lib_dir" -p '@loader_path/lib/' -s "$brew_prefix"
+          loader_source="$(pkg-config --variable=gdk_pixbuf_moduledir gdk-pixbuf-2.0)"
+          loader_dir="$lib_dir/gdk-pixbuf-2.0/2.10.0/loaders"
+          loader_cache="$lib_dir/gdk-pixbuf-2.0/2.10.0/loaders.cache"
+          test -d "$loader_source"
+          mkdir -p "$loader_dir"
+          cp -L "$loader_source"/*.so "$loader_dir/"
+          query_loader="$(command -v gdk-pixbuf-query-loaders || true)"
+          if [ -z "$query_loader" ]; then query_loader="$(brew --prefix gdk-pixbuf)/bin/gdk-pixbuf-query-loaders"; fi
+          "$query_loader" "$loader_dir"/*.so > "$loader_cache"
+          sed -i '' "s|$macos_dir|.|g" "$loader_cache"
+          dylibbundler -b $(find "$loader_dir" -type f -name '*.so' -exec printf '%s ' '-x' '{}' \;) -d "$lib_dir" -p '@loader_path/lib/' -s "$brew_prefix"
+          version="$(sed -n 's/.*REMOTE_CONTROL_BUILD_VERSION "\([^"]*\)".*/\1/p' remotecontrol/build/generated/RemoteControlBuildDate.h)"
+          test -n "$version"
+          cat > "$app/Contents/Info.plist" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>CFBundleDisplayName</key>
+              <string>Graal Remote Control</string>
+              <key>CFBundleExecutable</key>
+              <string>RemoteControl</string>
+              <key>CFBundleIconFile</key>
+              <string>RemoteControl</string>
+              <key>CFBundleIdentifier</key>
+              <string>com.morenoland.gscript.remotecontrol</string>
+              <key>CFBundleInfoDictionaryVersion</key>
+              <string>6.0</string>
+              <key>CFBundleName</key>
+              <string>Remote Control</string>
+              <key>CFBundlePackageType</key>
+              <string>APPL</string>
+              <key>CFBundleShortVersionString</key>
+              <string>$version</string>
+              <key>CFBundleVersion</key>
+              <string>$version</string>
+              <key>LSMinimumSystemVersion</key>
+              <string>10.13</string>
+              <key>NSHighResolutionCapable</key>
+              <true/>
+          </dict>
+          </plist>
+          EOF
+          keychain="$RUNNER_TEMP/remote-control-signing.keychain-db"
+          keychain_password="$(uuidgen)"
+          certificate="$RUNNER_TEMP/remote-control-signing.p12"
+          printf '%s' "$MACOS_CERTIFICATE_P12" | base64 -D > "$certificate"
+          security create-keychain -p "$keychain_password" "$keychain"
+          trap 'security delete-keychain "$keychain" >/dev/null 2>&1 || true; rm -f "$certificate"' EXIT
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          security import "$certificate" -P "$MACOS_CERTIFICATE_PASSWORD" -A -T /usr/bin/codesign "$keychain"
+          security list-keychains -d user -s "$keychain"
+          security default-keychain -s "$keychain"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$keychain_password" "$keychain"
+          security find-identity -v -p codesigning "$keychain" | grep -F "\"$MACOS_SIGNING_IDENTITY\"" >/dev/null
+          while IFS= read -r -d '' binary; do
+            codesign --force --timestamp --options runtime --sign "$MACOS_SIGNING_IDENTITY" "$binary"
+          done < <(find "$app" -type f \( -name '*.dylib' -o -name '*.so' \) -print0)
+          codesign --force --timestamp --options runtime --sign "$MACOS_SIGNING_IDENTITY" "$macos_dir/RemoteControl"
+          codesign --verify --deep --strict --verbose=2 "$app"
+          ditto -c -k --sequesterRsrc --keepParent "$app" "$RUNNER_TEMP/RemoteControl-macos-notary.zip"
+          xcrun notarytool submit "$RUNNER_TEMP/RemoteControl-macos-notary.zip" --apple-id "$MACOS_NOTARY_APPLE_ID" --password "$MACOS_NOTARY_PASSWORD" --team-id "$MACOS_TEAM_ID" --wait
+          xcrun stapler staple "$app"
+          xcrun stapler validate "$app"
+          spctl --assess --type execute --verbose=4 "$app"
+          ditto -c -k --sequesterRsrc --keepParent "$app" RemoteControl-macos.zip
+          test -f RemoteControl-macos.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: RemoteControl-macos
+          path: RemoteControl-macos.zip
+          if-no-files-found: error
 
   publish:
     if: github.event_name == 'workflow_dispatch'
-    needs: [build, windows]
+    needs: [build, windows, macos]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
@@ -118,20 +276,22 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.RC_RELEASES_TOKEN }}
         run: |
+          set -euo pipefail
           build_id="$(date -u +%Y%m%d-%H%M%S)"
-          for bundle in artifacts/*; do
-            [ -f "$bundle" ] || continue
-            sha256sum "$bundle" > "$bundle.sha256"
-          done
           notes_file="$RUNNER_TEMP/remote-control-release-notes.md"
           {
             echo "# Remote Control build $build_id"
             echo
-            echo "- Source commit: ${GITHUB_SHA}"
+            echo "- Source commit: $GITHUB_SHA"
             echo "- Build date: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
             echo "- Build type: Release (optimized, stripped)"
             echo
-            echo "Checksums are included beside each package asset."
+            echo "Release assets:"
+            for bundle in artifacts/*; do
+              [ -f "$bundle" ] || continue
+              checksum="$(sha256sum "$bundle" | cut -d ' ' -f1)"
+              printf -- '- %s — SHA-256: %s\n' "$(basename "$bundle")" "$checksum"
+            done
           } > "$notes_file"
           gh release create "build-$build_id" artifacts/* \
             --repo MorenoLand/GScript.RC-releases \
