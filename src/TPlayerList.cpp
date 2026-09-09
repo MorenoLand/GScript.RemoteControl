@@ -249,6 +249,7 @@ namespace {
 
     void onPMSend(GtkButton*, gpointer data) {
         PMWindowData* windowData = static_cast<PMWindowData*>(data);
+        if (windowData->connection == nullptr) return;
         GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(windowData->reply));
         GtkTextIter start;
         GtkTextIter end;
@@ -514,7 +515,7 @@ TPlayerList::TPlayerList(const std::filesystem::path& nextApplicationDirectory, 
 }
 
 TPlayerList::~TPlayerList() { if (pmBlinkSource != 0) g_source_remove(pmBlinkSource); while (!pmWindows.empty()) { PMWindowData* data = static_cast<PMWindowData*>(pmWindows.begin()->second); pmWindows.erase(pmWindows.begin()); data->owner = nullptr; gtk_widget_destroy(data->window); } delete localBanWindow; for (GdkPixbuf* icon : statusIcons) if (icon != nullptr) g_object_unref(icon); if (onlineIcon != nullptr) g_object_unref(onlineIcon); if (channelIcon != nullptr) g_object_unref(channelIcon); if (channelClosedIcon != nullptr) g_object_unref(channelClosedIcon); if (pmNormalIcon != nullptr) g_object_unref(pmNormalIcon); if (pmGuildIcon != nullptr) g_object_unref(pmGuildIcon); if (pmAdminIcon != nullptr) g_object_unref(pmAdminIcon); if (pmMassIcon != nullptr) g_object_unref(pmMassIcon); if (window != nullptr) gtk_widget_destroy(window); if (store != nullptr) g_object_unref(store); if (guildStore != nullptr) g_object_unref(guildStore); if (serverStore != nullptr) g_object_unref(serverStore); if (channelStore != nullptr) g_object_unref(channelStore); }
-void TPlayerList::open(void* nextConnection) { setConnection(nextConnection); rc_on_pm_servers_updated(connection, onPMServers, this); rc_on_pm_guilds_updated(connection, onPMGuilds, this); rc_on_pm_server_players(connection, onPMServerPlayers, this); refresh(); gtk_widget_show_all(window); gtk_window_present(GTK_WINDOW(window)); }
+void TPlayerList::open(void* nextConnection) { if (nextConnection == nullptr) return; setConnection(nextConnection); rc_on_pm_servers_updated(connection, onPMServers, this); rc_on_pm_guilds_updated(connection, onPMGuilds, this); rc_on_pm_server_players(connection, onPMServerPlayers, this); refresh(); gtk_widget_show_all(window); gtk_window_present(GTK_WINDOW(window)); }
 void TPlayerList::setConnection(void* nextConnection) { connection = nextConnection; for (const auto& [playerId, value] : pmWindows) static_cast<PMWindowData*>(value)->connection = connection; }
 void TPlayerList::setUseNewBanType(bool enabled) { useNewBanType = enabled; if (localBanWindow != nullptr) localBanWindow->setUseNewBanType(enabled); }
 void TPlayerList::rebindConnection(void* nextConnection) {
@@ -576,6 +577,8 @@ void TPlayerList::sendAttachAway() {
     rc_send_raw_packet(connection, PLI_PLAYERPROPS, payload, sizeof(payload));
 }
 gboolean TPlayerList::onButtonPress(GtkWidget* widget, GdkEventButton* event, gpointer data) {
+    TPlayerList* list = static_cast<TPlayerList*>(data);
+    if (list->connection == nullptr) return false;
     if (event->type != GDK_BUTTON_PRESS && event->type != GDK_2BUTTON_PRESS) return false;
     GtkTreePath* path = nullptr;
     if (!gtk_tree_view_get_path_at_pos(GTK_TREE_VIEW(widget), static_cast<gint>(event->x), static_cast<gint>(event->y), &path, nullptr, nullptr, nullptr)) return false;
@@ -828,7 +831,7 @@ void TPlayerList::handlePlayerRights(const char* account, int rights, const char
             GtkTextIter start; GtkTextIter end;
             gtk_text_buffer_get_bounds(buffer, &start, &end);
             gchar* folders = gtk_text_buffer_get_text(buffer, &start, &end, false);
-            rc_set_player_rights(state->list->connection, state->account.c_str(), value, gtk_entry_get_text(GTK_ENTRY(state->ipRange)), folders == nullptr ? "" : folders);
+            if (state->list->connection != nullptr) rc_set_player_rights(state->list->connection, state->account.c_str(), value, gtk_entry_get_text(GTK_ENTRY(state->ipRange)), folders == nullptr ? "" : folders);
             g_free(folders);
         }
         gtk_widget_destroy(GTK_WIDGET(responseDialog));
@@ -1012,7 +1015,7 @@ void TPlayerList::handlePlayerAttributes(const char* account, const char*, const
             char* properties = rc_parse_player_attributes_text(text.str().c_str());
             if (properties != nullptr) {
                 backupEditorText("attributes", state->account, text.str(), true);
-                rc_set_player_attributes(state->list->connection, state->account.c_str(), properties);
+                if (state->list->connection != nullptr) rc_set_player_attributes(state->list->connection, state->account.c_str(), properties);
                 free(properties);
             }
         gtk_widget_destroy(GTK_WIDGET(responseDialog));
@@ -1141,7 +1144,7 @@ void TPlayerList::handlePlayerText(const char* type, const char* account, const 
                 profile << "Favourite Quote: " << (quote == nullptr ? "" : quote);
                 g_free(quote);
                 backupEditorText("profile", state->account, profile.str(), true);
-                rc_set_player_profile(state->list->connection, state->account.c_str(), profile.str().c_str());
+                if (state->list->connection != nullptr) rc_set_player_profile(state->list->connection, state->account.c_str(), profile.str().c_str());
             }
             gtk_widget_destroy(GTK_WIDGET(responseDialog));
         };
@@ -1160,7 +1163,7 @@ void TPlayerList::handlePlayerText(const char* type, const char* account, const 
     gtk_container_add(GTK_CONTAINER(scrolled), text);
     gtk_box_pack_start(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), scrolled, true, true, 0);
     auto* state = new TextState{this, account, dataType, text};
-    g_signal_connect(dialog, "response", G_CALLBACK(+[](GtkDialog* responseDialog, gint response, gpointer userData) { auto* state = static_cast<TextState*>(userData); if (response == GTK_RESPONSE_ACCEPT) { GtkTextIter start; GtkTextIter end; GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(state->text)); gtk_text_buffer_get_bounds(buffer, &start, &end); gchar* value = gtk_text_buffer_get_text(buffer, &start, &end, false); backupEditorText(state->type, state->account, value == nullptr ? "" : value, true); if (state->type == "profile") rc_set_player_profile(state->list->connection, state->account.c_str(), value == nullptr ? "" : value); else rc_set_player_comments(state->list->connection, state->account.c_str(), value == nullptr ? "" : value); g_free(value); } else gtk_widget_destroy(GTK_WIDGET(responseDialog)); }), state);
+    g_signal_connect(dialog, "response", G_CALLBACK(+[](GtkDialog* responseDialog, gint response, gpointer userData) { auto* state = static_cast<TextState*>(userData); if (response == GTK_RESPONSE_ACCEPT) { GtkTextIter start; GtkTextIter end; GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(state->text)); gtk_text_buffer_get_bounds(buffer, &start, &end); gchar* value = gtk_text_buffer_get_text(buffer, &start, &end, false); backupEditorText(state->type, state->account, value == nullptr ? "" : value, true); if (state->list->connection != nullptr) { if (state->type == "profile") rc_set_player_profile(state->list->connection, state->account.c_str(), value == nullptr ? "" : value); else rc_set_player_comments(state->list->connection, state->account.c_str(), value == nullptr ? "" : value); } g_free(value); } else gtk_widget_destroy(GTK_WIDGET(responseDialog)); }), state);
     g_signal_connect(dialog, "destroy", G_CALLBACK(+[](GtkWidget*, gpointer userData) { delete static_cast<TextState*>(userData); }), state);
     gtk_widget_show_all(dialog);
 }
@@ -1216,6 +1219,7 @@ gboolean TPlayerList::onServerButtonPress(GtkWidget* widget, GdkEventButton* eve
     GtkTreePath* path = nullptr;
     if (!gtk_tree_view_get_path_at_pos(GTK_TREE_VIEW(widget), static_cast<gint>(event->x), static_cast<gint>(event->y), &path, nullptr, nullptr, nullptr)) return false;
     TPlayerList* list = static_cast<TPlayerList*>(data);
+    if (list->connection == nullptr) { gtk_tree_path_free(path); return false; }
     const int depth = gtk_tree_path_get_depth(path);
     if (depth == 1 && event->type == GDK_BUTTON_PRESS && event->button == GDK_BUTTON_PRIMARY) onServerActivated(GTK_TREE_VIEW(widget), path, nullptr, data);
     else if (depth == 1 && event->type == GDK_BUTTON_PRESS && event->button == GDK_BUTTON_SECONDARY) {
@@ -1227,6 +1231,7 @@ gboolean TPlayerList::onServerButtonPress(GtkWidget* widget, GdkEventButton* eve
         gtk_menu_shell_append(GTK_MENU_SHELL(menu), closeServer);
         g_signal_connect(closeServer, "activate", G_CALLBACK(+[](GtkMenuItem*, gpointer userData) {
             TPlayerList* remoteList = static_cast<TPlayerList*>(userData);
+            if (remoteList->connection == nullptr) return;
             GtkTreeModel* model = nullptr;
             GtkTreeIter row;
             if (remoteList->serverTree == nullptr || !gtk_tree_selection_get_selected(gtk_tree_view_get_selection(GTK_TREE_VIEW(remoteList->serverTree)), &model, &row)) return;
@@ -1238,7 +1243,7 @@ gboolean TPlayerList::onServerButtonPress(GtkWidget* widget, GdkEventButton* eve
                 GtkTreePath* serverPath = gtk_tree_model_get_path(model, &row);
                 if (serverPath != nullptr && gtk_tree_view_row_expanded(GTK_TREE_VIEW(remoteList->serverTree), serverPath)) gtk_tree_view_collapse_row(GTK_TREE_VIEW(remoteList->serverTree), serverPath);
                 if (serverPath != nullptr) gtk_tree_path_free(serverPath);
-                rc_unmap_pm_server(remoteList->connection, serverName);
+                if (remoteList->connection != nullptr) rc_unmap_pm_server(remoteList->connection, serverName);
                 GtkTreeIter child;
                 while (gtk_tree_model_iter_children(model, &child, &row)) gtk_tree_store_remove(remoteList->serverStore, &child);
                 gtk_tree_store_set(remoteList->serverStore, &row, 0, remoteList->channelClosedIcon, 3, false, 4, false, -1);
@@ -1315,22 +1320,24 @@ gboolean TPlayerList::onServerButtonPress(GtkWidget* widget, GdkEventButton* eve
         })), list);
         g_signal_connect(banHistory, "activate", G_CALLBACK(+[](GtkMenuItem*, gpointer userData) {
             TPlayerList* remoteList = static_cast<TPlayerList*>(userData);
+            if (remoteList->connection == nullptr) return;
             GtkTreeModel* model = nullptr;
             GtkTreeIter row;
             if (!gtk_tree_selection_get_selected(gtk_tree_view_get_selection(GTK_TREE_VIEW(remoteList->serverTree)), &model, &row)) return;
             gchar* account = nullptr;
             gtk_tree_model_get(model, &row, 2, &account, -1);
-            if (account != nullptr && *account != '\0') rc_request_ban_history(remoteList->connection, account);
+            if (remoteList->connection != nullptr && account != nullptr && *account != '\0') rc_request_ban_history(remoteList->connection, account);
             g_free(account);
         }), list);
         g_signal_connect(staffActivity, "activate", G_CALLBACK(+[](GtkMenuItem*, gpointer userData) {
             TPlayerList* remoteList = static_cast<TPlayerList*>(userData);
+            if (remoteList->connection == nullptr) return;
             GtkTreeModel* model = nullptr;
             GtkTreeIter row;
             if (!gtk_tree_selection_get_selected(gtk_tree_view_get_selection(GTK_TREE_VIEW(remoteList->serverTree)), &model, &row)) return;
             gchar* account = nullptr;
             gtk_tree_model_get(model, &row, 2, &account, -1);
-            if (account != nullptr && *account != '\0') rc_request_staff_activity(remoteList->connection, account);
+            if (remoteList->connection != nullptr && account != nullptr && *account != '\0') rc_request_staff_activity(remoteList->connection, account);
             g_free(account);
         }), list);
         g_signal_connect(menu, "deactivate", G_CALLBACK(+[](GtkWidget* menuWidget, gpointer) {
@@ -1350,6 +1357,7 @@ gboolean TPlayerList::onServerButtonPress(GtkWidget* widget, GdkEventButton* eve
 
 void TPlayerList::onServerActivated(GtkTreeView* tree, GtkTreePath* path, GtkTreeViewColumn*, gpointer data) {
     TPlayerList* list = static_cast<TPlayerList*>(data);
+    if (list->connection == nullptr || path == nullptr) return;
     if (gtk_tree_path_get_depth(path) != 1) return;
     GtkTreeIter row;
     if (!gtk_tree_model_get_iter(GTK_TREE_MODEL(list->serverStore), &row, path)) return;
@@ -1357,6 +1365,7 @@ void TPlayerList::onServerActivated(GtkTreeView* tree, GtkTreePath* path, GtkTre
     gboolean received = false;
     gchar* serverName = nullptr;
     gtk_tree_model_get(gtk_tree_view_get_model(tree), &row, 1, &serverName, 3, &requested, 4, &received, -1);
+    if (serverName == nullptr) return;
     if (!requested && serverName != nullptr) {
         gtk_tree_store_set(list->serverStore, &row, 3, true, -1);
         rc_request_pm_server_players(list->connection, serverName);
@@ -1374,6 +1383,7 @@ void TPlayerList::onGroupExpanded(GtkTreeView*, GtkTreeIter* row, GtkTreePath*, 
 void TPlayerList::onGroupCollapsed(GtkTreeView*, GtkTreeIter* row, GtkTreePath*, gpointer data) { TPlayerList* list = static_cast<TPlayerList*>(data); gtk_tree_store_set(list->store, row, PlayerIconColumn, list->channelClosedIcon, -1); }
 gboolean TPlayerList::onDelete(GtkWidget*, GdkEvent*, gpointer data) { gtk_widget_hide(static_cast<TPlayerList*>(data)->window); return true; }
 void TPlayerList::refresh() {
+    if (connection == nullptr) return;
     gtk_tree_store_clear(store);
     RCPlayer* players = nullptr;
     const int count = rc_get_players(connection, &players);
@@ -1624,6 +1634,7 @@ void TPlayerList::updatePMIcons() {
 }
 
 void TPlayerList::refreshRemoteLists() {
+    if (connection == nullptr) return;
     if (guildStore != nullptr) {
         gtk_list_store_clear(guildStore);
         const char** guilds = nullptr;
@@ -1675,6 +1686,7 @@ std::vector<int> TPlayerList::playerIds() const {
 }
 
 void TPlayerList::sendMassPM() {
+    if (connection == nullptr) return;
     const std::vector<int> ids = playerIds();
     if (ids.empty()) return;
     std::string message;
@@ -1683,12 +1695,14 @@ void TPlayerList::sendMassPM() {
 }
 
 void TPlayerList::sendAdminMessage() {
+    if (connection == nullptr) return;
     std::string message;
     if (!getAdminMessage(GTK_WINDOW(window), message)) return;
     rc_send_admin_message_all(connection, message.c_str());
 }
 
 void TPlayerList::editAccess() {
+    if (connection == nullptr) return;
     GtkTreeSelection* selection = gtk_tree_view_get_selection(GTK_TREE_VIEW(tree));
     GtkTreeModel* model = nullptr;
     GtkTreeIter row;
@@ -1700,6 +1714,7 @@ void TPlayerList::editAccess() {
     g_free(account);
 }
 void TPlayerList::editRights() {
+    if (connection == nullptr) return;
     GtkTreeModel* model = nullptr;
     GtkTreeIter row;
     if (!gtk_tree_selection_get_selected(gtk_tree_view_get_selection(GTK_TREE_VIEW(tree)), &model, &row)) return;
@@ -1709,6 +1724,7 @@ void TPlayerList::editRights() {
     g_free(account);
 }
 void TPlayerList::editAttributes() {
+    if (connection == nullptr) return;
     GtkTreeModel* model = nullptr;
     GtkTreeIter row;
     if (!gtk_tree_selection_get_selected(gtk_tree_view_get_selection(GTK_TREE_VIEW(tree)), &model, &row)) return;
@@ -1719,6 +1735,7 @@ void TPlayerList::editAttributes() {
     g_free(account);
 }
 void TPlayerList::editComments() {
+    if (connection == nullptr) return;
     GtkTreeModel* model = nullptr;
     GtkTreeIter row;
     if (!gtk_tree_selection_get_selected(gtk_tree_view_get_selection(GTK_TREE_VIEW(tree)), &model, &row)) return;
@@ -1728,6 +1745,7 @@ void TPlayerList::editComments() {
     g_free(account);
 }
 void TPlayerList::editProfile() {
+    if (connection == nullptr) return;
     GtkTreeModel* model = nullptr;
     GtkTreeIter row;
     if (!gtk_tree_selection_get_selected(gtk_tree_view_get_selection(GTK_TREE_VIEW(tree)), &model, &row)) return;
@@ -1737,6 +1755,7 @@ void TPlayerList::editProfile() {
     g_free(account);
 }
 void TPlayerList::editAccount() {
+    if (connection == nullptr) return;
     GtkTreeModel* model = nullptr;
     GtkTreeIter row;
     if (!gtk_tree_selection_get_selected(gtk_tree_view_get_selection(GTK_TREE_VIEW(tree)), &model, &row)) return;
@@ -1775,6 +1794,7 @@ void TPlayerList::openSelectedHistory() {
 }
 
 void TPlayerList::requestSelectedBanHistory() {
+    if (connection == nullptr) return;
     GtkTreeModel* model = nullptr;
     GtkTreeIter row;
     if (!gtk_tree_selection_get_selected(gtk_tree_view_get_selection(GTK_TREE_VIEW(tree)), &model, &row)) return;
@@ -1785,6 +1805,7 @@ void TPlayerList::requestSelectedBanHistory() {
 }
 
 void TPlayerList::requestSelectedStaffActivity() {
+    if (connection == nullptr) return;
     GtkTreeModel* model = nullptr;
     GtkTreeIter row;
     if (!gtk_tree_selection_get_selected(gtk_tree_view_get_selection(GTK_TREE_VIEW(tree)), &model, &row)) return;
@@ -1795,6 +1816,7 @@ void TPlayerList::requestSelectedStaffActivity() {
 }
 
 void TPlayerList::disconnectSelectedPlayer() {
+    if (connection == nullptr) return;
     GtkTreeModel* model = nullptr;
     GtkTreeIter row;
     if (!gtk_tree_selection_get_selected(gtk_tree_view_get_selection(GTK_TREE_VIEW(tree)), &model, &row)) return;
@@ -1805,6 +1827,7 @@ void TPlayerList::disconnectSelectedPlayer() {
 }
 
 void TPlayerList::resetSelectedPlayer() {
+    if (connection == nullptr) return;
     GtkTreeModel* model = nullptr;
     GtkTreeIter row;
     if (!gtk_tree_selection_get_selected(gtk_tree_view_get_selection(GTK_TREE_VIEW(tree)), &model, &row)) return;
@@ -1818,7 +1841,7 @@ void TPlayerList::resetSelectedPlayer() {
         g_object_set_data_full(G_OBJECT(dialog), "player-account", g_strdup(account), g_free);
         g_signal_connect(dialog, "response", G_CALLBACK(+[](GtkDialog* responseDialog, gint response, gpointer userData) {
             auto* list = static_cast<TPlayerList*>(userData);
-            if (response == GTK_RESPONSE_ACCEPT) rc_reset_player(list->connection, static_cast<const char*>(g_object_get_data(G_OBJECT(responseDialog), "player-account")));
+            if (response == GTK_RESPONSE_ACCEPT && list->connection != nullptr) rc_reset_player(list->connection, static_cast<const char*>(g_object_get_data(G_OBJECT(responseDialog), "player-account")));
             gtk_widget_destroy(GTK_WIDGET(responseDialog));
         }), this);
         gtk_widget_show_all(dialog);
@@ -1826,6 +1849,7 @@ void TPlayerList::resetSelectedPlayer() {
     g_free(account);
 }
 void TPlayerList::updateSelectedPlayerLevel() {
+    if (connection == nullptr) return;
     GtkTreeModel* model = nullptr;
     GtkTreeIter row;
     if (!gtk_tree_selection_get_selected(gtk_tree_view_get_selection(GTK_TREE_VIEW(tree)), &model, &row)) return;
@@ -1892,6 +1916,7 @@ void TPlayerList::warpSelectedPlayer() {
     gtk_widget_show_all(dialog);
 }
 void TPlayerList::adminMessageSelectedPlayer() {
+    if (connection == nullptr) return;
     GtkTreeModel* model = nullptr;
     GtkTreeIter row;
     if (!gtk_tree_selection_get_selected(gtk_tree_view_get_selection(GTK_TREE_VIEW(tree)), &model, &row)) return;

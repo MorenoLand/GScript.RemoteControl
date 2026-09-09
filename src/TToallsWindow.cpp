@@ -42,7 +42,7 @@ TToallsWindow::TToallsWindow() {
 
 TToallsWindow::~TToallsWindow() { if (window != nullptr) gtk_widget_destroy(window); }
 void TToallsWindow::setServerName(const std::string& server) { serverName = server; gtk_window_set_title(GTK_WINDOW(window), serverName.empty() ? "Toalls" : ("Toalls - " + serverName).c_str()); }
-void TToallsWindow::open(void* nextConnection, const std::string& nextSender) { connection = nextConnection; sender = nextSender; gtk_widget_show_all(window); gtk_window_present(GTK_WINDOW(window)); gtk_widget_grab_focus(entry); }
+void TToallsWindow::open(void* nextConnection, const std::string& nextSender) { if (nextConnection == nullptr) return; connection = nextConnection; sender = nextSender; gtk_widget_show_all(window); gtk_window_present(GTK_WINDOW(window)); gtk_widget_grab_focus(entry); }
 void TToallsWindow::append(const char* message) {
     const std::string line = message == nullptr ? "" : message;
     const auto pending = std::find_if(pendingMessages.begin(), pendingMessages.end(), [&](const std::string& value) { return line == value || (!sender.empty() && line == sender + ": " + value); });
@@ -65,6 +65,7 @@ void TToallsWindow::append(const char* message) {
 }
 void TToallsWindow::onSend(GtkEntry*, gpointer data) {
     TToallsWindow* window = static_cast<TToallsWindow*>(data);
+    if (window->connection == nullptr) return;
     const char* message = gtk_entry_get_text(GTK_ENTRY(window->entry));
     if (message == nullptr || *message == '\0') return;
     if (!rc_send_toall_message(window->connection, message)) {

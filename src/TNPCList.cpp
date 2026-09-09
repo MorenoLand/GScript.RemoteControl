@@ -69,7 +69,7 @@ TNPCList::TNPCList(std::string accountName, RC::RCOptions* nextOptions) : accoun
 TNPCList::~TNPCList() { if (window != nullptr) gtk_widget_destroy(window); if (store != nullptr) g_object_unref(store); }
 void TNPCList::setServerName(const std::string& server) { serverName = server; gtk_window_set_title(GTK_WINDOW(window), serverName.empty() ? "NPCs" : ("NPCs - " + serverName).c_str()); }
 void TNPCList::hide() { if (window != nullptr) gtk_widget_hide(window); }
-void TNPCList::open(void* nextConnection) { connection = nextConnection; rc_on_npc_added(connection, onNPCChanged, this); rc_on_npc_deleted(connection, [](int, void* data) { static_cast<TNPCList*>(data)->refresh(); }, this); refresh(); gtk_widget_show_all(window); gtk_window_present(GTK_WINDOW(window)); }
+void TNPCList::open(void* nextConnection) { if (nextConnection == nullptr) return; connection = nextConnection; rc_on_npc_added(connection, onNPCChanged, this); rc_on_npc_deleted(connection, [](int, void* data) { static_cast<TNPCList*>(data)->refresh(); }, this); refresh(); gtk_widget_show_all(window); gtk_window_present(GTK_WINDOW(window)); }
 void TNPCList::setConnection(void* nextConnection) { if (connection != nullptr && connection != nextConnection) TScriptList::restoreScriptReceiver(connection); connection = nextConnection; }
 void TNPCList::onRefresh(GtkButton*, gpointer data) { static_cast<TNPCList*>(data)->refresh(); }
 void TNPCList::onAdd(GtkButton*, gpointer data) {
@@ -123,7 +123,7 @@ void TNPCList::onAdd(GtkButton*, gpointer data) {
 }
 void TNPCList::onAddResponse(GtkDialog* dialog, gint response, gpointer data) {
     TNPCList* list = static_cast<TNPCList*>(data);
-    if (response == GTK_RESPONSE_OK) {
+    if (response == GTK_RESPONSE_OK && list->connection != nullptr) {
         const auto value = [dialog](const char* key) { return gtk_entry_get_text(GTK_ENTRY(g_object_get_data(G_OBJECT(dialog), key))); };
         const int id = std::atoi(value("id"));
         const int result = rc_create_npc_on_server(list->connection, value("name"), id, value("type"), value("scripter"), value("level"), value("x"), value("y"));
@@ -175,25 +175,25 @@ gboolean TNPCList::onTreeButton(GtkWidget* widget, GdkEventButton* event, gpoint
 }
 void TNPCList::onEditScript(GtkMenuItem*, gpointer data) {
     TNPCList* list = static_cast<TNPCList*>(data);
-    if (list->selectedNPCId < 0) return;
+    if (list->connection == nullptr || list->selectedNPCId < 0) return;
     TScriptList::registerNPCScriptReceiver(list->connection, onNPCScript, list);
     rc_request_npc_script(list->connection, list->selectedNPCId);
 }
 void TNPCList::onEditFlags(GtkMenuItem*, gpointer data) {
     TNPCList* list = static_cast<TNPCList*>(data);
-    if (list->selectedNPCId < 0) return;
+    if (list->connection == nullptr || list->selectedNPCId < 0) return;
     rc_on_npc_flags(list->connection, onNPCFlags, list);
     rc_get_npc_flags(list->connection, list->selectedNPCId);
 }
 void TNPCList::onViewAttributes(GtkMenuItem*, gpointer data) {
     TNPCList* list = static_cast<TNPCList*>(data);
-    if (list->selectedNPCId < 0) return;
+    if (list->connection == nullptr || list->selectedNPCId < 0) return;
     rc_on_npc_attributes(list->connection, onNPCAttributes, list);
     rc_request_npc_attributes(list->connection, list->selectedNPCId);
 }
 void TNPCList::onWarp(GtkMenuItem*, gpointer data) {
     TNPCList* list = static_cast<TNPCList*>(data);
-    if (list->selectedNPCId < 0) return;
+    if (list->connection == nullptr || list->selectedNPCId < 0) return;
     GtkWidget* dialog = gtk_dialog_new_with_buttons("Warp NPC", nullptr, GTK_DIALOG_MODAL, "Cancel", GTK_RESPONSE_CANCEL, "Warp", GTK_RESPONSE_OK, nullptr);
     GtkWidget* grid = gtk_grid_new();
     gtk_container_set_border_width(GTK_CONTAINER(grid), 8);
@@ -217,7 +217,7 @@ void TNPCList::onWarpResponse(GtkDialog* dialog, gint response, gpointer data) {
     if (response == GTK_RESPONSE_OK) {
         TNPCList* list = static_cast<TNPCList*>(data);
         const auto value = [dialog](const char* key) { return gtk_entry_get_text(GTK_ENTRY(g_object_get_data(G_OBJECT(dialog), key))); };
-        rc_warp_npc(list->connection, list->selectedNPCId, std::strtof(value("x"), nullptr), std::strtof(value("y"), nullptr), value("level"));
+        if (list->connection != nullptr) rc_warp_npc(list->connection, list->selectedNPCId, std::strtof(value("x"), nullptr), std::strtof(value("y"), nullptr), value("level"));
     }
     gtk_widget_destroy(GTK_WIDGET(dialog));
 }
@@ -231,7 +231,7 @@ void TNPCList::onNPCFlags(int id, const char* flags, void* data) { auto* list = 
 void TNPCList::onNPCAttributes(int id, const char* attributes, void* data) { static_cast<TNPCList*>(data)->showAttributes(id, attributes == nullptr ? "" : attributes); }
 void TNPCList::onReset(GtkMenuItem*, gpointer data) {
     TNPCList* list = static_cast<TNPCList*>(data);
-    if (list->selectedNPCId >= 0) rc_reset_npc(list->connection, list->selectedNPCId);
+    if (list->connection != nullptr && list->selectedNPCId >= 0) rc_reset_npc(list->connection, list->selectedNPCId);
 }
 void TNPCList::onDeleteNPC(GtkMenuItem*, gpointer data) {
     TNPCList* list = static_cast<TNPCList*>(data);
@@ -242,7 +242,7 @@ void TNPCList::onDeleteNPC(GtkMenuItem*, gpointer data) {
     GtkWidget* dialog = gtk_message_dialog_new(nullptr, GTK_DIALOG_MODAL, GTK_MESSAGE_WARNING, GTK_BUTTONS_OK_CANCEL, "Delete NPC %d?", list->selectedNPCId);
     const gint response = gtk_dialog_run(GTK_DIALOG(dialog));
     gtk_widget_destroy(dialog);
-    if (response == GTK_RESPONSE_OK) rc_delete_npc(list->connection, list->selectedNPCId);
+    if (response == GTK_RESPONSE_OK && list->connection != nullptr) rc_delete_npc(list->connection, list->selectedNPCId);
 }
 void TNPCList::showScriptEditor(const char* name, int id, const char* script) {
     if (options != nullptr && (options->externaleditorscope == "scripts" || options->externaleditorscope == "text")) {
@@ -462,6 +462,7 @@ void TNPCList::onNPCChanged(int id, const char* name, void* data) {
 }
 gboolean TNPCList::onDelete(GtkWidget*, GdkEvent*, gpointer data) { gtk_widget_hide(static_cast<TNPCList*>(data)->window); return true; }
 void TNPCList::refresh() {
+    if (connection == nullptr) return;
     gtk_tree_sortable_set_sort_column_id(GTK_TREE_SORTABLE(store), GTK_TREE_SORTABLE_UNSORTED_SORT_COLUMN_ID, GTK_SORT_ASCENDING);
     gtk_list_store_clear(store);
     RCNPC* npcs = nullptr;
@@ -474,6 +475,7 @@ void TNPCList::refresh() {
     gtk_tree_sortable_set_sort_column_id(GTK_TREE_SORTABLE(store), 0, GTK_SORT_ASCENDING);
 }
 int TNPCList::firstFreeNPCId() const {
+    if (connection == nullptr) return 1000;
     RCNPC* npcs = nullptr;
     const int count = rc_get_npcs(connection, &npcs);
     std::set<int> ids;

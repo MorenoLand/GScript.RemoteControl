@@ -145,6 +145,7 @@ void TLocalBanWindow::updateTabIcon(int scope) {
 }
 
 void TLocalBanWindow::open(void* nextConnection, const std::string& nextAccount, const std::string& nextComputerId, const std::string& details) {
+    if (nextConnection == nullptr) return;
     connection = nextConnection;
     account = nextAccount;
     computerId = nextComputerId;
@@ -216,6 +217,7 @@ void TLocalBanWindow::open(void* nextConnection, const std::string& nextAccount,
 
 void TLocalBanWindow::onApply(GtkButton* button, gpointer data) {
     TLocalBanWindow* editor = static_cast<TLocalBanWindow*>(data);
+    if (editor->connection == nullptr) return;
     const int index = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(button), "scope"));
     Scope& scope = editor->scopes[index];
     if (scope.target.empty()) return;
@@ -235,6 +237,7 @@ void TLocalBanWindow::onBannedChanged(GtkToggleButton* button, gpointer data) { 
 void TLocalBanWindow::onBanTypeChanged(GtkComboBox* combo, gpointer data) { static_cast<TLocalBanWindow*>(data)->updateTimeLeft(GPOINTER_TO_INT(g_object_get_data(G_OBJECT(combo), "scope"))); }
 void TLocalBanWindow::onBanHistory(GtkButton*, gpointer data) {
     TLocalBanWindow* editor = static_cast<TLocalBanWindow*>(data);
+    if (editor->connection == nullptr) return;
     const std::string target = editor->account.empty() ? "pc:" + editor->computerId : editor->account;
     if (!target.empty()) rc_request_ban_history(editor->connection, target.c_str());
     gtk_widget_show(editor->window);
@@ -242,6 +245,7 @@ void TLocalBanWindow::onBanHistory(GtkButton*, gpointer data) {
 }
 void TLocalBanWindow::onStaffActivity(GtkButton*, gpointer data) {
     TLocalBanWindow* editor = static_cast<TLocalBanWindow*>(data);
+    if (editor->connection == nullptr) return;
     if (!editor->account.empty()) rc_request_staff_activity(editor->connection, editor->account.c_str());
     gtk_widget_show(editor->window);
     gtk_window_present(GTK_WINDOW(editor->window));

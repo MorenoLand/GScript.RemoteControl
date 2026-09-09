@@ -74,6 +74,7 @@ TFileBrowser::~TFileBrowser() {
 }
 
 void TFileBrowser::open(void* nextConnection) {
+    if (nextConnection == nullptr) return;
     connection = nextConnection;
     rc_on_filebrowser_folders(connection, onFolders, this);
     rc_on_filebrowser_files(connection, onFiles, this);
@@ -87,6 +88,7 @@ void TFileBrowser::onRefresh(GtkButton*, gpointer data) { static_cast<TFileBrows
 
 void TFileBrowser::onFolderActivated(GtkTreeView* view, GtkTreePath* path, GtkTreeViewColumn*, gpointer data) {
     TFileBrowser* browser = static_cast<TFileBrowser*>(data);
+    if (browser->connection == nullptr) return;
     GtkTreeIter iter;
     if (!gtk_tree_model_get_iter(GTK_TREE_MODEL(browser->folders), &iter, path)) return;
     gchar* folder = nullptr;
@@ -112,6 +114,7 @@ void TFileBrowser::refresh() {
 }
 
 void TFileBrowser::refreshFolders() {
+    if (connection == nullptr) return;
     RCFileBrowserFolder* entries = nullptr;
     const int count = rc_copy_filebrowser_folders(connection, &entries);
     gtk_list_store_clear(folders);
@@ -124,6 +127,7 @@ void TFileBrowser::refreshFolders() {
 }
 
 void TFileBrowser::refreshFiles(const char* folder) {
+    if (connection == nullptr) return;
     RCFileBrowserEntry* entries = nullptr;
     const int count = rc_copy_filebrowser_files(connection, &entries);
     gtk_list_store_clear(files);

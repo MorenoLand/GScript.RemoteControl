@@ -72,6 +72,7 @@ void TServerTextEditor::setConnection(void* nextConnection) { connection = nextC
 void TServerTextEditor::hide() { if (window != nullptr) gtk_widget_hide(window); }
 
 void TServerTextEditor::open(void* nextConnection) {
+    if (nextConnection == nullptr) return;
     connection = nextConnection;
     if (kind == Kind::ServerOptions) rc_request_server_options(connection);
     else if (kind == Kind::ServerFlags) rc_request_server_flags(connection);
@@ -91,6 +92,7 @@ void TServerTextEditor::setContent(const char* content) {
         }
         externalEditor->open(serverName, "text", type + ".txt", text, [this](const std::string& updated) {
             backupEditorText(kind == Kind::ServerOptions ? "serveroptions" : kind == Kind::ServerFlags ? "serverflags" : "folderconfig", "", updated, true);
+            if (connection == nullptr) return;
             if (kind == Kind::ServerOptions) rc_upload_server_options(connection, updated.c_str()); else if (kind == Kind::ServerFlags) rc_upload_server_flags(connection, updated.c_str()); else rc_upload_folder_config(connection, updated.c_str());
         });
         return;
@@ -102,6 +104,7 @@ void TServerTextEditor::onClose(GtkButton*, gpointer data) { gtk_widget_hide(sta
 gboolean TServerTextEditor::onDelete(GtkWidget*, GdkEvent*, gpointer data) { gtk_widget_hide(static_cast<TServerTextEditor*>(data)->window); return true; }
 
 void TServerTextEditor::save() {
+    if (connection == nullptr) return;
     GtkTextIter start;
     GtkTextIter end;
     gtk_text_buffer_get_bounds(buffer, &start, &end);

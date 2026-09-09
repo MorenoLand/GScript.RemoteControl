@@ -954,7 +954,7 @@ void TRemoteFrame::onRCOptions(GtkMenuItem*, gpointer data) {
 void TRemoteFrame::onAccountList(const char* accounts, void* data) { TRemoteFrame* frame = static_cast<TRemoteFrame*>(data); if (frame->accountsWindow != nullptr) frame->accountsWindow->setAccounts(accounts); }
 void TRemoteFrame::onPlayerText(const char* type, const char* account, const char* content, void* data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
-    if (type == nullptr || account == nullptr) return;
+    if (frame == nullptr || frame->connection == nullptr || type == nullptr || account == nullptr) return;
     if (std::string(type) == "account") {
         if (frame->accountsWindow == nullptr) frame->accountsWindow = new TAccountsWindow();
         frame->accountsWindow->setUseNewBanType(frame->options.usenewbantype);
@@ -969,6 +969,7 @@ void TRemoteFrame::onPlayerText(const char* type, const char* account, const cha
 }
 void TRemoteFrame::onPlayerRights(const char* account, int rights, const char* ipRange, const char* folderAccess, void* data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
+    if (frame == nullptr || frame->connection == nullptr) return;
     if (frame->playerList == nullptr) frame->playerList = new TPlayerList(frame->applicationDirectory, frame->accountName);
     frame->playerList->setServerName(frame->serverName);
     frame->playerList->setConnection(frame->connection);
@@ -976,6 +977,7 @@ void TRemoteFrame::onPlayerRights(const char* account, int rights, const char* i
 }
 void TRemoteFrame::onPlayerAttributes(const char* account, const char* properties, const char* editorText, void* data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
+    if (frame == nullptr || frame->connection == nullptr) return;
     if (frame->playerList == nullptr) frame->playerList = new TPlayerList(frame->applicationDirectory, frame->accountName);
     frame->playerList->setServerName(frame->serverName);
     frame->playerList->setConnection(frame->connection);
@@ -983,6 +985,7 @@ void TRemoteFrame::onPlayerAttributes(const char* account, const char* propertie
 }
 void TRemoteFrame::onBanData(const char* account, const char* computerId, const char* details, void* data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
+    if (frame == nullptr || frame->connection == nullptr) return;
     if (frame->playerList == nullptr) frame->playerList = new TPlayerList(frame->applicationDirectory, frame->accountName);
     frame->playerList->setUseNewBanType(frame->options.usenewbantype);
     frame->playerList->setServerName(frame->serverName);
@@ -991,6 +994,7 @@ void TRemoteFrame::onBanData(const char* account, const char* computerId, const 
 }
 void TRemoteFrame::onBanListData(const char* type, const char* account, const char* content, void* data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
+    if (frame == nullptr || frame->connection == nullptr) return;
     if (frame->playerList == nullptr) frame->playerList = new TPlayerList(frame->applicationDirectory, frame->accountName);
     frame->playerList->setUseNewBanType(frame->options.usenewbantype);
     frame->playerList->setServerName(frame->serverName);
@@ -1683,6 +1687,7 @@ void TRemoteFrame::handleDisconnected(void* disconnectedConnection, std::uint64_
 
 void TRemoteFrame::onMessage(const char* message, void* data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
+    if (frame == nullptr || frame->connection == nullptr) return;
     const std::string value = message == nullptr ? "" : message;
     if (isInternalProtocolText(value)) return;
     if (frame->options.separatefindresults && frame->appendFindResult(value)) return;
@@ -1744,6 +1749,7 @@ void TRemoteFrame::onIrcMessage(const char* channel, const char* line, void* dat
 
 void TRemoteFrame::onPrivateMessage(int playerId, const char* account, const char* nick, const char* message, const char* type, void* data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
+    if (frame == nullptr || frame->connection == nullptr) return;
     const std::string messageType = type == nullptr ? "normal" : type;
     if (messageType == "mass" && frame->options.nomassmessages) return;
     if (frame->playerList == nullptr) frame->playerList = new TPlayerList(frame->applicationDirectory, frame->accountName);
@@ -1759,6 +1765,7 @@ void TRemoteFrame::onPrivateMessage(int playerId, const char* account, const cha
 
 void TRemoteFrame::onPlayerPropertiesChanged(int playerId, const char* properties, void* data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
+    if (frame == nullptr || frame->connection == nullptr) return;
     if (frame->playerList == nullptr) frame->playerList = new TPlayerList(frame->applicationDirectory, frame->accountName);
     frame->playerList->setServerName(frame->serverName);
     frame->playerList->setPlayerProperties(playerId, properties);
@@ -1768,6 +1775,7 @@ void TRemoteFrame::onPlayerPropertiesChanged(int playerId, const char* propertie
 
 void TRemoteFrame::onPlayerPropChanged(int playerId, const char* property, const char* value, void* data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
+    if (frame == nullptr || frame->connection == nullptr) return;
     updateGScriptEditorPlayerProperty(frame->connection, playerId, property, value);
     if (property != nullptr && g_ascii_strcasecmp(property, "community") == 0) {
         frame->playerCommunityNames[playerId] = value == nullptr ? "" : value;
@@ -1781,6 +1789,7 @@ void TRemoteFrame::onRawPacket(int packetId, const char* data, int length, void*
 
 void TRemoteFrame::onServerData(const char* type, const char* content, void* data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
+    if (frame == nullptr || frame->connection == nullptr) return;
     const std::string value = content == nullptr ? "" : content;
     if (type != nullptr && std::string(type) == "statuslist") {
         if (frame->playerList == nullptr) frame->playerList = new TPlayerList(frame->applicationDirectory, frame->accountName);

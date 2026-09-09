@@ -238,6 +238,7 @@ TScriptList::~TScriptList() { cancelRestoredEditors(); unregisterScriptReceiver(
 void TScriptList::hide() { if (window != nullptr) gtk_widget_hide(window); }
 
 void TScriptList::open(void* nextConnection) {
+    if (nextConnection == nullptr) return;
     setConnection(nextConnection);
     opened = true;
     registerScriptReceiver();
@@ -330,7 +331,7 @@ void TScriptList::onWeaponListReceived(int, void* data) {
 
 void TScriptList::onWeaponAdded(const char* name, void* data) {
     auto* list = static_cast<TScriptList*>(data);
-    if (list == nullptr || list->type != "weapons") return;
+    if (list == nullptr || list->connection == nullptr || list->type != "weapons") return;
     list->refresh();
     if (name == nullptr || list->pendingCreateName != name) return;
     list->pendingCreateName.clear();
@@ -340,7 +341,7 @@ void TScriptList::onWeaponAdded(const char* name, void* data) {
 
 void TScriptList::onWeaponDeleted(const char* name, void* data) {
     auto* list = static_cast<TScriptList*>(data);
-    if (list == nullptr || list->type != "weapons") return;
+    if (list == nullptr || list->connection == nullptr || list->type != "weapons") return;
     list->refresh();
     if (name != nullptr && list->pendingDeleteName == name) {
         list->pendingDeleteName.clear();
@@ -350,14 +351,14 @@ void TScriptList::onWeaponDeleted(const char* name, void* data) {
 
 void TScriptList::onClassAdded(const char* name, void* data) {
     auto* list = static_cast<TScriptList*>(data);
-    if (list == nullptr || list->type != "classes") return;
+    if (list == nullptr || list->connection == nullptr || list->type != "classes") return;
     list->refresh();
     if (name == nullptr || list->pendingCreateName != name) return;
     list->pendingCreateName.clear();
     list->showEditor(name, "");
 }
 
-void TScriptList::onClassDeleted(const char*, void* data) { auto* list = static_cast<TScriptList*>(data); if (list != nullptr) list->refresh(); }
+void TScriptList::onClassDeleted(const char*, void* data) { auto* list = static_cast<TScriptList*>(data); if (list != nullptr && list->connection != nullptr) list->refresh(); }
 
 gboolean TScriptList::onWeaponMutationPoll(gpointer data) {
     auto* list = static_cast<TScriptList*>(data);
@@ -449,7 +450,7 @@ void TScriptList::onAdd(GtkButton*, gpointer data) {
         auto* values = static_cast<AddState*>(userData);
         if (response == GTK_RESPONSE_ACCEPT) {
             const char* name = gtk_entry_get_text(GTK_ENTRY(values->name));
-            if (name != nullptr && *name != '\0') {
+            if (values->list->connection != nullptr && name != nullptr && *name != '\0') {
                 const int result = values->list->type == "classes" ? rc_add_class(values->list->connection, name, "") : rc_add_weapon(values->list->connection, name, gtk_entry_get_text(GTK_ENTRY(values->image)), "");
                 remoteControlDebugLog("script create: type=%s name=%s result=%d", values->list->type.c_str(), name, result);
                 if (result > 0) {
@@ -473,6 +474,7 @@ void TScriptList::onTreeActivated(GtkTreeView*, GtkTreePath*, GtkTreeViewColumn*
 gboolean TScriptList::onDelete(GtkWidget*, GdkEvent*, gpointer data) { gtk_widget_hide(static_cast<TScriptList*>(data)->window); return true; }
 
 void TScriptList::refresh() {
+    if (connection == nullptr) return;
     gtk_tree_sortable_set_sort_column_id(GTK_TREE_SORTABLE(store), GTK_TREE_SORTABLE_UNSORTED_SORT_COLUMN_ID, GTK_SORT_ASCENDING);
     gtk_list_store_clear(store);
     if (type == "weapons") {
@@ -490,6 +492,7 @@ void TScriptList::refresh() {
 }
 
 void TScriptList::edit() {
+    if (connection == nullptr) return;
     GtkTreeModel* model = nullptr;
     GtkTreeIter row;
     if (!gtk_tree_selection_get_selected(gtk_tree_view_get_selection(GTK_TREE_VIEW(tree)), &model, &row)) {
@@ -524,7 +527,7 @@ void TScriptList::deleteSelected() {
     GtkWidget* dialog = gtk_message_dialog_new(nullptr, GTK_DIALOG_MODAL, GTK_MESSAGE_WARNING, GTK_BUTTONS_OK_CANCEL, "Delete %s %s?", noun.c_str(), name);
     const gint response = gtk_dialog_run(GTK_DIALOG(dialog));
     gtk_widget_destroy(dialog);
-    if (response == GTK_RESPONSE_OK) {
+    if (response == GTK_RESPONSE_OK && connection != nullptr) {
         const int result = type == "weapons" ? rc_delete_weapon(connection, name) : rc_delete_class(connection, name);
         remoteControlDebugLog("script delete: type=%s name=%s result=%d", type.c_str(), name, result);
         if (result > 0 && type == "weapons") {
@@ -578,6 +581,7 @@ void TScriptList::showEditor(const char* name, const char* script) {
         }
         externalEditor->open(serverName, type, scriptName, script == nullptr ? "" : script, [this, scriptName, weaponIcon](const std::string& updated) {
             backupEditorText(type == "weapons" ? "weapon" : "class", scriptName, updated, true);
+            if (connection == nullptr) return;
             if (type == "weapons") rc_update_weapon(connection, scriptName.c_str(), weaponIcon.c_str(), updated.c_str()); else rc_update_class(connection, scriptName.c_str(), updated.c_str());
         });
         remoteControlDebugLog("script editor: external open dispatched type=%s name=%s", type.c_str(), scriptName.c_str());

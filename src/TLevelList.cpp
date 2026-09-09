@@ -54,6 +54,7 @@ TLevelList::~TLevelList() { if (window != nullptr) gtk_widget_destroy(window); }
 void TLevelList::setServerName(const std::string& server) { serverName = server; gtk_window_set_title(GTK_WINDOW(window), serverName.empty() ? "Levels" : ("Levels - " + serverName).c_str()); }
 void TLevelList::hide() { if (window != nullptr) gtk_widget_hide(window); }
 void TLevelList::open(void* nextConnection) {
+    if (nextConnection == nullptr) return;
     connection = nextConnection;
     gtk_text_buffer_set_text(buffer, "Loading levels...", -1);
     gtk_widget_show_all(window);
