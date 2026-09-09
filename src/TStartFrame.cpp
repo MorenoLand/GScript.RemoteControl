@@ -28,7 +28,7 @@ namespace {
     }
 
     struct AccountServerPickerOption { std::string label; std::string value; };
-    struct AccountServerPickerState { GtkWidget* combo; std::filesystem::path profilePath; std::vector<AccountServerPickerOption> options; std::string selected; bool refreshing = false; };
+    struct AccountServerPickerState { GtkWidget* combo; std::filesystem::path profilePath; std::vector<AccountServerPickerOption> options; std::string selected; std::shared_ptr<bool> alive = std::make_shared<bool>(true); bool refreshing = false; };
 
     void refreshAccountServerPicker(AccountServerPickerState* state) {
         state->refreshing = true;
@@ -60,7 +60,9 @@ namespace {
 
     struct AccountServerSettingsState { TStartFrame::ListServerSettingsCallback* openSettings; GtkWindow* editDialog; AccountServerPickerState* picker; };
 
-    void onAccountServerSettingsClosed(GtkWidget*, gpointer data) { loadAccountServerPicker(static_cast<AccountServerPickerState*>(data)); }
+    struct AccountServerSettingsClosedState { AccountServerPickerState* picker; std::weak_ptr<bool> alive; };
+    void onAccountServerSettingsClosed(GtkWidget*, gpointer data) { auto* state = static_cast<AccountServerSettingsClosedState*>(data); const std::shared_ptr<bool> alive = state == nullptr ? nullptr : state->alive.lock(); if (state != nullptr && alive != nullptr && *alive && state->picker != nullptr) loadAccountServerPicker(state->picker); }
+    void destroyAccountServerSettingsClosedState(gpointer data, GClosure*) { delete static_cast<AccountServerSettingsClosedState*>(data); }
 
     void onAccountServerSettings(GtkButton*, gpointer data) {
         auto* state = static_cast<AccountServerSettingsState*>(data);
@@ -70,7 +72,8 @@ namespace {
         for (GList* item = windows; item != nullptr; item = item->next) {
             GtkWidget* candidate = GTK_WIDGET(item->data);
             if (g_strcmp0(gtk_window_get_title(GTK_WINDOW(candidate)), "RC settings") != 0) continue;
-            g_signal_connect(candidate, "destroy", G_CALLBACK(onAccountServerSettingsClosed), state->picker);
+            auto* closedState = new AccountServerSettingsClosedState{state->picker, state->picker->alive};
+            g_signal_connect_data(candidate, "destroy", G_CALLBACK(onAccountServerSettingsClosed), closedState, destroyAccountServerSettingsClosedState, static_cast<GConnectFlags>(0));
             gtk_window_present(GTK_WINDOW(candidate));
             break;
         }
@@ -406,14 +409,15 @@ bool TStartFrame::editAccount(const std::string& accountName, GtkWindow* parent,
     GtkWidget* nameLabel = gtk_label_new("Account name"); gtk_label_set_xalign(GTK_LABEL(nameLabel), 0.0F);
     GtkWidget* passwordLabel = gtk_label_new("Password"); gtk_label_set_xalign(GTK_LABEL(passwordLabel), 0.0F);
     GtkWidget* serverLabel = gtk_label_new("List server"); gtk_label_set_xalign(GTK_LABEL(serverLabel), 0.0F);
-    AccountServerPickerState picker{servers, std::filesystem::path(g_get_user_config_dir()) / "GScriptRC" / "listservers.conf"};
+    auto* picker = new AccountServerPickerState{servers, std::filesystem::path(g_get_user_config_dir()) / "GScriptRC" / "listservers.conf"};
+    g_object_set_data_full(G_OBJECT(dialog), "account-server-picker", picker, +[](gpointer data) { auto* picker = static_cast<AccountServerPickerState*>(data); if (picker->alive != nullptr) *picker->alive = false; delete picker; });
     const std::vector<std::string> savedServers = resolvedIndex >= 0 ? accounts.listServersForIndex(static_cast<std::size_t>(resolvedIndex)) : accounts.listServersFor(accountName);
-    if (!savedServers.empty()) picker.selected = savedServers.front();
-    loadAccountServerPicker(&picker);
+    if (!savedServers.empty()) picker->selected = savedServers.front();
+    loadAccountServerPicker(picker);
     gtk_widget_set_tooltip_text(servers, "Choose saved list-server profiles to add or remove");
     atk_object_set_name(gtk_widget_get_accessible(servers), "Associated list-server profiles");
-    g_signal_connect(servers, "changed", G_CALLBACK(onAccountServerPicked), &picker);
-    AccountServerSettingsState settingsState{&onListServerSettingsCallback, GTK_WINDOW(dialog), &picker};
+    g_signal_connect(servers, "changed", G_CALLBACK(onAccountServerPicked), picker);
+    AccountServerSettingsState settingsState{&onListServerSettingsCallback, GTK_WINDOW(dialog), picker};
     g_signal_connect(serverSettings, "clicked", G_CALLBACK(onAccountServerSettings), &settingsState);
     gtk_box_pack_start(GTK_BOX(box), nameLabel, false, false, 0);
     gtk_box_pack_start(GTK_BOX(box), name, false, true, 0);
@@ -429,8 +433,8 @@ bool TStartFrame::editAccount(const std::string& accountName, GtkWindow* parent,
     std::string selected;
     if (accepted) {
         selected = gtk_entry_get_text(GTK_ENTRY(name));
-        if (resolvedIndex >= 0) accounts.updateAt(static_cast<std::size_t>(resolvedIndex), selected, gtk_entry_get_text(GTK_ENTRY(password)), gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(forget)), picker.selected.empty() ? std::vector<std::string>() : std::vector<std::string>{picker.selected});
-        else accounts.update(accountName, selected, gtk_entry_get_text(GTK_ENTRY(password)), gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(forget)), picker.selected.empty() ? std::vector<std::string>() : std::vector<std::string>{picker.selected});
+        if (resolvedIndex >= 0) accounts.updateAt(static_cast<std::size_t>(resolvedIndex), selected, gtk_entry_get_text(GTK_ENTRY(password)), gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(forget)), picker->selected.empty() ? std::vector<std::string>() : std::vector<std::string>{picker->selected});
+        else accounts.update(accountName, selected, gtk_entry_get_text(GTK_ENTRY(password)), gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(forget)), picker->selected.empty() ? std::vector<std::string>() : std::vector<std::string>{picker->selected});
     }
     gtk_widget_destroy(dialog);
     if (accepted) { refreshAccountMenu(); if (resolvedIndex >= 0) requestedAccountIndex = resolvedIndex; else for (std::size_t index = accounts.entries().size(); index > 0; --index) if (accounts.entries()[index - 1].name == selected) { requestedAccountIndex = static_cast<int>(index - 1); break; } selectAccount(selected); requestedAccountIndex = -1; }
