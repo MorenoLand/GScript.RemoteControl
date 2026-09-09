@@ -12,6 +12,7 @@
 #include <cctype>
 #include <cmath>
 #include <cstdint>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <memory>
@@ -78,10 +79,11 @@ namespace {
     std::vector<std::unique_ptr<EditorDiagnosticsState>> diagnosticsStates;
     void scheduleEditorDiagnostics(EditorDiagnosticsState* state);
     void scheduleEditorSymbols(GtkWidget* editor);
-    struct EditorBulkInsertState { GtkWidget* editor; GtkSourceBuffer* buffer; guint resumeTimer; bool active; std::size_t pendingBytes; std::size_t pendingLines; };
+    struct EditorBulkInsertState { GtkWidget* editor; GtkSourceBuffer* buffer; guint resumeTimer; bool active; bool largeContent; std::size_t pendingBytes; std::size_t pendingLines; };
     std::vector<std::unique_ptr<EditorBulkInsertState>> bulkInsertStates;
     constexpr std::size_t bulkInsertBytes = 8192;
     constexpr std::size_t bulkInsertLines = 128;
+    constexpr std::size_t largeEditorBytes = 1024 * 1024;
     constexpr gint completionPopupMinWidth = 260;
     constexpr gint completionPopupMaxWidth = 300;
     constexpr std::size_t completionMaxProposals = 16;
@@ -156,7 +158,7 @@ namespace {
 
     void runEditorDiagnostics(EditorDiagnosticsState* state) {
         EditorBulkInsertState* bulk = bulkInsertState(gtk_text_view_get_buffer(GTK_TEXT_VIEW(state->editor)));
-        if (bulk != nullptr && bulk->active) return;
+        if (bulk != nullptr && (bulk->active || bulk->largeContent)) return;
         const unsigned int request = ++state->request;
         clearEditorDiagnostics(state);
         if (!scriptDiagnosticsEnabled) return;
@@ -187,6 +189,8 @@ namespace {
     }
 
     void scheduleEditorDiagnostics(EditorDiagnosticsState* state) {
+        EditorBulkInsertState* bulk = bulkInsertState(gtk_text_view_get_buffer(GTK_TEXT_VIEW(state->editor)));
+        if (bulk != nullptr && bulk->largeContent) { if (state->timeout != 0) { g_source_remove(state->timeout); state->timeout = 0; } ++state->request; return; }
         if (state->timeout != 0) g_source_remove(state->timeout);
         ++state->request;
         state->timeout = g_timeout_add(180, runScheduledEditorDiagnostics, state);
@@ -198,11 +202,13 @@ namespace {
         state->active = false;
         state->pendingBytes = 0;
         state->pendingLines = 0;
-        gtk_source_buffer_set_highlight_syntax(state->buffer, syntaxHighlighting);
-        gtk_source_buffer_set_highlight_matching_brackets(state->buffer, showBrackets);
+        if (!state->largeContent) {
+            gtk_source_buffer_set_highlight_syntax(state->buffer, syntaxHighlighting);
+            gtk_source_buffer_set_highlight_matching_brackets(state->buffer, showBrackets);
+        }
         gtk_widget_queue_draw(state->editor);
         EditorDiagnosticsState* diagnostics = diagnosticsState(state->editor);
-        if (diagnostics != nullptr && scriptDiagnosticsEnabled) scheduleEditorDiagnostics(diagnostics);
+        if (!state->largeContent && diagnostics != nullptr && scriptDiagnosticsEnabled) scheduleEditorDiagnostics(diagnostics);
         return G_SOURCE_REMOVE;
     }
 
@@ -213,7 +219,7 @@ namespace {
 
     void onEditorInsertText(GtkTextBuffer*, GtkTextIter*, gchar* text, gint length, gpointer data) {
         EditorBulkInsertState* state = static_cast<EditorBulkInsertState*>(data);
-        if (length <= 0) return;
+        if (length <= 0 || state->largeContent) return;
         state->pendingBytes += static_cast<std::size_t>(length);
         state->pendingLines += static_cast<std::size_t>(std::count(text, text + length, '\n'));
         if (!state->active && state->pendingBytes < bulkInsertBytes && state->pendingLines < bulkInsertLines) return;
@@ -1029,6 +1035,8 @@ namespace {
         const auto state = std::find_if(editorCompletionStates.begin(), editorCompletionStates.end(), [editor](const EditorCompletionState& value) { return value.editor == editor; });
         if (state == editorCompletionStates.end()) return G_SOURCE_REMOVE;
         state->symbolsTimer = 0;
+        EditorBulkInsertState* bulk = bulkInsertState(gtk_text_view_get_buffer(GTK_TEXT_VIEW(editor)));
+        if (bulk != nullptr && bulk->largeContent) return G_SOURCE_REMOVE;
         if (state->symbolsRunning) return G_SOURCE_REMOVE;
         state->symbolsRunning = true;
         GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(editor));
@@ -1049,6 +1057,8 @@ namespace {
     void scheduleEditorSymbols(GtkWidget* editor) {
         const auto state = std::find_if(editorCompletionStates.begin(), editorCompletionStates.end(), [editor](const EditorCompletionState& value) { return value.editor == editor; });
         if (state == editorCompletionStates.end()) return;
+        EditorBulkInsertState* bulk = bulkInsertState(gtk_text_view_get_buffer(GTK_TEXT_VIEW(editor)));
+        if (bulk != nullptr && bulk->largeContent) { if (state->symbolsTimer != 0) { g_source_remove(state->symbolsTimer); state->symbolsTimer = 0; } ++state->symbolsRequest; return; }
         if (state->symbolsTimer != 0) g_source_remove(state->symbolsTimer);
         ++state->symbolsRequest;
         state->symbolsTimer = g_timeout_add(180, refreshEditorSymbols, editor);
@@ -2037,9 +2047,9 @@ namespace {
         gtk_source_view_set_show_line_numbers(view, showLineNumbers);
         gtk_source_view_set_auto_indent(view, autoIndenting);
         gtk_source_view_set_smart_home_end(view, smartHomeEnd ? GTK_SOURCE_SMART_HOME_END_BEFORE : GTK_SOURCE_SMART_HOME_END_DISABLED);
-        gtk_source_buffer_set_highlight_syntax(buffer, syntaxHighlighting && (bulk == nullptr || !bulk->active));
-        gtk_source_buffer_set_highlight_matching_brackets(buffer, showBrackets && (bulk == nullptr || !bulk->active));
-        gtk_source_buffer_set_highlight_matching_brackets(buffer, showBrackets);
+        const bool highlight = bulk == nullptr || (!bulk->active && !bulk->largeContent);
+        gtk_source_buffer_set_highlight_syntax(buffer, syntaxHighlighting && highlight);
+        gtk_source_buffer_set_highlight_matching_brackets(buffer, showBrackets && highlight);
         setEditorFontSize(editor, scriptFontSize);
         GtkWidget* map = static_cast<GtkWidget*>(g_object_get_data(G_OBJECT(editor), "remote-control-minimap"));
         GtkWidget* strip = static_cast<GtkWidget*>(g_object_get_data(G_OBJECT(editor), "remote-control-minimap-strip"));
@@ -2260,6 +2270,7 @@ void configureGScriptEditor(GtkWidget* editor, bool script) {
         bulk->buffer = GTK_SOURCE_BUFFER(editorBuffer);
         bulk->resumeTimer = 0;
         bulk->active = false;
+        bulk->largeContent = false;
         bulk->pendingBytes = 0;
         bulk->pendingLines = 0;
         EditorBulkInsertState* bulkPointer = bulk.get();
@@ -2420,6 +2431,21 @@ void setGScriptEditorContent(GtkTextBuffer* buffer, const char* content, gint le
         validSource = g_utf8_make_valid(source, sourceLength);
         source = validSource == nullptr ? "" : validSource;
         sourceLength = -1;
+    }
+    EditorBulkInsertState* bulk = bulkInsertState(buffer);
+    if (bulk != nullptr) {
+        const std::size_t sourceBytes = sourceLength < 0 ? std::strlen(source) : static_cast<std::size_t>(sourceLength);
+        bulk->largeContent = sourceBytes >= largeEditorBytes;
+        if (bulk->largeContent) {
+            bulk->active = false;
+            bulk->pendingBytes = 0;
+            bulk->pendingLines = 0;
+            gtk_source_buffer_set_highlight_syntax(bulk->buffer, false);
+            gtk_source_buffer_set_highlight_matching_brackets(bulk->buffer, false);
+            setCompletionProvider(bulk->editor, false);
+            EditorDiagnosticsState* diagnostics = diagnosticsState(bulk->editor);
+            if (diagnostics != nullptr) { ++diagnostics->request; clearEditorDiagnostics(diagnostics); }
+        }
     }
     GtkSourceUndoManager* undoManager = GTK_SOURCE_IS_BUFFER(buffer) ? gtk_source_buffer_get_undo_manager(GTK_SOURCE_BUFFER(buffer)) : nullptr;
     if (undoManager != nullptr) gtk_source_undo_manager_begin_not_undoable_action(undoManager);
