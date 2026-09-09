@@ -31,6 +31,8 @@
 #include <filesystem>
 #include <chrono>
 #include <vector>
+#include <charconv>
+#include <string_view>
 
 struct PreviewAsyncState {
     TFileBrowserTree* browser = nullptr;
@@ -678,7 +680,41 @@ std::string TFileBrowserTree::downloadDestinationDirectory() const {
 void TFileBrowserTree::onRefresh(GtkButton*, gpointer data) { static_cast<TFileBrowserTree*>(data)->hide(); }
 void TFileBrowserTree::onFolders(int, void* data) { static_cast<TFileBrowserTree*>(data)->refreshFolders(); }
 void TFileBrowserTree::onFiles(const char* folder, int count, void* data) { static_cast<TFileBrowserTree*>(data)->refreshFiles(folder, count); }
-void TFileBrowserTree::onMessage(const char* message, void* data) { TFileBrowserTree* browser = static_cast<TFileBrowserTree*>(data); if (browser->isPreviewTransferMessage(message)) return; browser->appendLog(message == nullptr ? "" : message); }
+void TFileBrowserTree::onMessage(const char* message, void* data) {
+    TFileBrowserTree* browser = static_cast<TFileBrowserTree*>(data);
+    if (browser->isPreviewTransferMessage(message)) return;
+    if (message == nullptr) { browser->appendLog(""); return; }
+    const std::string text(message);
+    constexpr std::string_view chunkPrefix = "Received chunk: ";
+    constexpr std::string_view sizeMarker = " bytes for ";
+    if (text.starts_with(chunkPrefix)) {
+        const std::size_t slash = text.find('/', chunkPrefix.size());
+        const std::size_t marker = slash == std::string::npos ? std::string::npos : text.find(sizeMarker, slash + 1);
+        if (slash != std::string::npos && marker != std::string::npos) {
+            const std::string receivedText = text.substr(chunkPrefix.size(), slash - chunkPrefix.size());
+            const std::string totalText = text.substr(slash + 1, marker - slash - 1);
+            std::size_t received = 0;
+            std::size_t total = 0;
+            const auto parseSize = [](const std::string& value, std::size_t& result) {
+                if (value.empty()) return false;
+                const auto parsed = std::from_chars(value.data(), value.data() + value.size(), result);
+                return parsed.ec == std::errc() && parsed.ptr == value.data() + value.size();
+            };
+            if (parseSize(receivedText, received) && parseSize(totalText, total)) {
+                const std::string path = text.substr(marker + sizeMarker.size());
+                const std::size_t segmentSize = total == 0 ? 1 : std::max<std::size_t>(1, (total + 9) / 10);
+                const std::size_t segment = total == 0 ? 0 : received >= total ? 10 : std::min<std::size_t>(10, received / segmentSize);
+                const auto previous = browser->chunkLogSegments.find(path);
+                if (previous != browser->chunkLogSegments.end() && previous->second == segment) return;
+                browser->chunkLogSegments[path] = segment;
+                browser->appendLog(message);
+                if (total > 0 && received >= total) browser->chunkLogSegments.erase(path);
+                return;
+            }
+        }
+    }
+    browser->appendLog(message);
+}
 gboolean TFileBrowserTree::onDelete(GtkWidget*, GdkEvent*, gpointer data) { static_cast<TFileBrowserTree*>(data)->hide(); return true; }
 void TFileBrowserTree::onFileSelectionChanged(GtkTreeSelection*, gpointer data) { static_cast<TFileBrowserTree*>(data)->updateFileStatus(); }
 void TFileBrowserTree::onModernSelectionChanged(GtkIconView*, gpointer data) { static_cast<TFileBrowserTree*>(data)->updateFileStatus(); }
@@ -724,6 +760,7 @@ void TFileBrowserTree::resetState() {
     visiblePreviewPaths.clear();
     pendingPreviewDownloads.clear();
     previewTransferPaths.clear();
+    chunkLogSegments.clear();
     pendingDragSelectionPaths.clear();
     cleanupDragState();
     pendingUserDownloads.clear();
@@ -1870,6 +1907,7 @@ void TFileBrowserTree::onFileReceived(const char* path, const void* content, int
     if (path == nullptr || length < 0 || (content == nullptr && length != 0)) return;
     const void* safeContent = content == nullptr ? static_cast<const void*>("") : content;
     const std::string receivedPath(path);
+    browser->chunkLogSegments.erase(receivedPath);
     for (auto iterator = browser->pendingNativeDragContents.begin(); iterator != browser->pendingNativeDragContents.end(); ++iterator) {
         if (!pathMatches(iterator->first, receivedPath)) continue;
         iterator->second.assign(static_cast<const guint8*>(safeContent), static_cast<const guint8*>(safeContent) + length);
