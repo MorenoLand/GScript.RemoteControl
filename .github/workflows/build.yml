@@ -2,12 +2,24 @@ name: build
 
 on:
   workflow_dispatch:
+    inputs:
+      target:
+        description: "Which OS build to run"
+        required: true
+        default: windows
+        type: choice
+        options:
+          - windows
+          - linux
+          - macos
+          - all
 
 permissions:
   contents: read
 
 jobs:
   build:
+    if: ${{ inputs.target == 'linux' || inputs.target == 'all' }}
     strategy:
       fail-fast: false
       matrix:
@@ -92,6 +104,7 @@ jobs:
           if-no-files-found: error
 
   windows:
+    if: ${{ inputs.target == 'windows' || inputs.target == 'all' }}
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -130,6 +143,7 @@ jobs:
           path: RemoteControl-windows-x86_64.exe
 
   macos:
+    if: ${{ inputs.target == 'macos' || inputs.target == 'all' }}
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -264,7 +278,7 @@ jobs:
           if-no-files-found: error
 
   publish:
-    if: github.event_name == 'workflow_dispatch'
+    if: ${{ inputs.target == 'all' && needs.build.result == 'success' && needs.windows.result == 'success' && needs.macos.result == 'success' }}
     needs: [build, windows, macos]
     runs-on: ubuntu-latest
     steps:
