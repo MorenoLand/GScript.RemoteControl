@@ -160,10 +160,13 @@ namespace {
         g_free(lower);
         return extension == ".png" || extension == ".jpg" || extension == ".jpeg" || extension == ".gif" || extension == ".webp" || extension == ".bmp" || extension == ".ico" || extension == ".mng";
     }
-    bool isScriptFile(const char* path) {
-        if (path == nullptr) return false;
+    const char* editorLanguageForFile(const char* path) {
+        if (path == nullptr) return nullptr;
         const char* extension = std::strrchr(path, '.');
-        return extension != nullptr && (g_ascii_strcasecmp(extension, ".graal") == 0 || g_ascii_strcasecmp(extension, ".nw") == 0);
+        if (extension == nullptr) return nullptr;
+        if (g_ascii_strcasecmp(extension, ".graal") == 0 || g_ascii_strcasecmp(extension, ".nw") == 0) return "graal";
+        if (g_ascii_strcasecmp(extension, ".ini") == 0 || g_ascii_strcasecmp(extension, ".conf") == 0) return "ini";
+        return nullptr;
     }
 
 #ifdef _WIN32
@@ -2069,8 +2072,9 @@ void TFileBrowserTree::showTextEditor(const char* path, const void* content, int
     gtk_window_set_type_hint(GTK_WINDOW(dialog), GDK_WINDOW_TYPE_HINT_NORMAL);
     gtk_window_set_resizable(GTK_WINDOW(dialog), true);
     gtk_window_set_default_size(GTK_WINDOW(dialog), 700, 520);
-    const bool script = isScriptFile(path);
-    GtkSourceLanguage* language = script ? gtk_source_language_manager_get_language(gtk_source_language_manager_get_default(), "graal") : nullptr;
+    const char* languageId = editorLanguageForFile(path);
+    const bool script = languageId != nullptr && std::strcmp(languageId, "graal") == 0;
+    GtkSourceLanguage* language = languageId == nullptr ? nullptr : gtk_source_language_manager_get_language(gtk_source_language_manager_get_default(), languageId);
     GtkSourceBuffer* sourceBuffer = language != nullptr ? gtk_source_buffer_new_with_language(language) : gtk_source_buffer_new(nullptr);
     applyRemoteControlSourceStyle(sourceBuffer);
     GtkWidget* editor = gtk_source_view_new_with_buffer(sourceBuffer);
