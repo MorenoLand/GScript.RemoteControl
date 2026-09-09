@@ -1873,6 +1873,7 @@ void TFileBrowserTree::onFileReceived(const char* path, const void* content, int
     for (auto iterator = browser->pendingNativeDragContents.begin(); iterator != browser->pendingNativeDragContents.end(); ++iterator) {
         if (!pathMatches(iterator->first, receivedPath)) continue;
         iterator->second.assign(static_cast<const guint8*>(safeContent), static_cast<const guint8*>(safeContent) + length);
+        browser->appendLog((std::string("File downloaded: ") + receivedPath).c_str());
         return;
     }
     bool previewResponse = false;
