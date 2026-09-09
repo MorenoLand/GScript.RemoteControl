@@ -725,6 +725,7 @@ gboolean TRemoteFrame::onGraphicalDraw(GtkWidget* widget, cairo_t* context, gpoi
 
 TRemoteFrame::~TRemoteFrame() {
     *callbackAlive = false;
+    disconnect();
     if (eventSource != 0) g_source_remove(eventSource);
     if (emojiPopoverResizeSource != 0) g_source_remove(emojiPopoverResizeSource);
     if (backgroundAnimationSource != 0) g_source_remove(backgroundAnimationSource);
