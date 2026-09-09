@@ -1025,7 +1025,7 @@ void TPlayerList::handlePlayerAttributes(const char* account, const char*, const
     g_signal_connect(dialog, "destroy", G_CALLBACK(+[](GtkWidget*, gpointer userData) { delete static_cast<AttributeState*>(userData); }), state);
     gtk_widget_show_all(dialog);
     gtk_window_resize(GTK_WINDOW(dialog), 400, 360);
-    g_idle_add_full(G_PRIORITY_DEFAULT_IDLE, +[](gpointer userData) -> gboolean { if (GTK_IS_WINDOW(userData)) gtk_window_resize(GTK_WINDOW(userData), 400, 360); return G_SOURCE_REMOVE; }, dialog, nullptr);
+    g_idle_add_full(G_PRIORITY_DEFAULT_IDLE, +[](gpointer userData) -> gboolean { if (GTK_IS_WINDOW(userData) && !gtk_widget_in_destruction(GTK_WIDGET(userData))) gtk_window_resize(GTK_WINDOW(userData), 400, 360); return G_SOURCE_REMOVE; }, g_object_ref(dialog), +[](gpointer userData) { g_object_unref(userData); });
 }
 void TPlayerList::handlePlayerText(const char* type, const char* account, const char* content) {
     if (type == nullptr || account == nullptr) return;
