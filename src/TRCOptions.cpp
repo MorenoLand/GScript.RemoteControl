@@ -17,6 +17,16 @@ namespace {
     }
 
     bool isTrue(const std::string& value) { return value == "true"; }
+    bool parseInt(const std::string& value, int& result) {
+        if (value.empty()) return false;
+        try {
+            std::size_t consumed = 0;
+            const int parsed = std::stoi(value, &consumed);
+            if (consumed != value.size()) return false;
+            result = parsed;
+            return true;
+        } catch (...) { return false; }
+    }
 
     std::vector<std::string> splitCommaText(const std::string& value) {
         std::vector<std::string> result;
@@ -70,7 +80,7 @@ namespace RC {
             else if (key == "nohtmlimages") options.nohtmlimages = isTrue(value);
             else if (key == "attachaway") options.attachaway = isTrue(value);
             else if (key == "afkenabled") options.afkenabled = isTrue(value);
-            else if (key == "afktimeout") options.afktimeout = std::clamp(std::stoi(value), 1, 1440);
+            else if (key == "afktimeout") { int parsed = 0; if (parseInt(value, parsed)) options.afktimeout = std::clamp(parsed, 1, 1440); }
             else if (key == "globalhotkey") options.globalhotkey = value;
             else if (key == "logrcchat") options.logrcchat = isTrue(value);
             else if (key == "separatefindresults") options.separatefindresults = isTrue(value);
@@ -89,7 +99,7 @@ namespace RC {
             else if (key == "levellistenabled") options.levellistenabled = isTrue(value);
             else if (key == "usenewbantype") options.usenewbantype = isTrue(value);
             else if (key == "autoreconnectnc") options.autoreconnectnc = isTrue(value);
-            else if (key == "chatfontsize") options.chatfontsize = std::stoi(value);
+            else if (key == "chatfontsize") { int parsed = 0; if (parseInt(value, parsed)) options.chatfontsize = std::clamp(parsed, 1, 1000); }
             else if (key == "chatfontfamily") options.chatfontfamily = value.empty() ? "Sans" : value;
             else if (key == "globalpms") options.globalpms = isTrue(value);
             else if (key == "buddytracking") options.buddytracking = isTrue(value);
@@ -105,11 +115,11 @@ namespace RC {
             else if (key == "lsp") options.lsp = isTrue(value);
             else if (key == "scriptdiagnostics") options.scriptdiagnostics = isTrue(value);
             else if (key == "autocompletesource") options.autocompletesource = value;
-            else if (key == "scripttabwidth") options.scripttabwidth = std::stoi(value);
+            else if (key == "scripttabwidth") { int parsed = 0; if (parseInt(value, parsed)) options.scripttabwidth = std::clamp(parsed, 1, 1000); }
             else if (key == "scriptusetabs") options.scriptusetabs = isTrue(value);
-            else if (key == "scriptfontsize") options.scriptfontsize = std::stoi(value);
+            else if (key == "scriptfontsize") { int parsed = 0; if (parseInt(value, parsed)) options.scriptfontsize = std::clamp(parsed, 1, 1000); }
             else if (key == "scriptfontfamily") options.scriptfontfamily = value.empty() ? "Monospace" : value;
-            else if (key == "formatindentwidth") options.formatindentwidth = std::stoi(value);
+            else if (key == "formatindentwidth") { int parsed = 0; if (parseInt(value, parsed)) options.formatindentwidth = std::clamp(parsed, 1, 16); }
             else if (key == "formatusetabs") options.formatusetabs = isTrue(value);
             else if (key == "formattrimtrailing") options.formattrimtrailing = isTrue(value);
             else if (key == "removelinecomments") options.removelinecomments = isTrue(value);
