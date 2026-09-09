@@ -1057,6 +1057,7 @@ namespace {
     void scheduleEditorSymbols(GtkWidget* editor) {
         const auto state = std::find_if(editorCompletionStates.begin(), editorCompletionStates.end(), [editor](const EditorCompletionState& value) { return value.editor == editor; });
         if (state == editorCompletionStates.end()) return;
+        if (GPOINTER_TO_INT(g_object_get_data(G_OBJECT(editor), "remote-script-editor")) == 0) { if (state->symbolsTimer != 0) { g_source_remove(state->symbolsTimer); state->symbolsTimer = 0; } ++state->symbolsRequest; return; }
         EditorBulkInsertState* bulk = bulkInsertState(gtk_text_view_get_buffer(GTK_TEXT_VIEW(editor)));
         if (bulk != nullptr && bulk->largeContent) { if (state->symbolsTimer != 0) { g_source_remove(state->symbolsTimer); state->symbolsTimer = 0; } ++state->symbolsRequest; return; }
         if (state->symbolsTimer != 0) g_source_remove(state->symbolsTimer);
@@ -2250,6 +2251,7 @@ void refreshGScriptEditorTheme() {
 
 void configureGScriptEditor(GtkWidget* editor, bool script) {
     if (!GTK_SOURCE_IS_VIEW(editor)) return;
+    g_object_set_data(G_OBJECT(editor), "remote-script-editor", GINT_TO_POINTER(script ? 1 : 0));
     applyEditorOptions(editor);
     if (completionEditors.empty() && lspEnabled) startCompletionLoad();
     if (std::find(completionEditors.begin(), completionEditors.end(), editor) == completionEditors.end()) {
@@ -2374,7 +2376,7 @@ void configureGScriptEditor(GtkWidget* editor, bool script) {
     }), editor);
     g_signal_connect(completion, "hide", G_CALLBACK(+[](GtkSourceCompletion*, gpointer data) { scheduleSignatureHint(GTK_WIDGET(data)); }), editor);
     g_object_set(completion, "auto-complete-delay", 180, "show-headers", FALSE, nullptr);
-    if (lspEnabled) setCompletionProvider(editor, true);
+    if (lspEnabled && script) setCompletionProvider(editor, true);
     scheduleCompletionIconWarmup();
     gtk_widget_set_has_tooltip(editor, true);
     g_signal_connect(editor, "query-tooltip", G_CALLBACK(editorQueryTooltip), nullptr);

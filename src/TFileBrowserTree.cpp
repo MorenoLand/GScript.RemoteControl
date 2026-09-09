@@ -160,6 +160,11 @@ namespace {
         g_free(lower);
         return extension == ".png" || extension == ".jpg" || extension == ".jpeg" || extension == ".gif" || extension == ".webp" || extension == ".bmp" || extension == ".ico" || extension == ".mng";
     }
+    bool isScriptFile(const char* path) {
+        if (path == nullptr) return false;
+        const char* extension = std::strrchr(path, '.');
+        return extension != nullptr && (g_ascii_strcasecmp(extension, ".graal") == 0 || g_ascii_strcasecmp(extension, ".nw") == 0);
+    }
 
 #ifdef _WIN32
     struct NativeDropFiles { DWORD pFiles; POINT pt; BOOL fNC; BOOL fWide; };
@@ -2064,11 +2069,12 @@ void TFileBrowserTree::showTextEditor(const char* path, const void* content, int
     gtk_window_set_type_hint(GTK_WINDOW(dialog), GDK_WINDOW_TYPE_HINT_NORMAL);
     gtk_window_set_resizable(GTK_WINDOW(dialog), true);
     gtk_window_set_default_size(GTK_WINDOW(dialog), 700, 520);
-    GtkSourceLanguage* language = gtk_source_language_manager_get_language(gtk_source_language_manager_get_default(), "graal");
+    const bool script = isScriptFile(path);
+    GtkSourceLanguage* language = script ? gtk_source_language_manager_get_language(gtk_source_language_manager_get_default(), "graal") : nullptr;
     GtkSourceBuffer* sourceBuffer = language != nullptr ? gtk_source_buffer_new_with_language(language) : gtk_source_buffer_new(nullptr);
     applyRemoteControlSourceStyle(sourceBuffer);
     GtkWidget* editor = gtk_source_view_new_with_buffer(sourceBuffer);
-    configureGScriptEditor(editor);
+    configureGScriptEditor(editor, script);
     setGScriptEditorConnection(editor, connection);
     addEditorFindButton(dialog, editor);
     gtk_text_view_set_monospace(GTK_TEXT_VIEW(editor), true);
