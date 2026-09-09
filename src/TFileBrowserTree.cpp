@@ -335,6 +335,7 @@ namespace {
 bool TFileBrowserTree::isPreviewTransferMessage(const char* message) const {
     if (message == nullptr) return false;
     const std::string text(message);
+    if (!text.starts_with("Received chunk: ")) return false;
     return std::any_of(previewTransferPaths.begin(), previewTransferPaths.end(), [&](const std::string& path) {
         if (text.find(path) != std::string::npos) return true;
         gchar* basename = g_path_get_basename(path.c_str());
@@ -574,6 +575,7 @@ void TFileBrowserTree::cleanupDragState() {
     if (!dragStagingFolder.empty()) { g_rmdir(dragStagingFolder.c_str()); dragStagingFolder.clear(); }
     pendingDragDownloads.clear();
     pendingNativeDragContents.clear();
+    pendingNativeDragDownloadsReady.clear();
     completedDragDownloads.clear();
     pendingDragLocalPaths.clear();
 }
@@ -685,6 +687,11 @@ void TFileBrowserTree::onMessage(const char* message, void* data) {
     if (browser->isPreviewTransferMessage(message)) return;
     if (message == nullptr) { browser->appendLog(""); return; }
     const std::string text(message);
+    constexpr std::string_view fileDownloadedPrefix = "File downloaded: ";
+    if (text.starts_with(fileDownloadedPrefix)) {
+        const std::string path = text.substr(fileDownloadedPrefix.size());
+        for (const auto& entry : browser->pendingNativeDragContents) if (pathMatches(entry.first, path)) return;
+    }
     constexpr std::string_view chunkPrefix = "Received chunk: ";
     constexpr std::string_view sizeMarker = " bytes for ";
     if (text.starts_with(chunkPrefix)) {
@@ -1476,15 +1483,16 @@ void TFileBrowserTree::startNativeDrag(GtkWidget* widget) {
         const std::string& remotePath = remotePaths[index];
         if (!pendingNativeDragContents.contains(remotePath)) {
             pendingNativeDragContents.emplace(remotePath, std::vector<guint8>());
-            if (!rc_filebrowser_download(connection, remotePath.c_str())) { pendingNativeDragContents.erase(remotePath); appendLog(rc_last_error(connection)); return false; }
+            pendingNativeDragDownloadsReady.erase(remotePath);
+            if (!rc_filebrowser_download(connection, remotePath.c_str())) { pendingNativeDragContents.erase(remotePath); pendingNativeDragDownloadsReady.erase(remotePath); appendLog(rc_last_error(connection)); return false; }
             const gint64 deadline = g_get_monotonic_time() + 10 * G_TIME_SPAN_SECOND;
-            while (!pendingNativeDragContents.contains(remotePath) && g_get_monotonic_time() < deadline) {
+            while (!pendingNativeDragDownloadsReady.contains(remotePath) && g_get_monotonic_time() < deadline) {
                 while (gtk_events_pending()) gtk_main_iteration();
                 g_usleep(10000);
             }
         }
         const auto received = pendingNativeDragContents.find(remotePath);
-        if (received == pendingNativeDragContents.end()) { appendLog((std::string("Timed out downloading dragged file ") + remotePath).c_str()); return false; }
+        if (received == pendingNativeDragContents.end() || !pendingNativeDragDownloadsReady.contains(remotePath)) { appendLog((std::string("Timed out downloading dragged file ") + remotePath).c_str()); return false; }
         content = received->second;
         return true;
     }, dropAccepted, previewHandle);
@@ -1911,6 +1919,7 @@ void TFileBrowserTree::onFileReceived(const char* path, const void* content, int
     for (auto iterator = browser->pendingNativeDragContents.begin(); iterator != browser->pendingNativeDragContents.end(); ++iterator) {
         if (!pathMatches(iterator->first, receivedPath)) continue;
         iterator->second.assign(static_cast<const guint8*>(safeContent), static_cast<const guint8*>(safeContent) + length);
+        browser->pendingNativeDragDownloadsReady.insert(iterator->first);
         browser->appendLog((std::string("File downloaded: ") + receivedPath).c_str());
         return;
     }

@@ -6,6 +6,7 @@
 
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 #include <memory>
 #include <condition_variable>
@@ -162,6 +163,7 @@ private:
     std::vector<std::string> pendingDragSelectionPaths;
     std::unordered_map<std::string, std::string> pendingDragDownloads;
     std::unordered_map<std::string, std::vector<guint8>> pendingNativeDragContents;
+    std::unordered_set<std::string> pendingNativeDragDownloadsReady;
     std::unordered_map<std::string, std::size_t> chunkLogSegments;
     std::unordered_map<std::string, std::string> pendingPreviewDownloads;
     std::vector<std::string> queuedPreviewDownloads;
