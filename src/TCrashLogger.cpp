@@ -246,7 +246,6 @@ void installSignalHandlers() {
     std::signal(SIGABRT, [](int) { if (beginCrash("signal")) writeWindowsStack(); std::_Exit(134); });
     std::signal(SIGFPE, [](int) { if (beginCrash("signal")) writeWindowsStack(); std::_Exit(136); });
     std::signal(SIGILL, [](int) { if (beginCrash("signal")) writeWindowsStack(); std::_Exit(132); });
-    std::signal(SIGSEGV, [](int) { if (beginCrash("signal")) writeWindowsStack(); std::_Exit(139); });
 #else
     struct sigaction action = {};
     sigemptyset(&action.sa_mask);
