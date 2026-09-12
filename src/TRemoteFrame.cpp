@@ -2677,15 +2677,18 @@ void TRemoteFrame::reconnectNPCServer() {
     int npcServerId = -1;
     for (int index = 0; index < playerCount; ++index) {
         const char* account = players[index].account;
-        if (account != nullptr && g_ascii_strcasecmp(account, "(npcserver)") == 0) {
+        std::string accountText = account == nullptr ? "" : account;
+        std::transform(accountText.begin(), accountText.end(), accountText.begin(), [](unsigned char value) { return static_cast<char>(std::tolower(value)); });
+        if (accountText.find("(server)") != std::string::npos) {
             npcServerId = players[index].id;
             break;
         }
     }
     if (npcServerId < 0) return;
+    const int codedId = std::min(npcServerId, 0x6fff);
     std::string query;
-    query.push_back(static_cast<char>((npcServerId >> 7) + 32));
-    query.push_back(static_cast<char>((npcServerId & 127) + 32));
+    query.push_back(static_cast<char>((codedId >> 7) + 32));
+    query.push_back(static_cast<char>((codedId & 127) + 32));
     query += "location";
     if (rc_send_raw_packet(connection, PLI_NPCSERVERQUERY, query.data(), static_cast<int>(query.size()))) nextNcConnectAttempt = g_get_monotonic_time() + 500 * 1000;
 }
