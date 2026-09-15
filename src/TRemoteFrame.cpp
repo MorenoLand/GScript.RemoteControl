@@ -808,7 +808,7 @@ void TRemoteFrame::open(void* nextConnection, int serverIndex, const std::string
     }
     playerCommunityNames.clear();
     nextNcConnectAttempt = 0;
-    nextNcKeepalive = 0;
+    nextGameKeepalive = 0;
     ncConnectionAttempted = false;
     ncManuallyDisconnected = false;
     ncWasAuthenticated = false;
@@ -867,7 +867,7 @@ void TRemoteFrame::disconnect() {
     if (folderConfigEditor != nullptr) folderConfigEditor->setConnection(nullptr);
     connection = nullptr;
     nextNcConnectAttempt = 0;
-    nextNcKeepalive = 0;
+    nextGameKeepalive = 0;
     ncConnectionAttempted = true;
     ncWasAuthenticated = false;
     ncReconnectScheduledAutomatically = false;
@@ -1556,19 +1556,20 @@ gboolean TRemoteFrame::processEvents(gpointer data) {
             }
         }
         const gint64 now = g_get_monotonic_time();
+        if (rc_is_authenticated(frame->connection) != 0) {
+            if (frame->nextGameKeepalive == 0) frame->nextGameKeepalive = now + 60 * G_USEC_PER_SEC;
+            else if (now >= frame->nextGameKeepalive) {
+                rc_send_raw_packet(frame->connection, PLI_RC_UNKNOWN162, "", 0);
+                frame->nextGameKeepalive = now + 60 * G_USEC_PER_SEC;
+            }
+        } else frame->nextGameKeepalive = 0;
         const bool ncAuthenticated = rc_is_nc_authenticated(frame->connection) != 0;
         if (ncAuthenticated) {
             frame->ncWasAuthenticated = true;
             frame->nextNcConnectAttempt = 0;
             frame->ncReconnectScheduledAutomatically = false;
-            if (frame->nextNcKeepalive == 0) frame->nextNcKeepalive = now + 60 * G_USEC_PER_SEC;
-            else if (now >= frame->nextNcKeepalive) {
-                rc_send_nc_packet(frame->connection, PLI_NC_NPCGET, "", 0);
-                frame->nextNcKeepalive = now + 60 * G_USEC_PER_SEC;
-            }
         }
         else {
-            frame->nextNcKeepalive = 0;
             if (frame->ncWasAuthenticated) {
                 frame->ncWasAuthenticated = false;
                 if (!frame->ncManuallyDisconnected && frame->options.autoreconnectnc) {
@@ -1611,14 +1612,13 @@ void TRemoteFrame::onConnected(void* data) {
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
     remoteControlDebugLog("connected to %s", frame->accountName.c_str());
     if (!frame->nickname.empty()) rc_set_nickname(frame->connection, frame->nickname.c_str());
-    if (!frame->joinedIrcChannels.empty()) {
-        if (!rc_irc_login(frame->connection)) remoteControlDebugLog("IRC login request failed during reconnect");
-        for (const std::string& channel : frame->joinedIrcChannels) {
-            if (rc_irc_join(frame->connection, channel.c_str())) remoteControlDebugLog("rejoining IRC channel %s", channel.c_str());
-            else remoteControlDebugLog("failed to rejoin IRC channel %s", channel.c_str());
-        }
+    if (!rc_irc_login(frame->connection)) remoteControlDebugLog("IRC login request failed during reconnect");
+    for (const std::string& channel : frame->joinedIrcChannels) {
+        if (rc_irc_join(frame->connection, channel.c_str())) remoteControlDebugLog("rejoining IRC channel %s", channel.c_str());
+        else remoteControlDebugLog("failed to rejoin IRC channel %s", channel.c_str());
     }
     frame->updateMassPMAcceptance();
+    frame->sendServerListOptions();
     rc_execute(frame->connection, (std::string("/npc newrc,") + remoteControlBuildDate()).c_str());
     if (frame->scriptEditorsRestorePending) {
         frame->scriptEditorsRestorePending = false;
@@ -1662,6 +1662,7 @@ void TRemoteFrame::handleDisconnected(void* disconnectedConnection, std::uint64_
     if (serverFlagsEditor != nullptr) serverFlagsEditor->setConnection(nullptr);
     if (folderConfigEditor != nullptr) folderConfigEditor->setConnection(nullptr);
     connection = nullptr;
+    nextGameKeepalive = 0;
     rc_disconnect(disconnectedConnection);
     remote_control_set_tray_label(nullptr, 0);
     if (suppressReconnectDisconnect) {
@@ -2666,7 +2667,6 @@ void TRemoteFrame::reconnectNPCServer() {
     if (connection == nullptr) return;
     ncManuallyDisconnected = false;
     ncWasAuthenticated = false;
-    nextNcKeepalive = 0;
     ncReconnectScheduledAutomatically = false;
     updateNCUi(false);
     if (rc_is_nc_connected(connection) != 0) rc_disconnect_nc(connection);
@@ -2697,7 +2697,6 @@ void TRemoteFrame::disconnectNPCServer() {
     if (connection == nullptr) return;
     ncManuallyDisconnected = true;
     nextNcConnectAttempt = 0;
-    nextNcKeepalive = 0;
     ncWasAuthenticated = false;
     ncReconnectScheduledAutomatically = false;
     if (!rc_disconnect_nc(connection)) appendChat(rc_last_error(connection));

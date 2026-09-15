@@ -197,7 +197,7 @@ private:
     guint eventSource = 0;
     guint emojiPopoverResizeSource = 0;
     gint64 nextNcConnectAttempt = 0;
-    gint64 nextNcKeepalive = 0;
+    gint64 nextGameKeepalive = 0;
     bool ncConnectionAttempted = false;
     bool ncManuallyDisconnected = false;
     bool ncWasAuthenticated = false;
