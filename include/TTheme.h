@@ -17,11 +17,12 @@ inline void applyRemoteControlWindowChrome(GtkWidget* widget) {
     GtkWidget* titlebar = gtk_window_get_titlebar(window);
     if (titlebar != nullptr && GTK_IS_HEADER_BAR(titlebar)) {
         if (icon != nullptr && g_object_get_data(G_OBJECT(titlebar), "remote-control-title-icon") == nullptr) {
-            GdkPixbuf* scaledIcon = gdk_pixbuf_scale_simple(icon, 20, 20, GDK_INTERP_BILINEAR);
+            GdkPixbuf* scaledIcon = gdk_pixbuf_scale_simple(icon, 16, 16, GDK_INTERP_BILINEAR);
             GtkWidget* titleIcon = gtk_image_new_from_pixbuf(scaledIcon);
             g_object_unref(scaledIcon);
             gtk_image_set_pixel_size(GTK_IMAGE(titleIcon), 16);
             gtk_widget_set_size_request(titleIcon, 16, 16);
+            gtk_widget_set_margin_start(titleIcon, 7);
             gtk_header_bar_pack_start(GTK_HEADER_BAR(titlebar), titleIcon);
             g_object_set_data(G_OBJECT(titlebar), "remote-control-title-icon", titleIcon);
         }
@@ -32,11 +33,12 @@ inline void applyRemoteControlWindowChrome(GtkWidget* widget) {
     gtk_header_bar_set_decoration_layout(GTK_HEADER_BAR(header), ":minimize,maximize,close");
     gtk_header_bar_set_title(GTK_HEADER_BAR(header), gtk_window_get_title(window));
     if (icon != nullptr) {
-        GdkPixbuf* scaledIcon = gdk_pixbuf_scale_simple(icon, 20, 20, GDK_INTERP_BILINEAR);
+        GdkPixbuf* scaledIcon = gdk_pixbuf_scale_simple(icon, 16, 16, GDK_INTERP_BILINEAR);
         GtkWidget* titleIcon = gtk_image_new_from_pixbuf(scaledIcon);
         g_object_unref(scaledIcon);
         gtk_image_set_pixel_size(GTK_IMAGE(titleIcon), 16);
         gtk_widget_set_size_request(titleIcon, 16, 16);
+        gtk_widget_set_margin_start(titleIcon, 7);
         gtk_header_bar_pack_start(GTK_HEADER_BAR(header), titleIcon);
         g_object_set_data(G_OBJECT(header), "remote-control-title-icon", titleIcon);
     }

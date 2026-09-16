@@ -1680,6 +1680,16 @@ void TPlayerList::refreshRemoteLists() {
             }
         }
     }
+    if (channelStore != nullptr) {
+        gtk_list_store_clear(channelStore);
+        RCChannel* channels = nullptr;
+        const int count = rc_get_channels(connection, &channels);
+        for (int index = 0; index < count; ++index) {
+            GtkTreeIter row;
+            gtk_list_store_append(channelStore, &row);
+            gtk_list_store_set(channelStore, &row, 0, channelIcon, 1, channels[index].name == nullptr ? "" : channels[index].name, 2, channels[index].players == nullptr ? "" : channels[index].players, 3, channels[index].id == nullptr ? "" : channels[index].id, -1);
+        }
+    }
 }
 
 std::vector<int> TPlayerList::playerIds() const {
