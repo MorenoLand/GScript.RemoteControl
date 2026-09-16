@@ -5,6 +5,7 @@
 #include "TErrorWindow.h"
 #include "TTreeSearch.h"
 #include "TAssetPaths.h"
+#include "TTheme.h"
 
 #include <grclib.h>
 
@@ -74,6 +75,7 @@ TServerList::TServerList(const std::filesystem::path& nextApplicationDirectory, 
     listserverHost = listserverEndpoints.front().host;
     listserverPort = listserverEndpoints.front().port;
     window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
+    applyRemoteControlWindowChrome(window);
     gtk_widget_set_name(window, "ServerList");
     gtk_window_set_title(GTK_WINDOW(window), (listserverName + " Servers").c_str());
     gtk_window_set_position(GTK_WINDOW(window), GTK_WIN_POS_CENTER);
@@ -298,6 +300,7 @@ void TServerList::show() {
 void TServerList::openListServerSettings() {
     struct SettingsState { TServerList* serverList; GtkWidget* dialog; GtkWidget* endpoint; GtkWidget* name; GtkWidget* host; GtkWidget* port; GtkWidget* theme; GtkWidget* error; std::vector<SavedListServer> endpoints; guint saveTimer = 0; int editIndex = 0; bool updating = false; };
     GtkWidget* dialog = gtk_dialog_new();
+    applyRemoteControlWindowChrome(dialog);
     gtk_window_set_title(GTK_WINDOW(dialog), "RC settings");
     gtk_window_set_position(GTK_WINDOW(dialog), GTK_WIN_POS_CENTER);
     gtk_window_set_modal(GTK_WINDOW(dialog), false);

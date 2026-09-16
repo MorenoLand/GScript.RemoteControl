@@ -1,5 +1,6 @@
 #include "TAccountsWindow.h"
 #include "TButtonIcons.h"
+#include "TTheme.h"
 #include "TTreeSearch.h"
 
 #include <grclib.h>
@@ -35,6 +36,7 @@ namespace {
 
 TAccountsWindow::TAccountsWindow() {
     queryWindow = gtk_window_new(GTK_WINDOW_TOPLEVEL);
+    applyRemoteControlWindowChrome(queryWindow);
     gtk_widget_set_name(queryWindow, "GetAccountsWindow");
     gtk_window_set_title(GTK_WINDOW(queryWindow), "Get Accounts List");
     gtk_window_set_default_size(GTK_WINDOW(queryWindow), 400, 250);
@@ -77,6 +79,7 @@ TAccountsWindow::TAccountsWindow() {
     g_signal_connect(queryWindow, "delete-event", G_CALLBACK(onDelete), this);
 
     listWindow = gtk_window_new(GTK_WINDOW_TOPLEVEL);
+    applyRemoteControlWindowChrome(listWindow);
     gtk_widget_set_name(listWindow, "AccountsListWindow");
     gtk_window_set_title(GTK_WINDOW(listWindow), "Accounts List");
     gtk_window_set_default_size(GTK_WINDOW(listWindow), 450, 320);
@@ -124,6 +127,7 @@ TAccountsWindow::TAccountsWindow() {
     g_signal_connect(listWindow, "delete-event", G_CALLBACK(onDelete), this);
 
     editorWindow = gtk_window_new(GTK_WINDOW_TOPLEVEL);
+    applyRemoteControlWindowChrome(editorWindow);
     gtk_widget_set_name(editorWindow, "AccountEditorWindow");
     gtk_window_set_default_size(GTK_WINDOW(editorWindow), 300, 330);
     gtk_window_set_resizable(GTK_WINDOW(editorWindow), false);

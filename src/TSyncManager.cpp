@@ -1,5 +1,6 @@
 #include "TSyncManager.h"
 #include "TEncryption.h"
+#include "TTheme.h"
 #include <grclib.h>
 #include <cctype>
 #include <cstdint>
@@ -1356,6 +1357,7 @@ void TSyncManager::logEvent(const std::string& value) {
 
 void TSyncManager::createWindow() {
     window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
+    applyRemoteControlWindowChrome(window);
     g_object_add_weak_pointer(G_OBJECT(window), reinterpret_cast<gpointer*>(&window));
     gtk_window_set_title(GTK_WINDOW(window), ("Sync & Git Backups (Alpha) - " + serverName).c_str());
     gtk_window_set_default_size(GTK_WINDOW(window), 560, 500);
@@ -2112,6 +2114,7 @@ void TSyncManager::onChooseFileFolders(GtkButton*, gpointer data) {
 void TSyncManager::showFileRoots(const std::vector<std::string>& roots) {
     if (fileRootsDialog != nullptr) { fileRootsStore = nullptr; gtk_widget_destroy(fileRootsDialog); }
     fileRootsDialog = gtk_dialog_new_with_buttons("Select server folders", nullptr, static_cast<GtkDialogFlags>(0), "_Close", GTK_RESPONSE_CLOSE, "_Apply", GTK_RESPONSE_APPLY, nullptr);
+    applyRemoteControlWindowChrome(fileRootsDialog);
     g_object_add_weak_pointer(G_OBJECT(fileRootsDialog), reinterpret_cast<gpointer*>(&fileRootsDialog));
     gtk_window_set_modal(GTK_WINDOW(fileRootsDialog), false);
     gtk_window_set_default_size(GTK_WINDOW(fileRootsDialog), 430, 380);

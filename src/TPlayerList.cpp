@@ -274,6 +274,7 @@ namespace {
     void onPMHistory(GtkButton*, gpointer data) {
         PMWindowData* windowData = static_cast<PMWindowData*>(data);
         GtkWidget* history = gtk_dialog_new_with_buttons(("History: " + windowData->account + " - " + windowData->nick).c_str(), nullptr, static_cast<GtkDialogFlags>(0), "Close", GTK_RESPONSE_CLOSE, nullptr);
+        applyRemoteControlWindowChrome(history);
         gtk_widget_set_name(history, "PrivateMessageHistory");
         gtk_window_set_default_size(GTK_WINDOW(history), 540, 475);
         GtkWidget* scrolled = gtk_scrolled_window_new(nullptr, nullptr);
@@ -321,6 +322,7 @@ namespace {
 
     bool getMessage(GtkWindow* parent, const char* title, const char* label, std::string& message, const char* acceptLabel = "Send") {
         GtkWidget* dialog = gtk_dialog_new_with_buttons(title, nullptr, GTK_DIALOG_MODAL, "Cancel", GTK_RESPONSE_CANCEL, acceptLabel, GTK_RESPONSE_ACCEPT, nullptr);
+        applyRemoteControlWindowChrome(dialog);
         GtkWidget* content = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
         GtkWidget* text = gtk_text_view_new();
         gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(text), GTK_WRAP_WORD_CHAR);
@@ -344,6 +346,7 @@ namespace {
 
     bool getAdminMessage(GtkWindow* parent, std::string& message) {
         GtkWidget* dialog = gtk_dialog_new_with_buttons("Admin Message to all", nullptr, GTK_DIALOG_MODAL, "Cancel", GTK_RESPONSE_CANCEL, "OK", GTK_RESPONSE_ACCEPT, nullptr);
+        applyRemoteControlWindowChrome(dialog);
         GtkWidget* content = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
         GtkWidget* label = gtk_label_new("Message");
         GtkWidget* entry = gtk_entry_new();
@@ -361,6 +364,7 @@ namespace {
 TPlayerList::TPlayerList(const std::filesystem::path& nextApplicationDirectory, std::string nextAccountName)
     : applicationDirectory(nextApplicationDirectory), accountName(std::move(nextAccountName)) {
     window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
+    applyRemoteControlWindowChrome(window);
     gtk_widget_set_name(window, "PlayerList");
     gtk_window_set_title(GTK_WINDOW(window), "Players");
     gtk_window_set_default_size(GTK_WINDOW(window), 580, 420);
@@ -690,6 +694,7 @@ void TPlayerList::handleBanListData(const char* type, const char* account, const
     }
     if (listType != "banhistory" && listType != "staffactivity") return;
     GtkWidget* dialog = gtk_dialog_new_with_buttons((std::string(listType == "banhistory" ? "Ban History of " : "Staff Activity of ") + (account == nullptr ? "" : account)).c_str(), nullptr, static_cast<GtkDialogFlags>(0), "Close", GTK_RESPONSE_CLOSE, nullptr);
+    applyRemoteControlWindowChrome(dialog);
     gtk_window_set_default_size(GTK_WINDOW(dialog), 440, 300);
     GtkWidget* scrolled = gtk_scrolled_window_new(nullptr, nullptr);
     GtkSourceBuffer* sourceBuffer = gtk_source_buffer_new(nullptr);
@@ -747,6 +752,7 @@ void TPlayerList::handlePlayerRights(const char* account, int rights, const char
     if (account == nullptr || *account == '\0') return;
     struct RightsState { TPlayerList* list; std::string account; GtkWidget* ipRange; GtkWidget* folderAccess; GtkWidget* checks[20]{}; };
     GtkWidget* dialog = gtk_dialog_new_with_buttons(("Edit Rights of " + std::string(account)).c_str(), nullptr, static_cast<GtkDialogFlags>(0), "Close", GTK_RESPONSE_CANCEL, "Apply", GTK_RESPONSE_ACCEPT, nullptr);
+    applyRemoteControlWindowChrome(dialog);
     gtk_widget_set_name(dialog, "EditRightsWindow");
     gtk_window_set_default_size(GTK_WINDOW(dialog), 460, 420);
     GtkWidget* notebook = gtk_notebook_new();
@@ -852,6 +858,7 @@ void TPlayerList::handlePlayerAttributes(const char* account, const char*, const
     };
     const std::map<std::string, std::string> values = fieldValues(editorText);
     GtkWidget* dialog = gtk_window_new(GTK_WINDOW_TOPLEVEL);
+    applyRemoteControlWindowChrome(dialog);
     gtk_window_set_title(GTK_WINDOW(dialog), ("Edit Attributes of " + std::string(account)).c_str());
     gtk_widget_set_name(dialog, "EditAttributesWindow");
     gtk_window_set_default_size(GTK_WINDOW(dialog), 400, 360);
@@ -1039,6 +1046,7 @@ void TPlayerList::handlePlayerText(const char* type, const char* account, const 
         for (std::string value; std::getline(input, value);) values.push_back(value);
         while (values.size() < 11) values.emplace_back();
         GtkWidget* dialog = gtk_dialog_new_with_buttons(("Profile of " + std::string(account)).c_str(), nullptr, static_cast<GtkDialogFlags>(0), "Apply", GTK_RESPONSE_ACCEPT, "Close", GTK_RESPONSE_CANCEL, nullptr);
+        applyRemoteControlWindowChrome(dialog);
         gtk_widget_set_name(dialog, "ProfileWindow");
         gtk_window_set_default_size(GTK_WINDOW(dialog), 520, 400);
         GtkWidget* root = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
@@ -1156,6 +1164,7 @@ void TPlayerList::handlePlayerText(const char* type, const char* account, const 
     struct TextState { TPlayerList* list; std::string account; std::string type; GtkWidget* text; };
     const std::string title = (dataType == "profile" ? "Profile of " : "Edit Comments of ") + std::string(account);
         GtkWidget* dialog = gtk_dialog_new_with_buttons(title.c_str(), nullptr, static_cast<GtkDialogFlags>(0), "Close", GTK_RESPONSE_CANCEL, "Save", GTK_RESPONSE_ACCEPT, nullptr);
+        applyRemoteControlWindowChrome(dialog);
     gtk_window_set_default_size(GTK_WINDOW(dialog), 420, 280);
     GtkWidget* scrolled = gtk_scrolled_window_new(nullptr, nullptr);
     GtkWidget* text = gtk_text_view_new();
@@ -1524,6 +1533,7 @@ void TPlayerList::openPrivateMessage(int playerId, const char* account, const ch
     const std::string sourceServer = privateMessageSourceServer(playerId, account, nick == nullptr ? "" : nick);
     PMWindowData* data = new PMWindowData{this, connection, applicationDirectory / "PMs", nullptr, nullptr, nullptr, playerId, account, nick == nullptr ? "" : nick, accountName, sourceServer};
     data->window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
+    applyRemoteControlWindowChrome(data->window);
     applyPMConversationStyle();
     gtk_widget_set_name(data->window, "PrivateMessage");
     const std::string display = data->nick.empty() ? data->account : data->nick;
@@ -1873,6 +1883,7 @@ void TPlayerList::warpSelectedPlayer() {
     gtk_tree_model_get(model, &row, PlayerLevelColumn, &selectedLevel, -1);
     struct WarpState { TPlayerList* list; int playerId; GtkWidget* level; GtkWidget* x; GtkWidget* y; GtkWidget* error; };
     GtkWidget* dialog = gtk_dialog_new_with_buttons("Warp Player", nullptr, GTK_DIALOG_MODAL, "Cancel", GTK_RESPONSE_CANCEL, "Warp", GTK_RESPONSE_ACCEPT, nullptr);
+    applyRemoteControlWindowChrome(dialog);
     GtkWidget* grid = gtk_grid_new();
     gtk_container_set_border_width(GTK_CONTAINER(grid), 8);
     gtk_grid_set_row_spacing(GTK_GRID(grid), 5);

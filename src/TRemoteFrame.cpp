@@ -44,6 +44,21 @@ extern void remote_control_clear_pm_tray_alert();
 extern void remote_control_set_tray_label(const char* serverName, int playerCount);
 
 namespace {
+GdkPixbuf* loadBackgroundPng(const std::filesystem::path& path, GError** error) {
+    gchar* bytes = nullptr;
+    gsize size = 0;
+    if (!g_file_get_contents(path.string().c_str(), &bytes, &size, error)) return nullptr;
+    GdkPixbufLoader* loader = gdk_pixbuf_loader_new_with_type("png", error);
+    GdkPixbuf* image = nullptr;
+    if (loader != nullptr) {
+        const bool loaded = gdk_pixbuf_loader_write(loader, reinterpret_cast<const guchar*>(bytes), size, error);
+        const bool closed = gdk_pixbuf_loader_close(loader, loaded ? error : nullptr);
+        if (loaded && closed) { image = gdk_pixbuf_loader_get_pixbuf(loader); if (image != nullptr) g_object_ref(image); }
+        g_object_unref(loader);
+    }
+    g_free(bytes);
+    return image;
+}
 struct ChannelScrollRequest { GtkWidget* field = nullptr; double previousValue = 0.0; };
 struct CompletionPopupRequest { GtkWidget* entry = nullptr; GtkTreeModel* model = nullptr; GtkEntryCompletion* completion = nullptr; unsigned attempts = 0; guint source = 0; };
 struct DisconnectDispatch { std::shared_ptr<bool> alive; TRemoteFrame* frame = nullptr; void* handle = nullptr; std::uint64_t generation = 0; std::string reason; };
@@ -421,6 +436,7 @@ TRemoteFrame::TRemoteFrame(const RC::RCOptions& nextOptions, const std::filesyst
     pmNormalEmote = gdk_pixbuf_new_from_file((applicationDirectory / "images" / "pmicon_normal.png").string().c_str(), nullptr);
     pacmanEmote = gdk_pixbuf_new_from_file((applicationDirectory / "images" / "emote_pacman.png").string().c_str(), nullptr);
     window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
+    applyRemoteControlWindowChrome(window);
     gtk_widget_set_name(window, "RemoteFrame");
     gtk_window_set_title(GTK_WINDOW(window), remoteControlTitle().c_str());
     gtk_window_set_default_size(GTK_WINDOW(window), 500, 350);
@@ -460,13 +476,26 @@ TRemoteFrame::TRemoteFrame(const RC::RCOptions& nextOptions, const std::filesyst
         gtk_box_pack_start(GTK_BOX(root), menuBar, false, false, 0);
     } else {
         graphicalContainer = gtk_overlay_new();
+        gtk_widget_set_name(graphicalContainer, "GraphicalContainer");
+        gtk_widget_set_hexpand(graphicalContainer, true);
+        gtk_widget_set_vexpand(graphicalContainer, true);
+        gtk_widget_set_halign(graphicalContainer, GTK_ALIGN_FILL);
+        gtk_widget_set_valign(graphicalContainer, GTK_ALIGN_FILL);
         GtkWidget* graphicalBase = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+        gtk_widget_set_name(graphicalBase, "GraphicalBase");
+        gtk_widget_set_hexpand(graphicalBase, true);
+        gtk_widget_set_vexpand(graphicalBase, true);
+        gtk_widget_set_halign(graphicalBase, GTK_ALIGN_FILL);
+        gtk_widget_set_valign(graphicalBase, GTK_ALIGN_FILL);
         gtk_container_add(GTK_CONTAINER(graphicalContainer), graphicalBase);
-        GtkWidget* header = gtk_overlay_new();
+        GtkWidget* header = gtk_fixed_new();
+        gtk_widget_set_name(header, "GraphicalHeader");
         gtk_widget_set_size_request(header, 1, 180);
         gtk_widget_set_hexpand(header, true);
-        GtkWidget* fixed = gtk_fixed_new();
+        GtkWidget* fixed = header;
+        gtk_widget_set_name(fixed, "GraphicalFixed");
         graphicalFixed = fixed;
+        gtk_widget_set_size_request(fixed, 1, 180);
         gtk_widget_set_hexpand(fixed, true);
         gtk_widget_set_halign(fixed, GTK_ALIGN_FILL);
         gtk_widget_set_valign(fixed, GTK_ALIGN_FILL);
@@ -477,27 +506,32 @@ TRemoteFrame::TRemoteFrame(const RC::RCOptions& nextOptions, const std::filesyst
         if (extension == ".webp" && (backgroundWebPAnimation = loadWebPAnimation(background)) != nullptr) {
         } else {
             GError* imageError = nullptr;
-            backgroundAnimation = gdk_pixbuf_animation_new_from_file(background.string().c_str(), &imageError);
-            if (backgroundAnimation != nullptr && gdk_pixbuf_animation_is_static_image(backgroundAnimation)) {
-                backgroundPixbuf = gdk_pixbuf_animation_get_static_image(backgroundAnimation);
-                g_object_ref(backgroundPixbuf);
-                g_object_unref(backgroundAnimation);
-                backgroundAnimation = nullptr;
-            } else if (backgroundAnimation != nullptr) {
-                GTimeVal now;
-                g_get_current_time(&now);
-                backgroundAnimationIter = gdk_pixbuf_animation_get_iter(backgroundAnimation, &now);
+            if (extension == ".png") backgroundPixbuf = loadBackgroundPng(background, &imageError);
+            if (backgroundPixbuf == nullptr) {
+                if (imageError != nullptr) { g_error_free(imageError); imageError = nullptr; }
+                backgroundAnimation = gdk_pixbuf_animation_new_from_file(background.string().c_str(), &imageError);
+                if (backgroundAnimation != nullptr && gdk_pixbuf_animation_is_static_image(backgroundAnimation)) {
+                    backgroundPixbuf = gdk_pixbuf_animation_get_static_image(backgroundAnimation);
+                    g_object_ref(backgroundPixbuf);
+                    g_object_unref(backgroundAnimation);
+                    backgroundAnimation = nullptr;
+                } else if (backgroundAnimation != nullptr) {
+                    GTimeVal now;
+                    g_get_current_time(&now);
+                    backgroundAnimationIter = gdk_pixbuf_animation_get_iter(backgroundAnimation, &now);
+                }
             }
+            remoteControlDebugLog("background load path=%s pixbuf=%p animation=%p error=%s", background.string().c_str(), backgroundPixbuf, backgroundAnimation, imageError == nullptr ? "" : imageError->message);
             if (imageError != nullptr) g_error_free(imageError);
         }
-        backgroundImage = gtk_drawing_area_new();
+        backgroundImage = header;
         gtk_widget_set_hexpand(backgroundImage, true);
+        gtk_widget_set_vexpand(backgroundImage, false);
         gtk_widget_set_halign(backgroundImage, GTK_ALIGN_FILL);
-        gtk_container_add(GTK_CONTAINER(header), backgroundImage);
+        gtk_widget_set_valign(backgroundImage, GTK_ALIGN_FILL);
         gtk_widget_set_hexpand(fixed, true);
         gtk_widget_set_halign(fixed, GTK_ALIGN_FILL);
         gtk_widget_set_valign(fixed, GTK_ALIGN_FILL);
-        gtk_overlay_add_overlay(GTK_OVERLAY(header), fixed);
         g_signal_connect(backgroundImage, "draw", G_CALLBACK(onGraphicalDraw), this);
         if (backgroundAnimationIter != nullptr || backgroundWebPAnimation != nullptr) backgroundAnimationSource = g_timeout_add(16, +[](gpointer data) -> gboolean {
             TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
@@ -1057,6 +1091,7 @@ void TRemoteFrame::onLocalNPCDump(GtkMenuItem*, gpointer data) {
     rc_on_local_npcs(frame->connection, onLocalNPCData, frame);
     const std::string title = frame->serverName.empty() ? "Local NPCs" : "Local NPCs - " + frame->serverName;
     GtkWidget* dialog = gtk_dialog_new_with_buttons(title.c_str(), nullptr, GTK_DIALOG_MODAL, "Cancel", GTK_RESPONSE_CANCEL, "OK", GTK_RESPONSE_OK, nullptr);
+    applyRemoteControlWindowChrome(dialog);
     GtkWidget* content = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
     GtkWidget* grid = gtk_grid_new();
     gtk_container_set_border_width(GTK_CONTAINER(grid), 8);
@@ -1094,6 +1129,7 @@ void TRemoteFrame::onLocalNPCData(const char*, const char* content, void* data) 
     if (content == nullptr || content[0] == '\0') return;
     const std::string title = frame->serverName.empty() ? "Local NPCs" : "Local NPCs - " + frame->serverName;
     GtkWidget* dialog = gtk_dialog_new_with_buttons(title.c_str(), nullptr, static_cast<GtkDialogFlags>(0), "Close", GTK_RESPONSE_CLOSE, nullptr);
+    applyRemoteControlWindowChrome(dialog);
     gtk_window_set_default_size(GTK_WINDOW(dialog), 520, 380);
     GtkWidget* scrolled = gtk_scrolled_window_new(nullptr, nullptr);
     GtkSourceLanguage* language = gtk_source_language_manager_get_language(gtk_source_language_manager_get_default(), "ini");
@@ -1520,7 +1556,7 @@ gboolean TRemoteFrame::processEvents(gpointer data) {
         GList* toplevels = gtk_window_list_toplevels();
         for (GList* current = toplevels; current != nullptr; current = current->next) {
             GtkWidget* candidate = GTK_WIDGET(current->data);
-            if (candidate == frame->window || !GTK_IS_WINDOW(candidate)) continue;
+            if (candidate == frame->window || !GTK_IS_WINDOW(candidate) || gtk_window_get_window_type(GTK_WINDOW(candidate)) != GTK_WINDOW_TOPLEVEL || gtk_window_get_type_hint(GTK_WINDOW(candidate)) == GDK_WINDOW_TYPE_HINT_TOOLTIP) continue;
             if (g_object_get_data(G_OBJECT(candidate), "rc-afk-frame") != frame) {
                 g_object_set_data(G_OBJECT(candidate), "rc-afk-frame", frame);
                 gtk_widget_add_events(candidate, GDK_KEY_PRESS_MASK | GDK_BUTTON_PRESS_MASK | GDK_POINTER_MOTION_MASK);
@@ -1530,20 +1566,6 @@ gboolean TRemoteFrame::processEvents(gpointer data) {
             }
         }
         g_list_free(toplevels);
-        std::function<void(GtkWidget*)> watchActivity = [&](GtkWidget* widget) {
-            if (g_object_get_data(G_OBJECT(widget), "rc-afk-widget") == nullptr) {
-                g_object_set_data(G_OBJECT(widget), "rc-afk-widget", frame);
-                gtk_widget_add_events(widget, GDK_KEY_PRESS_MASK | GDK_BUTTON_PRESS_MASK | GDK_POINTER_MOTION_MASK);
-                g_signal_connect(widget, "key-press-event", G_CALLBACK(onActivityEvent), frame);
-                g_signal_connect(widget, "button-press-event", G_CALLBACK(onActivityEvent), frame);
-                g_signal_connect(widget, "motion-notify-event", G_CALLBACK(onActivityEvent), frame);
-            }
-            if (!GTK_IS_CONTAINER(widget)) return;
-            GList* children = gtk_container_get_children(GTK_CONTAINER(widget));
-            for (GList* child = children; child != nullptr; child = child->next) watchActivity(GTK_WIDGET(child->data));
-            g_list_free(children);
-        };
-        watchActivity(frame->window);
         if (frame->options.afkenabled && !frame->awayNicknameApplied && frame->lastActivity > 0 && g_get_monotonic_time() - frame->lastActivity >= static_cast<gint64>(std::max(1, frame->options.afktimeout)) * 60 * G_USEC_PER_SEC) {
             std::string lower = frame->baseNickname;
             std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char value) { return static_cast<char>(std::tolower(value)); });
@@ -1915,6 +1937,7 @@ void TRemoteFrame::createGraphicalButton(int index) {
     static const char* tooltips[15] = {"Player List", "File Browser", "Accounts", "Toalls", "Options", "Server Flags", "Folder Options", "Server Options", "Local NPCs", "Classes", "Weapons", "NPCs", "Extensions", "Level List", "Sync & Git"};
     GtkWidget* button = gtk_event_box_new();
     gtk_event_box_set_visible_window(GTK_EVENT_BOX(button), false);
+    gtk_event_box_set_above_child(GTK_EVENT_BOX(button), true);
     gtk_widget_add_events(button, GDK_BUTTON_PRESS_MASK | GDK_BUTTON_RELEASE_MASK);
     GtkWidget* buttonImage = gtk_image_new_from_file((applicationDirectory / "images" / options.buttonimagefiles[index]).string().c_str());
     gtk_container_add(GTK_CONTAINER(button), buttonImage);
@@ -2021,17 +2044,22 @@ void TRemoteFrame::reloadBackground() {
     if (extension == ".webp") backgroundWebPAnimation = loadWebPAnimation(background);
     if (backgroundWebPAnimation == nullptr) {
         GError* imageError = nullptr;
-        backgroundAnimation = gdk_pixbuf_animation_new_from_file(background.string().c_str(), &imageError);
-        if (backgroundAnimation != nullptr && gdk_pixbuf_animation_is_static_image(backgroundAnimation)) {
-            backgroundPixbuf = gdk_pixbuf_animation_get_static_image(backgroundAnimation);
-            g_object_ref(backgroundPixbuf);
-            g_object_unref(backgroundAnimation);
-            backgroundAnimation = nullptr;
-        } else if (backgroundAnimation != nullptr) {
-            GTimeVal now;
-            g_get_current_time(&now);
-            backgroundAnimationIter = gdk_pixbuf_animation_get_iter(backgroundAnimation, &now);
+        if (extension == ".png") backgroundPixbuf = loadBackgroundPng(background, &imageError);
+        if (backgroundPixbuf == nullptr) {
+            if (imageError != nullptr) { g_error_free(imageError); imageError = nullptr; }
+            backgroundAnimation = gdk_pixbuf_animation_new_from_file(background.string().c_str(), &imageError);
+            if (backgroundAnimation != nullptr && gdk_pixbuf_animation_is_static_image(backgroundAnimation)) {
+                backgroundPixbuf = gdk_pixbuf_animation_get_static_image(backgroundAnimation);
+                g_object_ref(backgroundPixbuf);
+                g_object_unref(backgroundAnimation);
+                backgroundAnimation = nullptr;
+            } else if (backgroundAnimation != nullptr) {
+                GTimeVal now;
+                g_get_current_time(&now);
+                backgroundAnimationIter = gdk_pixbuf_animation_get_iter(backgroundAnimation, &now);
+            }
         }
+        remoteControlDebugLog("background reload path=%s pixbuf=%p animation=%p error=%s", background.string().c_str(), backgroundPixbuf, backgroundAnimation, imageError == nullptr ? "" : imageError->message);
         if (imageError != nullptr) g_error_free(imageError);
     }
     if (backgroundAnimationIter != nullptr || backgroundWebPAnimation != nullptr) backgroundAnimationSource = g_timeout_add(16, +[](gpointer data) -> gboolean {

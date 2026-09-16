@@ -1,5 +1,6 @@
 #include "TToallsWindow.h"
 #include "TDebug.h"
+#include "TTheme.h"
 
 #include <grclib.h>
 
@@ -7,6 +8,7 @@
 
 TToallsWindow::TToallsWindow() {
     window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
+    applyRemoteControlWindowChrome(window);
     gtk_widget_set_name(window, "ToallsWindow");
     gtk_window_set_title(GTK_WINDOW(window), "Toalls");
     gtk_window_set_default_size(GTK_WINDOW(window), 360, 240);

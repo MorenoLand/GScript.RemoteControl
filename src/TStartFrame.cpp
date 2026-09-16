@@ -1,6 +1,7 @@
 #include "TStartFrame.h"
 #include "TAccountPresentation.h"
 #include "TButtonIcons.h"
+#include "TTheme.h"
 
 #include <algorithm>
 #include <sstream>
@@ -87,9 +88,16 @@ TStartFrame::TStartFrame(RC::RCOptions& options, const std::filesystem::path& ap
     window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
     gtk_widget_set_name(window, "StartFrame");
     gtk_window_set_title(GTK_WINDOW(window), "Remote Control");
+    gtk_window_set_type_hint(GTK_WINDOW(window), GDK_WINDOW_TYPE_HINT_DIALOG);
     gtk_window_set_position(GTK_WINDOW(window), GTK_WIN_POS_CENTER);
     gtk_window_set_default_size(GTK_WINDOW(window), 264, 220);
-    gtk_window_set_resizable(GTK_WINDOW(window), true);
+    gtk_window_set_resizable(GTK_WINDOW(window), false);
+    gtk_window_set_deletable(GTK_WINDOW(window), false);
+    titlebar = gtk_header_bar_new();
+    gtk_header_bar_set_show_close_button(GTK_HEADER_BAR(titlebar), false);
+    gtk_header_bar_set_decoration_layout(GTK_HEADER_BAR(titlebar), "");
+    gtk_window_set_titlebar(GTK_WINDOW(window), titlebar);
+    applyRemoteControlWindowChrome(window);
 
     GtkWidget* root = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
     gtk_container_add(GTK_CONTAINER(window), root);
@@ -345,9 +353,11 @@ void TStartFrame::selectAccount(const std::string& accountName) {
         if (!label.empty()) title = label + " - RemoteControl";
     }
     gtk_window_set_title(GTK_WINDOW(window), title.c_str());
+    if (titlebar != nullptr) gtk_header_bar_set_title(GTK_HEADER_BAR(titlebar), title.c_str());
     const std::vector<SavedListServer> profiles = RC::loadListServerProfiles(std::filesystem::path(g_get_user_config_dir()) / "GScriptRC" / "listservers.conf", "listserver.graalonline.com", 14922);
     if (selected != nullptr) { const std::vector<std::string> labels = RC::accountServerBadgeLabels(*selected, profiles); if (!labels.empty()) title = labels.front() + " - RemoteControl"; }
     gtk_window_set_title(GTK_WINDOW(window), title.c_str());
+    if (titlebar != nullptr) gtk_header_bar_set_title(GTK_HEADER_BAR(titlebar), title.c_str());
     const std::string detail = selected == nullptr ? std::string("Type an account name or choose a saved account") : RC::accountServerDetail(*selected, profiles);
     atk_object_set_description(gtk_widget_get_accessible(accountCombo), detail.c_str());
     accountSelectionInProgress = false;
@@ -361,6 +371,7 @@ void TStartFrame::updateAccountTitle(int accountIndex) {
         if (!labels.empty() && labels.front() != "Unassigned") title = labels.front() + " - RemoteControl";
     }
     gtk_window_set_title(GTK_WINDOW(window), title.c_str());
+    if (titlebar != nullptr) gtk_header_bar_set_title(GTK_HEADER_BAR(titlebar), title.c_str());
 }
 
 void TStartFrame::refreshAccountMenu() {
@@ -377,6 +388,7 @@ void TStartFrame::refreshAccountMenu() {
 
 bool TStartFrame::editAccount(const std::string& accountName, GtkWindow* parent, int accountIndex) {
     GtkWidget* dialog = gtk_dialog_new_with_buttons(accountName.empty() ? "Add Account" : "Edit Account", nullptr, static_cast<GtkDialogFlags>(0), "Close", GTK_RESPONSE_CANCEL, "Save", GTK_RESPONSE_OK, nullptr);
+    applyRemoteControlWindowChrome(dialog);
     if (parent != nullptr) gtk_window_set_transient_for(GTK_WINDOW(dialog), parent);
     applyGtkButtonIcon(gtk_dialog_get_widget_for_response(GTK_DIALOG(dialog), GTK_RESPONSE_CANCEL), GTK_STOCK_CLOSE);
     applyGtkButtonIcon(gtk_dialog_get_widget_for_response(GTK_DIALOG(dialog), GTK_RESPONSE_OK), GTK_STOCK_SAVE);
@@ -444,6 +456,7 @@ bool TStartFrame::editAccount(const std::string& accountName, GtkWindow* parent,
 
 void TStartFrame::openAccountManager() {
     GtkWidget* dialog = gtk_dialog_new_with_buttons("Accounts", nullptr, static_cast<GtkDialogFlags>(0), "Add Account", 100, "Edit", 101, "Delete", 102, "Close", GTK_RESPONSE_CLOSE, "Select", GTK_RESPONSE_OK, nullptr);
+    applyRemoteControlWindowChrome(dialog);
     applyGtkButtonIcon(gtk_dialog_get_widget_for_response(GTK_DIALOG(dialog), 100), GTK_STOCK_ADD);
     applyGtkButtonIcon(gtk_dialog_get_widget_for_response(GTK_DIALOG(dialog), 101), GTK_STOCK_EDIT);
     applyGtkButtonIcon(gtk_dialog_get_widget_for_response(GTK_DIALOG(dialog), 102), GTK_STOCK_DELETE);

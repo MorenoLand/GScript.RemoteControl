@@ -5,10 +5,13 @@
 #include <string>
 #include <gtk/gtk.h>
 
+#include "TTheme.h"
+
 struct ErrorWindowState { std::function<void()> onClosed; bool handled = false; };
 
 inline GtkWidget* createErrorWindow(const char* title, const char* message, GtkWindow* parent = nullptr, std::function<void()> onClosed = {}) {
     GtkWidget* window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
+    applyRemoteControlWindowChrome(window);
     gtk_widget_set_name(window, "ErrorWindow");
     gtk_container_set_border_width(GTK_CONTAINER(window), 5);
     gtk_window_set_title(GTK_WINDOW(window), title == nullptr ? "Question" : title);

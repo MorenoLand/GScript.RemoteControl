@@ -189,6 +189,7 @@ namespace {
 
 TScriptList::TScriptList(std::string nextType, RC::RCOptions* nextOptions, TExtensionsManager* nextExtensions, const std::filesystem::path& applicationDirectory) : type(std::move(nextType)), options(nextOptions), extensionsManager(nextExtensions), scriptWindowStatePath(scriptStatePath(applicationDirectory)) {
     window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
+    applyRemoteControlWindowChrome(window);
     gtk_window_set_title(GTK_WINDOW(window), (type == "classes" ? "Classes" : "Weapon/GUI-Script List"));
     gtk_window_set_default_size(GTK_WINDOW(window), 540, 460);
     GtkWidget* root = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
@@ -433,6 +434,7 @@ void TScriptList::onAdd(GtkButton*, gpointer data) {
     TScriptList* list = static_cast<TScriptList*>(data);
     const bool isClass = list->type == "classes";
     GtkWidget* dialog = gtk_dialog_new_with_buttons(isClass ? "Add Class" : "Add Weapon/GUI Script", nullptr, GTK_DIALOG_MODAL, "Cancel", GTK_RESPONSE_CANCEL, "Add", GTK_RESPONSE_ACCEPT, nullptr);
+    applyRemoteControlWindowChrome(dialog);
     GtkWidget* grid = gtk_grid_new();
     gtk_container_set_border_width(GTK_CONTAINER(grid), 8);
     gtk_grid_set_row_spacing(GTK_GRID(grid), 5);
@@ -590,6 +592,7 @@ void TScriptList::showEditor(const char* name, const char* script) {
     struct EditorState { void* connection; bool weapon; std::string name; GtkWidget* editor; GtkWidget* icon; GtkWidget* dialog; std::filesystem::path statePath; std::string session; std::string type; guint geometryTimer; };
     const std::string editorTitle = (type == "weapons" ? "Weapon: " : "Class: ") + scriptName + (serverName.empty() ? "" : " (" + serverName + ")");
     GtkWidget* dialog = gtk_dialog_new_with_buttons(editorTitle.c_str(), nullptr, static_cast<GtkDialogFlags>(0), "Apply", GTK_RESPONSE_ACCEPT, "Close", GTK_RESPONSE_CANCEL, nullptr);
+    applyRemoteControlWindowChrome(dialog);
     gtk_window_set_type_hint(GTK_WINDOW(dialog), GDK_WINDOW_TYPE_HINT_NORMAL);
     gtk_window_set_resizable(GTK_WINDOW(dialog), true);
     gtk_window_set_default_size(GTK_WINDOW(dialog), 700, 520);

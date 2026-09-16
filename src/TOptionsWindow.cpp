@@ -143,6 +143,7 @@ namespace {
 
 TOptionsWindow::TOptionsWindow(RC::RCOptions& nextOptions, const std::filesystem::path& nextApplicationDirectory, std::function<void(const RC::RCOptions&)> nextOnSaved) : options(nextOptions), applicationDirectory(nextApplicationDirectory), onSaved(std::move(nextOnSaved)) {
     window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
+    applyRemoteControlWindowChrome(window);
     gtk_widget_set_name(window, "OptionsWindow");
     gtk_window_set_title(GTK_WINDOW(window), "Options");
     gtk_window_set_default_size(GTK_WINDOW(window), 400, 420);
@@ -443,6 +444,7 @@ TOptionsWindow::TOptionsWindow(RC::RCOptions& nextOptions, const std::filesystem
     g_signal_connect(viewMcpAudit, "clicked", G_CALLBACK(+[](GtkButton*, gpointer data) {
         TOptionsWindow* optionsWindow = static_cast<TOptionsWindow*>(data);
         GtkWidget* dialog = gtk_dialog_new_with_buttons("MCP Audit Log", nullptr, GTK_DIALOG_MODAL, "Close", GTK_RESPONSE_CLOSE, nullptr);
+        applyRemoteControlWindowChrome(dialog);
         gtk_window_set_position(GTK_WINDOW(dialog), GTK_WIN_POS_CENTER);
         gtk_window_set_default_size(GTK_WINDOW(dialog), 700, 420);
         GtkWidget* scrolled = gtk_scrolled_window_new(nullptr, nullptr);

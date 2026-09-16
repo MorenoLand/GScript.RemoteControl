@@ -65,6 +65,7 @@ private:
     ListServerEndpointCallback listServerEndpointCallback;
     std::string selectedAccount;
     GtkWidget* window = nullptr;
+    GtkWidget* titlebar = nullptr;
     GtkWidget* nicknameField = nullptr;
     GtkWidget* accountCombo = nullptr;
     GtkWidget* accountField = nullptr;

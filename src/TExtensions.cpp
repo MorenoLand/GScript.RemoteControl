@@ -1,4 +1,5 @@
 #include "TExtensions.h"
+#include "TTheme.h"
 
 #include <gtk/gtk.h>
 #include <algorithm>
@@ -602,6 +603,7 @@ void TExtensionsManager::refresh() {
 void TExtensionsManager::showWindow() {
     if (window == nullptr) {
         window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
+        applyRemoteControlWindowChrome(window);
         gtk_widget_set_name(window, "ExtensionsWindow");
         gtk_window_set_title(GTK_WINDOW(window), "Extensions");
         gtk_window_set_default_size(GTK_WINDOW(window), 520, 180);
@@ -968,6 +970,7 @@ void TExtensionsManager::onChildExit(GPid pid, gint, gpointer data) { auto* mana
 void TExtensionsManager::showLog(std::size_t index) {
     if (index >= extensions.size()) return;
     GtkWidget* dialog = gtk_dialog_new_with_buttons("Extension Log", nullptr, GTK_DIALOG_MODAL, "Close", GTK_RESPONSE_CLOSE, nullptr);
+    applyRemoteControlWindowChrome(dialog);
     gtk_window_set_default_size(GTK_WINDOW(dialog), 520, 320);
     GtkWidget* view = gtk_text_view_new();
     gtk_text_view_set_editable(GTK_TEXT_VIEW(view), false);
@@ -984,6 +987,7 @@ void TExtensionsManager::showDetails(std::size_t index) {
     auto& extension = extensions[index];
     const auto& manifest = extension.manifest;
     GtkWidget* dialog = gtk_dialog_new_with_buttons(manifest.name.c_str(), nullptr, GTK_DIALOG_MODAL, "Close", GTK_RESPONSE_CLOSE, nullptr);
+    applyRemoteControlWindowChrome(dialog);
     gtk_window_set_default_size(GTK_WINDOW(dialog), 460, 320);
     GtkWidget* content = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
     const std::string status = !manifest.error.empty() || !extension.runtimeError.empty() ? "failed" : extension.launching ? "starting" : extension.pid != 0 ? "running" : extension.enabled ? "stopped" : "disabled";

@@ -17,6 +17,7 @@
 
 TNPCList::TNPCList(std::string accountName, RC::RCOptions* nextOptions) : accountName(std::move(accountName)), options(nextOptions) {
     window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
+    applyRemoteControlWindowChrome(window);
     gtk_window_set_title(GTK_WINDOW(window), "NPCs");
     gtk_window_set_default_size(GTK_WINDOW(window), 520, 360);
     GtkWidget* root = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
@@ -75,6 +76,7 @@ void TNPCList::onRefresh(GtkButton*, gpointer data) { static_cast<TNPCList*>(dat
 void TNPCList::onAdd(GtkButton*, gpointer data) {
     TNPCList* list = static_cast<TNPCList*>(data);
     GtkWidget* dialog = gtk_dialog_new_with_buttons("Add NPC", nullptr, GTK_DIALOG_MODAL, "Apply", GTK_RESPONSE_OK, "Cancel", GTK_RESPONSE_CANCEL, nullptr);
+    applyRemoteControlWindowChrome(dialog);
     gtk_window_set_default_size(GTK_WINDOW(dialog), 340, 300);
     GtkWidget* grid = gtk_grid_new();
     gtk_container_set_border_width(GTK_CONTAINER(grid), 8);
@@ -195,6 +197,7 @@ void TNPCList::onWarp(GtkMenuItem*, gpointer data) {
     TNPCList* list = static_cast<TNPCList*>(data);
     if (list->connection == nullptr || list->selectedNPCId < 0) return;
     GtkWidget* dialog = gtk_dialog_new_with_buttons("Warp NPC", nullptr, GTK_DIALOG_MODAL, "Cancel", GTK_RESPONSE_CANCEL, "Warp", GTK_RESPONSE_OK, nullptr);
+    applyRemoteControlWindowChrome(dialog);
     GtkWidget* grid = gtk_grid_new();
     gtk_container_set_border_width(GTK_CONTAINER(grid), 8);
     gtk_grid_set_row_spacing(GTK_GRID(grid), 6);
@@ -263,6 +266,7 @@ void TNPCList::showScriptEditor(const char* name, int id, const char* script) {
     const std::string scriptName = name == nullptr ? "" : name;
     const std::string editorTitle = "Npcscript: " + scriptName + (serverName.empty() ? "" : " (" + serverName + ")");
     GtkWidget* dialog = gtk_dialog_new_with_buttons(editorTitle.c_str(), nullptr, static_cast<GtkDialogFlags>(0), "Apply", GTK_RESPONSE_ACCEPT, "Close", GTK_RESPONSE_CANCEL, nullptr);
+    applyRemoteControlWindowChrome(dialog);
     gtk_window_set_type_hint(GTK_WINDOW(dialog), GDK_WINDOW_TYPE_HINT_NORMAL);
     gtk_window_set_resizable(GTK_WINDOW(dialog), true);
     gtk_window_set_default_size(GTK_WINDOW(dialog), 700, 520);
@@ -363,6 +367,7 @@ void TNPCList::showFlagsEditor(int id, const std::string& npcName, const char* f
     const std::string displayName = npcName.empty() ? "NPC " + std::to_string(id) : npcName;
     const std::string editorTitle = "NPC Flags: " + displayName + (serverName.empty() ? "" : " (" + serverName + ")");
     GtkWidget* dialog = gtk_window_new(GTK_WINDOW_TOPLEVEL);
+    applyRemoteControlWindowChrome(dialog);
     gtk_window_set_title(GTK_WINDOW(dialog), editorTitle.c_str());
     gtk_window_set_resizable(GTK_WINDOW(dialog), true);
     gtk_window_set_default_size(GTK_WINDOW(dialog), 600, 460);
@@ -429,6 +434,7 @@ void TNPCList::showFlagsEditor(int id, const std::string& npcName, const char* f
 void TNPCList::showAttributes(int id, const char* attributes) {
     const std::string editorTitle = "Attributes of NPC " + std::to_string(id) + (serverName.empty() ? "" : " - " + serverName);
     GtkWidget* dialog = gtk_dialog_new_with_buttons(editorTitle.c_str(), nullptr, static_cast<GtkDialogFlags>(0), "Close", GTK_RESPONSE_CLOSE, nullptr);
+    applyRemoteControlWindowChrome(dialog);
     gtk_window_set_default_size(GTK_WINDOW(dialog), 500, 360);
     GtkWidget* scrolled = gtk_scrolled_window_new(nullptr, nullptr);
     GtkSourceLanguage* language = gtk_source_language_manager_get_language(gtk_source_language_manager_get_default(), "ini");

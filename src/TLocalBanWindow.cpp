@@ -1,4 +1,5 @@
 #include "TLocalBanWindow.h"
+#include "TTheme.h"
 
 #include <grclib.h>
 
@@ -28,6 +29,7 @@ namespace {
 
 TLocalBanWindow::TLocalBanWindow(const std::filesystem::path& nextApplicationDirectory) : applicationDirectory(nextApplicationDirectory) {
     window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
+    applyRemoteControlWindowChrome(window);
     gtk_widget_set_name(window, "BanWindow");
     gtk_window_set_title(GTK_WINDOW(window), "Edit Access");
     gtk_window_set_default_size(GTK_WINDOW(window), 500, 240);

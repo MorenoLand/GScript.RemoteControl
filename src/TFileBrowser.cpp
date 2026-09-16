@@ -1,4 +1,5 @@
 #include "TFileBrowser.h"
+#include "TTheme.h"
 
 #include <grclib.h>
 
@@ -14,6 +15,7 @@ namespace {
 
 TFileBrowser::TFileBrowser() {
     window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
+    applyRemoteControlWindowChrome(window);
     gtk_window_set_title(GTK_WINDOW(window), "File Browser");
     gtk_window_set_default_size(GTK_WINDOW(window), 700, 480);
     GtkWidget* root = gtk_box_new(GTK_ORIENTATION_VERTICAL, 5);

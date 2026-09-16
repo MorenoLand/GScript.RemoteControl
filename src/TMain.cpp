@@ -24,6 +24,9 @@
 #include <gtksourceview/gtksource.h>
 #include <fontconfig/fontconfig.h>
 
+#ifdef REMOTE_CONTROL_STATIC_WINDOWS
+extern "C" GResource* gtksourceview_get_resource(void);
+#endif
 
 #ifdef _WIN32
 #include <windows.h>
@@ -96,19 +99,6 @@ namespace {
     TStartFrame* trayStartFrame = nullptr;
     TRemoteFrame* trayRemoteFrame = nullptr;
     void toggleTrayApplication();
-
-    gboolean onTopLevelSizeAllocate(GSignalInvocationHint*, guint, const GValue* values, gpointer) {
-        GtkWidget* widget = GTK_WIDGET(g_value_get_object(&values[0]));
-        if (!GTK_IS_WINDOW(widget)) return TRUE;
-        gtk_widget_queue_draw(widget);
-        if (GdkWindow* surface = gtk_widget_get_window(widget)) gdk_window_process_updates(surface, true);
-        return TRUE;
-    }
-
-    void enableLiveResizePainting() {
-        const guint signal = g_signal_lookup("size-allocate", GTK_TYPE_WIDGET);
-        if (signal != 0) g_signal_add_emission_hook(signal, 0, onTopLevelSizeAllocate, nullptr, nullptr);
-    }
 
 #ifdef _WIN32
     constexpr int VisibilityHotkeyId = 0x5244;
@@ -388,6 +378,16 @@ namespace {
 
     void configureGtkRuntime(const std::filesystem::path& applicationDirectory) {
 #ifdef _WIN32
+#ifdef REMOTE_CONTROL_STATIC_WINDOWS
+        const std::string sharedData = (applicationDirectory / "share").string();
+        g_setenv("XDG_DATA_DIRS", sharedData.c_str(), true);
+        const auto staticLoaderCache = applicationDirectory / "cache" / "gdk-pixbuf-static.cache";
+        std::filesystem::create_directories(staticLoaderCache.parent_path());
+        std::ofstream(staticLoaderCache, std::ios::binary | std::ios::trunc);
+        g_setenv("GDK_PIXBUF_MODULEDIR", (applicationDirectory / "lib" / "gdk-pixbuf-2.0" / "2.10.0" / "loaders").string().c_str(), true);
+        g_setenv("GDK_PIXBUF_MODULE_FILE", staticLoaderCache.string().c_str(), true);
+        g_setenv("GSETTINGS_SCHEMA_DIR", (applicationDirectory / "share" / "glib-2.0" / "schemas").string().c_str(), true);
+#else
         SetDefaultDllDirectories(LOAD_LIBRARY_SEARCH_DEFAULT_DIRS | LOAD_LIBRARY_SEARCH_USER_DIRS);
         AddDllDirectory(applicationDirectory.c_str());
         const std::string loaders = (applicationDirectory / "lib" / "gdk-pixbuf-2.0" / "2.10.0" / "loaders").string();
@@ -406,6 +406,7 @@ namespace {
         std::ofstream(runtimeCache, std::ios::binary | std::ios::trunc) << loaderCacheContent;
         g_setenv("GDK_PIXBUF_MODULE_FILE", runtimeCache.string().c_str(), true);
         g_setenv("GSETTINGS_SCHEMA_DIR", (applicationDirectory / "share" / "glib-2.0" / "schemas").string().c_str(), true);
+#endif
 #elif defined(__APPLE__)
         const std::string sharedData = (applicationDirectory / "share").string();
         const std::string loaders = (applicationDirectory / "lib" / "gdk-pixbuf-2.0" / "2.10.0" / "loaders").string();
@@ -470,7 +471,8 @@ namespace {
         const char* text = dracula ? "#f8f8f2" : material ? "#eeffff" : ayuMirage ? "#cccac2" : nord ? "#eceff4" : monokai ? "#f8f8f2" : oneDark ? "#abb2bf" : tokyoNight ? "#c0caf5" : gruvbox ? "#ebdbb2" : solarized ? "#839496" : catppuccin ? "#cdd6f4" : "#dddddd";
         const char* accent = dracula ? "#bd93f9" : material ? "#80cbc4" : ayuMirage ? "#ffcc66" : nord ? "#88c0d0" : monokai ? "#a6e22e" : oneDark ? "#61afef" : tokyoNight ? "#7aa2f7" : gruvbox ? "#fabd2f" : solarized ? "#b58900" : catppuccin ? "#cba6f7" : "#00ff00";
         const char* border = dracula ? "#6272a4" : material ? "#546e7a" : ayuMirage ? "#4b5263" : nord ? "#4c566a" : monokai ? "#75715e" : oneDark ? "#3e4451" : tokyoNight ? "#3b4261" : gruvbox ? "#665c54" : solarized ? "#586e75" : catppuccin ? "#585b70" : "#555555";
-        std::string css = std::string("window, dialog, .background { background-color: ") + background + "; color: " + text + "; } label, checkbutton label, button label { color: " + std::string(text) + "; } entry { background-image: none; background-color: " + editor + "; color: " + text + "; caret-color: " + accent + "; border: 1px solid " + border + "; } entry:disabled { background-color: " + surface + "; color: #c1c1c1; } textview, textview text { background-color: " + editor + "; color: " + text + "; caret-color: " + accent + "; } combobox button, button { background-image: none; background-color: " + surface + "; color: " + text + "; border: 1px solid " + border + "; } button:hover, combobox button:hover { background-image: none; background-color: " + surface + "; } button:active, combobox button:active { background-image: none; background-color: " + editor + "; } button:disabled { background-image: none; background-color: " + surface + "; color: #828282; } checkbutton { color: " + text + "; } frame, expander { background-color: transparent; } separator, paned separator { background-color: " + border + "; min-height: 1px; min-width: 1px; } treeview.view, treeview.view header button, iconview.view, #remote-file-icon-view, list, list row { background-color: " + editor + "; color: " + text + "; border-color: " + border + "; } treeview.view:selected, iconview.view:selected, #remote-file-icon-view:selected, list row:selected { background-color: " + surface + "; color: #ffffff; } #remote-control-minimap, #remote-control-minimap.view { min-width: 120px; background-color: " + editor + "; color: " + text + "; border-left: 1px solid " + border + "; } #remote-control-minimap-marker { background-color: alpha(" + accent + ", 0.24); border: 1px solid alpha(" + accent + ", 0.72); } #remote-control-minimap .scrubber, #remote-control-minimap.scrubber { background-color: alpha(" + accent + ", 0.24); border: 1px solid alpha(" + accent + ", 0.72); } filechooser box, filechooser .path-bar, filechooser .path-bar button, filechooser .pathbar, filechooser .pathbar button { background-image: none; background-color: " + background + "; color: " + text + "; } filechooser placessidebar, filechooser placessidebar viewport, filechooser placessidebar list, filechooser placessidebar row, filechooser .sidebar, filechooser .sidebar viewport, filechooser .sidebar list, filechooser .sidebar row { background-color: " + editor + "; color: " + text + "; } filechooser placessidebar row:selected, filechooser .sidebar row:selected { background-color: " + surface + "; color: #ffffff; } menubar, menu { background-color: " + surface + "; color: " + text + "; } menuitem { color: " + text + "; } notebook, notebook > header, notebook > header > tabs, notebook > stack { background-color: transparent; border: none; box-shadow: none; outline: none; padding: 0; } scrolledwindow, viewport { background-color: transparent; border: none; box-shadow: none; outline: none; padding: 0; } notebook > header, notebook > header > tabs { min-height: 0; } notebook > header > tabs > tab { background-image: none; background-color: " + surface + "; border: 1px solid " + border + "; border-bottom: none; border-radius: 4px 4px 0 0; margin-right: 2px; padding: 2px 5px; } notebook > header > tabs > tab:checked { background-color: " + background + "; border-color: " + accent + "; } .gtk-source-completion, .gtk-source-completion-content, .gtk-source-completion-list { background-color: " + editor + "; color: " + text + "; border: 1px solid " + border + "; border-radius: 6px; } .gtk-source-completion-list { padding: 3px; } .gtk-source-completion-row { color: " + text + "; border-radius: 4px; padding: 4px 8px; } .gtk-source-completion-row:hover { background-color: " + surface + "; } .gtk-source-completion-row:selected { background-color: " + accent + "; color: " + editor + "; } .gtk-source-completion-info, .remote-completion-info { background-color: " + surface + "; color: " + text + "; border: 1px solid " + border + "; border-radius: 7px; padding: 8px 10px; } .remote-completion-signature { color: " + accent + "; font-weight: bold; } .remote-completion-details { color: " + text + "; margin-top: 4px; }";
+        std::string css = std::string("window, dialog, .background { background-color: ") + background + "; color: " + text + "; } #GraphicalContainer, #GraphicalBase, #GraphicalHeader, #GraphicalFixed { background-color: transparent; background-image: none; } label, checkbutton label, button label { color: " + std::string(text) + "; } entry { background-image: none; background-color: " + editor + "; color: " + text + "; caret-color: " + accent + "; border: 1px solid " + border + "; } entry:disabled { background-color: " + surface + "; color: #c1c1c1; } textview, textview text { background-color: " + editor + "; color: " + text + "; caret-color: " + accent + "; } combobox button, button { background-image: none; background-color: " + surface + "; color: " + text + "; border: 1px solid " + border + "; } button:hover, combobox button:hover { background-image: none; background-color: " + surface + "; } button:active, combobox button:active { background-image: none; background-color: " + editor + "; } button:disabled { background-image: none; background-color: " + surface + "; color: #828282; } checkbutton { color: " + text + "; } frame, expander { background-color: transparent; } separator, paned separator { background-color: " + border + "; min-height: 1px; min-width: 1px; } treeview.view, treeview.view header button, iconview.view, #remote-file-icon-view, list, list row { background-color: " + editor + "; color: " + text + "; border-color: " + border + "; } treeview.view:selected, iconview.view:selected, #remote-file-icon-view:selected, list row:selected { background-color: " + surface + "; color: #ffffff; } #remote-control-minimap, #remote-control-minimap.view { min-width: 120px; background-color: " + editor + "; color: " + text + "; border-left: 1px solid " + border + "; } #remote-control-minimap-marker { background-color: alpha(" + accent + ", 0.24); border: 1px solid alpha(" + accent + ", 0.72); } #remote-control-minimap .scrubber, #remote-control-minimap.scrubber { background-color: alpha(" + accent + ", 0.24); border: 1px solid alpha(" + accent + ", 0.72); } filechooser box, filechooser .path-bar, filechooser .path-bar button, filechooser .pathbar, filechooser .pathbar button { background-image: none; background-color: " + background + "; color: " + text + "; } filechooser placessidebar, filechooser placessidebar viewport, filechooser placessidebar list, filechooser placessidebar row, filechooser .sidebar, filechooser .sidebar viewport, filechooser .sidebar list, filechooser .sidebar row { background-color: " + editor + "; color: " + text + "; } filechooser placessidebar row:selected, filechooser .sidebar row:selected { background-color: " + surface + "; color: #ffffff; } menubar, menu { background-color: " + surface + "; color: " + text + "; } menuitem { color: " + text + "; } notebook, notebook > header, notebook > header > tabs, notebook > stack { background-color: transparent; border: none; box-shadow: none; outline: none; padding: 0; } scrolledwindow, viewport { background-color: transparent; border: none; box-shadow: none; outline: none; padding: 0; } notebook > header, notebook > header > tabs { min-height: 0; } notebook > header > tabs > tab { background-image: none; background-color: " + surface + "; border: 1px solid " + border + "; border-bottom: none; border-radius: 4px 4px 0 0; margin-right: 2px; padding: 2px 5px; } notebook > header > tabs > tab:checked { background-color: " + background + "; border-color: " + accent + "; } .gtk-source-completion, .gtk-source-completion-content, .gtk-source-completion-list { background-color: " + editor + "; color: " + text + "; border: 1px solid " + border + "; border-radius: 6px; } .gtk-source-completion-list { padding: 3px; } .gtk-source-completion-row { color: " + text + "; border-radius: 4px; padding: 4px 8px; } .gtk-source-completion-row:hover { background-color: " + surface + "; } .gtk-source-completion-row:selected { background-color: " + accent + "; color: " + editor + "; } .gtk-source-completion-info, .remote-completion-info { background-color: " + surface + "; color: " + text + "; border: 1px solid " + border + "; border-radius: 7px; padding: 8px 10px; } .remote-completion-signature { color: " + accent + "; font-weight: bold; } .remote-completion-details { color: " + text + "; }";
+        css += std::string(" headerbar, .titlebar { background-image: none; background-color: ") + surface + "; color: " + text + "; border: none; box-shadow: none; } headerbar button, .titlebar button { background-image: none; background-color: " + surface + "; color: " + text + "; border: 1px solid " + border + "; box-shadow: none; } headerbar button:hover, .titlebar button:hover { background-color: " + border + "; } headerbar .title, .titlebar .title { color: " + text + "; }";
         css += std::string(" notebook > header > tabs > tab:checked, notebook > header > tabs > tab:focus { border-color: ") + border + "; border-bottom-color: transparent; box-shadow: none; outline: none; }";
         css += " notebook > header > tabs > tab:not(:checked) { margin-top: 1px; } notebook > header > tabs > tab:checked { margin-top: 0; margin-bottom: -1px; }";
         gtk_css_provider_load_from_data(provider, css.c_str(), -1, nullptr);
@@ -625,8 +627,16 @@ int main(int argc, char** argv) {
     configureGtkRuntime(applicationDirectory);
     registerBundledFonts(applicationDirectory);
     gtk_init(&argc, &argv);
-    enableLiveResizePainting();
+#ifdef REMOTE_CONTROL_STATIC_WINDOWS
+    (void)gtksourceview_get_resource();
+#endif
     gtk_icon_theme_append_search_path(gtk_icon_theme_get_default(), (applicationDirectory / "share" / "icons").string().c_str());
+    GError* iconError = nullptr;
+    GdkPixbuf* applicationIcon = gdk_pixbuf_new_from_file((applicationDirectory / "images" / "rcicon.png").string().c_str(), &iconError);
+    if (applicationIcon != nullptr) {
+        gtk_window_set_default_icon(applicationIcon);
+        g_object_set_data_full(G_OBJECT(gtk_settings_get_default()), "remote-control-icon-pixbuf", applicationIcon, g_object_unref);
+    } else if (iconError != nullptr) g_error_free(iconError);
     RC::RCOptions options;
     copySyntaxFiles(applicationDirectory);
     RC::loadRCOptions(options, applicationDirectory);

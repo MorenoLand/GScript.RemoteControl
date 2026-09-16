@@ -6,6 +6,7 @@
 #include <string>
 
 #include "TEditorFormat.h"
+#include "TTheme.h"
 
 inline std::string editorLastFindText;
 
@@ -140,6 +141,7 @@ inline EditorFindState* editorFindState(GtkWidget* editor) {
     state = new EditorFindState();
     state->editor = editor;
     state->dialog = gtk_dialog_new();
+    applyRemoteControlWindowChrome(state->dialog);
     gtk_window_set_title(GTK_WINDOW(state->dialog), "Find and Replace");
     gtk_window_set_position(GTK_WINDOW(state->dialog), GTK_WIN_POS_CENTER);
     gtk_window_set_default_size(GTK_WINDOW(state->dialog), 360, -1);
@@ -221,6 +223,7 @@ inline void openEditorGoToLine(GtkWidget* editor) {
     GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(editor));
     gtk_text_buffer_get_iter_at_mark(buffer, &current, gtk_text_buffer_get_insert(buffer));
     GtkWidget* dialog = gtk_dialog_new_with_buttons("Go to line", nullptr, static_cast<GtkDialogFlags>(0), "Close", GTK_RESPONSE_CANCEL, "Go", GTK_RESPONSE_ACCEPT, nullptr);
+    applyRemoteControlWindowChrome(dialog);
     gtk_window_set_position(GTK_WINDOW(dialog), GTK_WIN_POS_CENTER);
     GtkWidget* entry = gtk_entry_new();
     gtk_entry_set_input_purpose(GTK_ENTRY(entry), GTK_INPUT_PURPOSE_DIGITS);

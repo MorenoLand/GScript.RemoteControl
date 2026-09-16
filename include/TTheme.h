@@ -6,6 +6,47 @@
 
 void applyRemoteControlTheme(const std::string& theme, bool darkMode, bool roundedCorners);
 
+inline void applyRemoteControlWindowChrome(GtkWidget* widget) {
+    if (widget == nullptr || !GTK_IS_WINDOW(widget)) return;
+    GtkWindow* window = GTK_WINDOW(widget);
+    GtkSettings* settings = gtk_settings_get_default();
+    GdkPixbuf* icon = settings == nullptr ? nullptr : static_cast<GdkPixbuf*>(g_object_get_data(G_OBJECT(settings), "remote-control-icon-pixbuf"));
+    if (icon != nullptr) gtk_window_set_icon(window, icon);
+    if (gtk_window_get_type_hint(window) == GDK_WINDOW_TYPE_HINT_DROPDOWN_MENU || gtk_window_get_type_hint(window) == GDK_WINDOW_TYPE_HINT_POPUP_MENU) return;
+    if (gtk_window_get_window_type(window) == GTK_WINDOW_POPUP) return;
+    GtkWidget* titlebar = gtk_window_get_titlebar(window);
+    if (titlebar != nullptr && GTK_IS_HEADER_BAR(titlebar)) {
+        if (icon != nullptr && g_object_get_data(G_OBJECT(titlebar), "remote-control-title-icon") == nullptr) {
+            GdkPixbuf* scaledIcon = gdk_pixbuf_scale_simple(icon, 20, 20, GDK_INTERP_BILINEAR);
+            GtkWidget* titleIcon = gtk_image_new_from_pixbuf(scaledIcon);
+            g_object_unref(scaledIcon);
+            gtk_image_set_pixel_size(GTK_IMAGE(titleIcon), 16);
+            gtk_widget_set_size_request(titleIcon, 16, 16);
+            gtk_header_bar_pack_start(GTK_HEADER_BAR(titlebar), titleIcon);
+            g_object_set_data(G_OBJECT(titlebar), "remote-control-title-icon", titleIcon);
+        }
+        return;
+    }
+    GtkWidget* header = gtk_header_bar_new();
+    gtk_header_bar_set_show_close_button(GTK_HEADER_BAR(header), true);
+    gtk_header_bar_set_decoration_layout(GTK_HEADER_BAR(header), ":minimize,maximize,close");
+    gtk_header_bar_set_title(GTK_HEADER_BAR(header), gtk_window_get_title(window));
+    if (icon != nullptr) {
+        GdkPixbuf* scaledIcon = gdk_pixbuf_scale_simple(icon, 20, 20, GDK_INTERP_BILINEAR);
+        GtkWidget* titleIcon = gtk_image_new_from_pixbuf(scaledIcon);
+        g_object_unref(scaledIcon);
+        gtk_image_set_pixel_size(GTK_IMAGE(titleIcon), 16);
+        gtk_widget_set_size_request(titleIcon, 16, 16);
+        gtk_header_bar_pack_start(GTK_HEADER_BAR(header), titleIcon);
+        g_object_set_data(G_OBJECT(header), "remote-control-title-icon", titleIcon);
+    }
+    gtk_window_set_titlebar(window, header);
+    g_signal_connect(window, "notify::title", G_CALLBACK(+[](GtkWindow* changedWindow, GParamSpec*, gpointer data) {
+        GtkWidget* changedTitlebar = GTK_WIDGET(data);
+        if (GTK_IS_HEADER_BAR(changedTitlebar)) gtk_header_bar_set_title(GTK_HEADER_BAR(changedTitlebar), gtk_window_get_title(changedWindow));
+    }), header);
+}
+
 inline void setRemoteControlSyntaxTheme(const std::string& theme) {
     GtkSettings* settings = gtk_settings_get_default();
     if (settings != nullptr) g_object_set_data_full(G_OBJECT(settings), "remote-control-syntax-theme", g_strdup(theme.c_str()), g_free);

@@ -376,6 +376,7 @@ TFileBrowserTree::TFileBrowserTree(const std::filesystem::path& nextApplicationD
     previewAsyncState->browser = this;
     previewWorkerThread = std::thread(&TFileBrowserTree::previewWorkerLoop, this);
     window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
+    applyRemoteControlWindowChrome(window);
     gtk_window_set_title(GTK_WINDOW(window), "File Browser");
     gtk_window_set_default_size(GTK_WINDOW(window), 800, 600);
     GtkWidget* root = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
@@ -1866,6 +1867,7 @@ void TFileBrowserTree::onRename(GtkMenuItem*, gpointer data) {
     if (item->paths.size() != 1) return;
     if (item->browser->modernFileBrowser) {
         GtkWidget* dialog = gtk_dialog_new_with_buttons("Rename", nullptr, GTK_DIALOG_MODAL, "Cancel", GTK_RESPONSE_CANCEL, "Rename", GTK_RESPONSE_ACCEPT, nullptr);
+        applyRemoteControlWindowChrome(dialog);
         GtkWidget* entry = gtk_entry_new();
         gchar* basename = g_path_get_basename(item->paths.front().c_str());
         gtk_entry_set_text(GTK_ENTRY(entry), basename == nullptr ? item->paths.front().c_str() : basename);
@@ -1921,6 +1923,7 @@ void TFileBrowserTree::onMove(GtkMenuItem*, gpointer data) {
     FileMenuItem* item = static_cast<FileMenuItem*>(data);
     if (item == nullptr || item->browser == nullptr || item->browser->connection == nullptr) return;
     GtkWidget* dialog = gtk_dialog_new_with_buttons((item->paths.size() == 1 ? "Move " + item->paths.front() : "Move selected files").c_str(), nullptr, GTK_DIALOG_MODAL, "Cancel", GTK_RESPONSE_CANCEL, "OK", GTK_RESPONSE_ACCEPT, nullptr);
+    applyRemoteControlWindowChrome(dialog);
     GtkWidget* entry = gtk_entry_new();
     gtk_entry_set_text(GTK_ENTRY(entry), item->browser->currentFolder.c_str());
     gtk_box_pack_start(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), entry, false, false, 8);
@@ -2125,6 +2128,7 @@ void TFileBrowserTree::showTextEditor(const char* path, const void* content, int
     struct EditorState { void* connection; std::string path; GtkWidget* editor; };
     const std::string editorTitle = downloadServer.empty() ? std::string(path) : std::string(path) + " - " + downloadServer;
     GtkWidget* dialog = gtk_dialog_new_with_buttons(editorTitle.c_str(), nullptr, static_cast<GtkDialogFlags>(0), "Cancel", GTK_RESPONSE_CANCEL, "Save", GTK_RESPONSE_ACCEPT, nullptr);
+    applyRemoteControlWindowChrome(dialog);
     gtk_window_set_type_hint(GTK_WINDOW(dialog), GDK_WINDOW_TYPE_HINT_NORMAL);
     gtk_window_set_resizable(GTK_WINDOW(dialog), true);
     gtk_window_set_default_size(GTK_WINDOW(dialog), 700, 520);
