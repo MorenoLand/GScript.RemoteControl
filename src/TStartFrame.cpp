@@ -10,6 +10,20 @@
 namespace {
     enum AccountColumns { AccountNameColumn, AccountMarkupColumn, AccountDetailColumn, AccountIndexColumn, AccountColumnCount };
     struct AccountManageHideRequest { TStartFrame* frame; std::shared_ptr<bool> alive; };
+    constexpr const char* directAssociationPrefix = "direct://";
+    bool parseDirectAssociation(const std::string& value, std::string& host, int& port) {
+        if (value.rfind(directAssociationPrefix, 0) != 0) return false;
+        const std::string endpoint = value.substr(std::string(directAssociationPrefix).size());
+        const std::vector<SavedListServer> profiles = RC::loadListServerProfiles(std::filesystem::path(g_get_user_config_dir()) / "GScriptRC" / "listservers.conf", "listserver.graalonline.com", 14922);
+        for (const SavedListServer& profile : profiles) if (g_ascii_strcasecmp(endpoint.c_str(), profile.name.c_str()) == 0 || g_ascii_strcasecmp(endpoint.c_str(), (profile.host + ":" + std::to_string(profile.port)).c_str()) == 0 || g_ascii_strcasecmp(endpoint.c_str(), RC::listServerAssociation(profile).c_str()) == 0) { host = profile.host; port = profile.port; return true; }
+        const std::size_t separator = endpoint.rfind(':');
+        if (separator == std::string::npos || separator == 0 || separator + 1 >= endpoint.size()) return false;
+        try { port = std::stoi(endpoint.substr(separator + 1)); } catch (...) { return false; }
+        if (port <= 0 || port > 65535) return false;
+        host = endpoint.substr(0, separator);
+        return !host.empty();
+    }
+    std::string directAssociation(const std::string& listServer) { return std::string(directAssociationPrefix) + listServer; }
 
     std::vector<std::string> splitServers(const std::string& value) {
         std::vector<std::string> servers;
@@ -83,8 +97,8 @@ namespace {
 
 }
 
-TStartFrame::TStartFrame(RC::RCOptions& options, const std::filesystem::path& applicationDirectory, ConnectCallback onConnect, ListServerSettingsCallback onListServerSettings, ListServerEndpointCallback listServerEndpoint)
-    : options(options), accounts(), applicationDirectory(applicationDirectory), onConnectCallback(std::move(onConnect)), onListServerSettingsCallback(std::move(onListServerSettings)), listServerEndpointCallback(std::move(listServerEndpoint)) {
+TStartFrame::TStartFrame(RC::RCOptions& options, const std::filesystem::path& applicationDirectory, ConnectCallback onConnect, ListServerSettingsCallback onListServerSettings, ListServerEndpointCallback listServerEndpoint, DirectConnectCallback onDirectConnect)
+    : options(options), accounts(), applicationDirectory(applicationDirectory), onConnectCallback(std::move(onConnect)), onDirectConnectCallback(std::move(onDirectConnect)), onListServerSettingsCallback(std::move(onListServerSettings)), listServerEndpointCallback(std::move(listServerEndpoint)) {
     window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
     gtk_widget_set_name(window, "StartFrame");
     gtk_window_set_title(GTK_WINDOW(window), "Remote Control");
@@ -400,6 +414,7 @@ bool TStartFrame::editAccount(const std::string& accountName, GtkWindow* parent,
     GtkWidget* name = gtk_entry_new();
     GtkWidget* password = gtk_entry_new();
     GtkWidget* servers = gtk_combo_box_text_new();
+    GtkWidget* directMode = gtk_check_button_new_with_label("Direct Mode");
     gtk_widget_set_name(servers, "AccountServerPicker");
     GList* serverRenderers = gtk_cell_layout_get_cells(GTK_CELL_LAYOUT(servers));
     for (GList* item = serverRenderers; item != nullptr; item = item->next) if (GTK_IS_CELL_RENDERER_TEXT(item->data)) g_object_set(item->data, "ellipsize", PANGO_ELLIPSIZE_END, "max-width-chars", 28, nullptr);
@@ -426,6 +441,8 @@ bool TStartFrame::editAccount(const std::string& accountName, GtkWindow* parent,
     g_object_set_data_full(G_OBJECT(dialog), "account-server-picker", picker, +[](gpointer data) { auto* picker = static_cast<AccountServerPickerState*>(data); if (picker->alive != nullptr) *picker->alive = false; delete picker; });
     const std::vector<std::string> savedServers = resolvedIndex >= 0 ? accounts.listServersForIndex(static_cast<std::size_t>(resolvedIndex)) : accounts.listServersFor(accountName);
     if (!savedServers.empty()) picker->selected = savedServers.front();
+    const bool savedDirectMode = resolvedIndex >= 0 && accounts.entries()[static_cast<std::size_t>(resolvedIndex)].directMode;
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(directMode), savedDirectMode);
     loadAccountServerPicker(picker);
     gtk_widget_set_tooltip_text(servers, "Choose saved list-server profiles to add or remove");
     atk_object_set_name(gtk_widget_get_accessible(servers), "Associated list-server profiles");
@@ -436,7 +453,10 @@ bool TStartFrame::editAccount(const std::string& accountName, GtkWindow* parent,
     gtk_box_pack_start(GTK_BOX(box), name, false, true, 0);
     gtk_box_pack_start(GTK_BOX(box), passwordLabel, false, false, 0);
     gtk_box_pack_start(GTK_BOX(box), password, false, true, 0);
-    gtk_box_pack_start(GTK_BOX(box), forget, false, false, 0);
+    GtkWidget* passwordOptions = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+    gtk_box_pack_start(GTK_BOX(passwordOptions), forget, false, false, 0);
+    gtk_box_pack_start(GTK_BOX(passwordOptions), directMode, false, false, 0);
+    gtk_box_pack_start(GTK_BOX(box), passwordOptions, false, false, 0);
     gtk_box_pack_start(GTK_BOX(box), serverLabel, false, false, 0);
     gtk_box_pack_start(GTK_BOX(serverRow), servers, true, true, 0);
     gtk_box_pack_start(GTK_BOX(serverRow), serverSettings, false, false, 0);
@@ -446,8 +466,12 @@ bool TStartFrame::editAccount(const std::string& accountName, GtkWindow* parent,
     std::string selected;
     if (accepted) {
         selected = gtk_entry_get_text(GTK_ENTRY(name));
-        if (resolvedIndex >= 0) accounts.updateAt(static_cast<std::size_t>(resolvedIndex), selected, gtk_entry_get_text(GTK_ENTRY(password)), gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(forget)), picker->selected.empty() ? std::vector<std::string>() : std::vector<std::string>{picker->selected});
-        else accounts.update(accountName, selected, gtk_entry_get_text(GTK_ENTRY(password)), gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(forget)), picker->selected.empty() ? std::vector<std::string>() : std::vector<std::string>{picker->selected});
+        std::vector<std::string> associations;
+        if (gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(directMode)) && !picker->selected.empty()) associations.push_back(directAssociation(picker->selected));
+        else if (!picker->selected.empty() && picker->selected.rfind(directAssociationPrefix, 0) != 0) associations.push_back(picker->selected);
+        const bool direct = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(directMode));
+        if (resolvedIndex >= 0) accounts.updateAt(static_cast<std::size_t>(resolvedIndex), selected, gtk_entry_get_text(GTK_ENTRY(password)), gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(forget)), associations, direct);
+        else accounts.update(accountName, selected, gtk_entry_get_text(GTK_ENTRY(password)), gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(forget)), associations, direct);
     }
     gtk_widget_destroy(dialog);
     if (accepted) { refreshAccountMenu(); if (resolvedIndex >= 0) requestedAccountIndex = resolvedIndex; else for (std::size_t index = accounts.entries().size(); index > 0; --index) if (accounts.entries()[index - 1].name == selected) { requestedAccountIndex = static_cast<int>(index - 1); break; } selectAccount(selected); requestedAccountIndex = -1; }
@@ -580,10 +604,16 @@ void TStartFrame::connect() {
         const std::vector<SavedListServer> profiles = RC::loadListServerProfiles(std::filesystem::path(g_get_user_config_dir()) / "GScriptRC" / "listservers.conf", "listserver.graalonline.com", 14922);
         if (!profiles.empty()) endpoint = RC::listServerAssociation(profiles.front());
     }
-    if (selectedAccountIndex >= 0) accounts.saveAt(static_cast<std::size_t>(selectedAccountIndex), getText(passwordField), options.dontsavepassword, endpoint);
-    else accounts.save(selectedAccount, getText(passwordField), options.dontsavepassword, endpoint);
+    std::string directHost;
+    int directPort = 0;
+    const bool directMode = selectedAccountIndex >= 0 && accounts.entries()[static_cast<std::size_t>(selectedAccountIndex)].directMode;
+    if (directMode) parseDirectAssociation(directAssociation(endpoint), directHost, directPort);
+    if (selectedAccountIndex >= 0) accounts.saveAt(static_cast<std::size_t>(selectedAccountIndex), getText(passwordField), options.dontsavepassword, endpoint, directMode);
+    else accounts.save(selectedAccount, getText(passwordField), options.dontsavepassword, endpoint, directMode);
     gtk_widget_hide(window);
-    onConnectCallback(selectedAccountIndex >= 0 ? accounts.idForIndex(static_cast<std::size_t>(selectedAccountIndex)) : accounts.activeId(), selectedAccount, getText(passwordField), options.nickname, endpoint);
+    const std::uint64_t accountId = selectedAccountIndex >= 0 ? accounts.idForIndex(static_cast<std::size_t>(selectedAccountIndex)) : accounts.activeId();
+    if (directMode && onDirectConnectCallback) onDirectConnectCallback(accountId, selectedAccount, getText(passwordField), options.nickname, directHost, directPort);
+    else onConnectCallback(accountId, selectedAccount, getText(passwordField), options.nickname, endpoint);
 }
 
 std::string TStartFrame::getText(GtkWidget* widget) const { return gtk_entry_get_text(GTK_ENTRY(widget)); }

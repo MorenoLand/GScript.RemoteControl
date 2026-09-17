@@ -32,6 +32,7 @@ public:
     ~TServerList();
 
     void open(std::uint64_t accountId, const std::string& account, const std::string& password, const std::string& nickname, const std::string& listServer);
+    void openDirect(std::uint64_t accountId, const std::string& account, const std::string& password, const std::string& nickname, const std::string& host, int port);
     void setLoginParent(GtkWindow* parent) { loginParent = parent; }
     void reopen();
     void show();

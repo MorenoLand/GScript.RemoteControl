@@ -17,7 +17,8 @@ namespace {
 
     constexpr std::array<unsigned char, 8> fileMagic = {'G', 'S', 'R', 'C', 'A', 'C', 'C', '1'};
     constexpr std::array<unsigned char, 4> passwordMagic = {'P', 'W', 'G', '1'};
-    constexpr const char* accountFormat = "GScriptRCAccounts2";
+    constexpr const char* accountFormat = "GScriptRCAccounts3";
+    constexpr const char* legacyAccountFormat = "GScriptRCAccounts2";
     constexpr std::size_t keySize = RC::Encryption::keySize;
 
     std::string lower(std::string value) {
@@ -120,6 +121,7 @@ namespace {
             appendString(output, encodePassword(account.password, key));
             appendUint32(output, static_cast<std::uint32_t>(account.listServers.size()));
             for (const std::string& server : account.listServers) appendString(output, server);
+            appendUint32(output, account.directMode ? 1U : 0U);
         }
         return output;
     }
@@ -129,9 +131,11 @@ namespace {
         std::string header;
         std::uint32_t accountCount = 0;
         if (!readString(input, offset, header)) return false;
-        const bool currentFormat = header == accountFormat;
+        const bool currentFormat = header == accountFormat || header == legacyAccountFormat;
+        const bool directFormat = header == accountFormat;
         if (currentFormat) {
             if (!readUint64(input, offset, selectedId)) return false;
+            if (!directFormat) migratedLegacy = true;
         } else {
             selected = header;
             selectedId = 0;
@@ -156,11 +160,21 @@ namespace {
                 if (!readString(input, offset, server)) return false;
                 appendUnique(account.listServers, server);
             }
+            if (directFormat) {
+                std::uint32_t directMode = 0;
+                if (!readUint32(input, offset, directMode)) return false;
+                account.directMode = directMode != 0;
+            }
+            if (!account.listServers.empty() && account.listServers.front().rfind("direct://", 0) == 0) {
+                account.directMode = true;
+                account.listServers.front().erase(0, std::string("direct://").size());
+                migratedLegacy = true;
+            }
             if (account.listServers.size() > 1) { account.listServers.resize(1); migratedLegacy = true; }
             if (!account.name.empty()) {
-                const bool duplicate = std::any_of(parsed.begin(), parsed.end(), [&](const RC::RCAccount& current) { return lower(current.name) == lower(account.name) && current.password == account.password && current.listServers == account.listServers; });
+                const bool duplicate = std::any_of(parsed.begin(), parsed.end(), [&](const RC::RCAccount& current) { return lower(current.name) == lower(account.name) && current.password == account.password && current.listServers == account.listServers && current.directMode == account.directMode; });
                 if (duplicate) {
-                    if (selectedId == account.id) selectedId = parsed[static_cast<std::size_t>(std::find_if(parsed.begin(), parsed.end(), [&](const RC::RCAccount& current) { return lower(current.name) == lower(account.name) && current.password == account.password && current.listServers == account.listServers; }) - parsed.begin())].id;
+                    if (selectedId == account.id) selectedId = parsed[static_cast<std::size_t>(std::find_if(parsed.begin(), parsed.end(), [&](const RC::RCAccount& current) { return lower(current.name) == lower(account.name) && current.password == account.password && current.listServers == account.listServers && current.directMode == account.directMode; }) - parsed.begin())].id;
                     migratedLegacy = true;
                 } else parsed.push_back(std::move(account));
             }
@@ -274,13 +288,14 @@ namespace RC {
     }
     std::vector<std::string> RCAccounts::listServersForIndex(std::size_t index) const { return index < accountEntries.size() ? accountEntries[index].listServers : std::vector<std::string>(); }
 
-    void RCAccounts::save(const std::string& accountName, const std::string& password, bool dontSavePassword, const std::string& listServer) {
+    void RCAccounts::save(const std::string& accountName, const std::string& password, bool dontSavePassword, const std::string& listServer, bool directMode) {
         if (accountName.empty()) return;
         const std::string target = lower(accountName);
         auto found = std::find_if(accountEntries.begin(), accountEntries.end(), [&](const RCAccount& account) { return lower(account.name) == target; });
         if (found == accountEntries.end()) { accountEntries.push_back({nextAccountId++, accountName, {}, {}}); found = std::prev(accountEntries.end()); }
         found->name = accountName;
         found->password = dontSavePassword ? std::string() : password;
+        found->directMode = directMode;
         found->listServers.clear();
         if (!listServer.empty()) found->listServers.push_back(listServer);
         activeAccount = accountName;
@@ -290,9 +305,10 @@ namespace RC {
         rebuildNames();
         persist();
     }
-    void RCAccounts::saveAt(std::size_t index, const std::string& password, bool dontSavePassword, const std::string& listServer) {
+    void RCAccounts::saveAt(std::size_t index, const std::string& password, bool dontSavePassword, const std::string& listServer, bool directMode) {
         if (index >= accountEntries.size()) return;
         accountEntries[index].password = dontSavePassword ? std::string() : password;
+        accountEntries[index].directMode = directMode;
         accountEntries[index].listServers.clear();
         if (!listServer.empty()) accountEntries[index].listServers.push_back(listServer);
         activeAccount = accountEntries[index].name;
@@ -306,16 +322,19 @@ namespace RC {
     void RCAccounts::associate(const std::string& accountName, const std::string& listServer) {
         if (accountName.empty() || listServer.empty()) return;
         const std::string password = passwordFor(accountName);
-        save(accountName, password, password.empty(), listServer);
+        const std::string target = lower(accountName);
+        const auto found = std::find_if(accountEntries.begin(), accountEntries.end(), [&](const RCAccount& account) { return lower(account.name) == target; });
+        save(accountName, password, password.empty(), listServer, found != accountEntries.end() && found->directMode);
     }
 
-    void RCAccounts::update(const std::string& previousName, const std::string& accountName, const std::string& password, bool dontSavePassword, const std::vector<std::string>& listServers) {
+    void RCAccounts::update(const std::string& previousName, const std::string& accountName, const std::string& password, bool dontSavePassword, const std::vector<std::string>& listServers, bool directMode) {
         if (accountName.empty()) return;
         const std::string previousTarget = lower(previousName);
         auto found = previousName.empty() ? accountEntries.end() : std::find_if(accountEntries.begin(), accountEntries.end(), [&](const RCAccount& account) { return lower(account.name) == previousTarget; });
         if (found == accountEntries.end()) { accountEntries.push_back({nextAccountId++, {}, {}, {}}); found = std::prev(accountEntries.end()); }
         found->name = accountName;
         found->password = dontSavePassword ? std::string() : password;
+        found->directMode = directMode;
         found->listServers.clear();
         if (!listServers.empty()) found->listServers.push_back(listServers.front());
         activeAccount = accountName;
@@ -325,10 +344,11 @@ namespace RC {
         rebuildNames();
         persist();
     }
-    void RCAccounts::updateAt(std::size_t index, const std::string& accountName, const std::string& password, bool dontSavePassword, const std::vector<std::string>& listServers) {
+    void RCAccounts::updateAt(std::size_t index, const std::string& accountName, const std::string& password, bool dontSavePassword, const std::vector<std::string>& listServers, bool directMode) {
         if (index >= accountEntries.size() || accountName.empty()) return;
         accountEntries[index].name = accountName;
         accountEntries[index].password = dontSavePassword ? std::string() : password;
+        accountEntries[index].directMode = directMode;
         accountEntries[index].listServers.clear();
         if (!listServers.empty()) accountEntries[index].listServers.push_back(listServers.front());
         activeAccount = accountName;

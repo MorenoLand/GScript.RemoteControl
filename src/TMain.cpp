@@ -721,7 +721,7 @@ int main(int argc, char** argv) {
     switchServer = [&] {
         serverList.reopen();
     };
-    TStartFrame frame(options, applicationDirectory, [&](std::uint64_t accountId, const std::string& account, const std::string& password, const std::string& nickname, const std::string& listServer) { serverList.open(accountId, account, password, nickname, listServer); }, [&] { serverList.openListServerSettings(); }, [&] { return serverList.currentListServer(); });
+    TStartFrame frame(options, applicationDirectory, [&](std::uint64_t accountId, const std::string& account, const std::string& password, const std::string& nickname, const std::string& listServer) { serverList.open(accountId, account, password, nickname, listServer); }, [&] { serverList.openListServerSettings(); }, [&] { return serverList.currentListServer(); }, [&](std::uint64_t accountId, const std::string& account, const std::string& password, const std::string& nickname, const std::string& host, int port) { serverList.openDirect(accountId, account, password, nickname, host, port); });
     serverList.setLoginParent(frame.windowHandle());
     startFrame = &frame;
     openAnotherServerList = [&] { serverList.openAnotherListServer(); };

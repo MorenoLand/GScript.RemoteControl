@@ -13,6 +13,7 @@ namespace RC {
         std::string name;
         std::string password;
         std::vector<std::string> listServers;
+        bool directMode = false;
     };
 
     class RCAccounts {
@@ -31,10 +32,10 @@ namespace RC {
         std::string passwordForIndex(std::size_t index) const;
         std::vector<std::string> listServersFor(const std::string& accountName) const;
         std::vector<std::string> listServersForIndex(std::size_t index) const;
-        void save(const std::string& accountName, const std::string& password, bool dontSavePassword, const std::string& listServer = {});
-        void saveAt(std::size_t index, const std::string& password, bool dontSavePassword, const std::string& listServer = {});
-        void update(const std::string& previousName, const std::string& accountName, const std::string& password, bool dontSavePassword, const std::vector<std::string>& listServers);
-        void updateAt(std::size_t index, const std::string& accountName, const std::string& password, bool dontSavePassword, const std::vector<std::string>& listServers);
+        void save(const std::string& accountName, const std::string& password, bool dontSavePassword, const std::string& listServer = {}, bool directMode = false);
+        void saveAt(std::size_t index, const std::string& password, bool dontSavePassword, const std::string& listServer = {}, bool directMode = false);
+        void update(const std::string& previousName, const std::string& accountName, const std::string& password, bool dontSavePassword, const std::vector<std::string>& listServers, bool directMode = false);
+        void updateAt(std::size_t index, const std::string& accountName, const std::string& password, bool dontSavePassword, const std::vector<std::string>& listServers, bool directMode = false);
         void associate(const std::string& accountName, const std::string& listServer);
         void remove(const std::string& accountName);
         void removeAt(std::size_t index);

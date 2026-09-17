@@ -264,6 +264,38 @@ void TServerList::open(std::uint64_t accountId, const std::string& account, cons
     refresh();
 }
 
+void TServerList::openDirect(std::uint64_t accountId, const std::string& account, const std::string& password, const std::string& nickname, const std::string& host, int port) {
+    if (host.empty() || port <= 0 || port > 65535 || connecting || connectWorker.joinable()) return;
+    this->accountId = accountId;
+    this->account = account;
+    this->password = password;
+    this->nickname = nickname;
+    connecting = true;
+    const std::shared_ptr<std::atomic<bool>> alive = callbackAlive;
+    const std::string selectedServerName = "Direct - " + host + ":" + std::to_string(port);
+    const std::string selectedNickname = nickname;
+    const std::string selectedAccount = account;
+    const std::string selectedPassword = password;
+    gtk_widget_hide(window);
+    connectWorker = std::jthread([this, alive, host, port, selectedServerName, selectedNickname, selectedAccount, selectedPassword] {
+        void* nextConnection = rc_connect_to_ip(host.c_str(), port, selectedAccount.c_str(), selectedPassword.c_str());
+        std::string error;
+        if (nextConnection == nullptr || rc_is_connected(nextConnection) == 0) {
+            const char* reason = nextConnection == nullptr ? nullptr : rc_last_error(nextConnection);
+            error = reason == nullptr ? "Unable to connect directly to the RC server." : reason;
+        }
+        if (!alive->load()) {
+            if (nextConnection != nullptr) rc_disconnect(nextConnection);
+            return;
+        }
+        g_idle_add_full(G_PRIORITY_DEFAULT, finishConnect, new ConnectResult{alive, this, nextConnection, 0, false, selectedServerName, selectedNickname, selectedAccount, std::move(error)}, +[](gpointer data) {
+            auto* result = static_cast<ConnectResult*>(data);
+            if (result->connection != nullptr) rc_disconnect(result->connection);
+            delete result;
+        });
+    });
+}
+
 void TServerList::reopen() {
     if (account.empty()) return;
     if (worker.joinable()) return;

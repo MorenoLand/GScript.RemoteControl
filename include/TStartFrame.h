@@ -13,10 +13,11 @@
 class TStartFrame {
 public:
     using ConnectCallback = std::function<void(std::uint64_t, const std::string&, const std::string&, const std::string&, const std::string&)>;
+    using DirectConnectCallback = std::function<void(std::uint64_t, const std::string&, const std::string&, const std::string&, const std::string&, int)>;
     using ListServerSettingsCallback = std::function<void()>;
     using ListServerEndpointCallback = std::function<std::string()>;
 
-    TStartFrame(RC::RCOptions& options, const std::filesystem::path& applicationDirectory, ConnectCallback onConnect, ListServerSettingsCallback onListServerSettings, ListServerEndpointCallback listServerEndpoint);
+    TStartFrame(RC::RCOptions& options, const std::filesystem::path& applicationDirectory, ConnectCallback onConnect, ListServerSettingsCallback onListServerSettings, ListServerEndpointCallback listServerEndpoint, DirectConnectCallback onDirectConnect = {});
     ~TStartFrame();
 
     void show();
@@ -61,6 +62,7 @@ private:
     RC::RCAccounts accounts;
     std::filesystem::path applicationDirectory;
     ConnectCallback onConnectCallback;
+    DirectConnectCallback onDirectConnectCallback;
     ListServerSettingsCallback onListServerSettingsCallback;
     ListServerEndpointCallback listServerEndpointCallback;
     std::string selectedAccount;
