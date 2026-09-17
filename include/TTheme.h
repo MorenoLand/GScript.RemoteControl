@@ -9,17 +9,6 @@
 
 void applyRemoteControlTheme(const std::string& theme, bool darkMode, bool roundedCorners);
 
-#ifdef _WIN32
-#include <windows.h>
-#include <gdk/gdkwin32.h>
-
-struct DwmMargins {
-    int cxLeftWidth;
-    int cxRightWidth;
-    int cyTopHeight;
-    int cyBottomHeight;
-};
-
 inline bool remoteControlRoundedCorners() {
     GtkSettings* settings = gtk_settings_get_default();
     if (settings == nullptr) return true;
@@ -27,49 +16,6 @@ inline bool remoteControlRoundedCorners() {
     if (data == nullptr) return true;
     return GPOINTER_TO_INT(data) != 0;
 }
-
-inline void applyNativeWindowChromeStyling(HWND hwnd, bool roundedCorners) {
-    if (hwnd == nullptr) return;
-    using DwmSetWindowAttributeFn = HRESULT(WINAPI*)(HWND, DWORD, LPCVOID, DWORD);
-    using DwmEnableBlurBehindWindowFn = HRESULT(WINAPI*)(HWND, const void*);
-    static HMODULE dwmModule = LoadLibraryW(L"dwmapi.dll");
-    static auto setAttribute = dwmModule == nullptr ? nullptr : reinterpret_cast<DwmSetWindowAttributeFn>(GetProcAddress(dwmModule, "DwmSetWindowAttribute"));
-    static auto enableBlurBehind = dwmModule == nullptr ? nullptr : reinterpret_cast<DwmEnableBlurBehindWindowFn>(GetProcAddress(dwmModule, "DwmEnableBlurBehindWindow"));
-
-    // Disable DWM blur-behind to completely eliminate the frosted Aero Glass halo
-    if (enableBlurBehind != nullptr) {
-        struct {
-            DWORD dwFlags;
-            BOOL fEnable;
-            HRGN hRgnBlur;
-            BOOL fTransitionOnMaximized;
-        } bb = { 1 /* DWM_BB_ENABLE */, FALSE, nullptr, FALSE };
-        enableBlurBehind(hwnd, &bb);
-    }
-
-    // Enable native drop shadow on window class
-    SetClassLongPtrW(hwnd, GCL_STYLE, GetClassLongPtrW(hwnd, GCL_STYLE) | CS_DROPSHADOW);
-
-    if (setAttribute != nullptr) {
-        // Windows 11 corner preference: 2 = DWMWCP_ROUND, 1 = DWMWCP_DONOTROUND
-        const int preference = roundedCorners ? 2 : 1;
-        setAttribute(hwnd, 33 /* DWMWA_WINDOW_CORNER_PREFERENCE */, &preference, sizeof(preference));
-    }
-}
-
-inline void onNativeWindowChromeRealizeOrMap(GtkWidget* w, gpointer) {
-    if (w == nullptr) return;
-    GdkWindow* gdkWindow = gtk_widget_get_window(w);
-    if (gdkWindow == nullptr) return;
-    HWND hwnd = reinterpret_cast<HWND>(gdk_win32_window_get_handle(gdkWindow));
-    if (hwnd == nullptr) return;
-    applyNativeWindowChromeStyling(hwnd, remoteControlRoundedCorners());
-}
-#else
-inline bool remoteControlRoundedCorners() {
-    return true;
-}
-#endif
 
 inline void applyRemoteControlWindowChrome(GtkWidget* widget) {
     if (widget == nullptr || !GTK_IS_WINDOW(widget)) return;
@@ -79,15 +25,6 @@ inline void applyRemoteControlWindowChrome(GtkWidget* widget) {
     if (icon != nullptr) gtk_window_set_icon(window, icon);
     if (gtk_window_get_type_hint(window) == GDK_WINDOW_TYPE_HINT_DROPDOWN_MENU || gtk_window_get_type_hint(window) == GDK_WINDOW_TYPE_HINT_POPUP_MENU) return;
     if (gtk_window_get_window_type(window) == GTK_WINDOW_POPUP) return;
-
-#ifdef _WIN32
-    if (gtk_widget_get_realized(widget)) {
-        onNativeWindowChromeRealizeOrMap(widget, nullptr);
-    } else {
-        g_signal_connect(widget, "realize", G_CALLBACK(onNativeWindowChromeRealizeOrMap), nullptr);
-    }
-    g_signal_connect(widget, "map", G_CALLBACK(onNativeWindowChromeRealizeOrMap), nullptr);
-#endif
 
     GtkWidget* titlebar = gtk_window_get_titlebar(window);
     if (titlebar != nullptr && GTK_IS_HEADER_BAR(titlebar)) {
