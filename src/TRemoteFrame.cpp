@@ -732,7 +732,10 @@ gboolean TRemoteFrame::onGraphicalRepositionLater(gpointer data) {
         target->repositionGraphicalButtons(target->normalWindowWidth);
         return G_SOURCE_REMOVE;
     }
-    target->repositionGraphicalButtons();
+    int width = 0;
+    int height = 0;
+    gtk_window_get_size(GTK_WINDOW(target->window), &width, &height);
+    target->repositionGraphicalButtons(width);
     return G_SOURCE_REMOVE;
 }
 
