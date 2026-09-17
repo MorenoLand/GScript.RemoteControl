@@ -1546,10 +1546,15 @@ void TRemoteFrame::repositionGraphicalButtons(int requestedWidth) {
     for (int index = 4; index < 15; ++index) if (!bottomRow[index] && index != 12 && graphicalButtons[index] != nullptr) gtk_fixed_move(GTK_FIXED(graphicalFixed), graphicalButtons[index], std::clamp(width - (500 - positions[index][0]), 0, std::max(0, width - 32)), positions[index][1]);
     const int bottomIndices[] = {11, 10, 9, 13};
     const int bottomSlots[] = {360, 394, 427, 460};
+    const auto bottomVisible = [this](int index) { return graphicalButtons[index] != nullptr && gtk_widget_get_visible(graphicalButtons[index]) && (index != 13 || levelListButtonEnabled); };
     int bottomCount = 0;
-    for (int index : bottomIndices) if (graphicalButtons[index] != nullptr) ++bottomCount;
+    for (int index : bottomIndices) if (bottomVisible(index)) ++bottomCount;
     int bottomSlot = static_cast<int>(std::size(bottomSlots)) - bottomCount;
-    for (int index : bottomIndices) if (graphicalButtons[index] != nullptr) { const int slot = bottomSlots[bottomSlot++]; gtk_fixed_move(GTK_FIXED(graphicalFixed), graphicalButtons[index], std::clamp(width - (500 - slot), 0, std::max(0, width - 32)), 114); }
+    for (int index : bottomIndices) if (bottomVisible(index)) { const int slot = bottomSlots[bottomSlot++]; gtk_fixed_move(GTK_FIXED(graphicalFixed), graphicalButtons[index], std::clamp(width - (500 - slot), 0, std::max(0, width - 32)), 114); }
+    GtkAllocation fixedAllocation;
+    gtk_widget_get_allocation(graphicalFixed, &fixedAllocation);
+    if (fixedAllocation.width > 0 && fixedAllocation.height > 0) gtk_widget_size_allocate(graphicalFixed, &fixedAllocation);
+    gtk_widget_queue_draw(graphicalFixed);
 }
 
 gboolean TRemoteFrame::processEvents(gpointer data) {
@@ -1619,6 +1624,8 @@ gboolean TRemoteFrame::processEvents(gpointer data) {
             rc_connect_to_nc_server(frame->connection);
         }
         frame->updateNCUi(!frame->ncManuallyDisconnected && ncAuthenticated);
+        frame->levelListButtonEnabled = frame->options.levellistenabled && !frame->ncManuallyDisconnected && ncAuthenticated;
+        frame->repositionGraphicalButtons();
         if (frame->playersLabel != nullptr) {
             RCPlayer* players = nullptr;
             const int count = rc_get_players(frame->connection, &players);
@@ -1959,13 +1966,25 @@ void TRemoteFrame::createGraphicalButton(int index) {
 
 void TRemoteFrame::setOptionalButton(int index, bool enabled) {
     if (index < 0 || index >= static_cast<int>(graphicalButtons.size())) return;
+    if (index == 13) levelListButtonEnabled = enabled;
+    const auto positionNCButtons = [this]() {
+        if (graphicalFixed == nullptr) return;
+        const int slots[] = {360, 394, 427, 460};
+        const int indices[] = {11, 10, 9};
+        const int width = graphicalBackgroundWidth > 0 ? graphicalBackgroundWidth : 500;
+        int slot = levelListButtonEnabled ? 0 : 1;
+        for (int buttonIndex : indices) if (graphicalButtons[buttonIndex] != nullptr) gtk_fixed_move(GTK_FIXED(graphicalFixed), graphicalButtons[buttonIndex], std::clamp(width - (500 - slots[slot++]), 0, std::max(0, width - 32)), 114);
+        if (levelListButtonEnabled && graphicalButtons[13] != nullptr) gtk_fixed_move(GTK_FIXED(graphicalFixed), graphicalButtons[13], std::clamp(width - (500 - slots[3]), 0, std::max(0, width - 32)), 114);
+    };
     if (!enabled) {
-        if (graphicalButtons[index] != nullptr) { gtk_widget_destroy(graphicalButtons[index]); graphicalButtons[index] = nullptr; }
+        if (graphicalButtons[index] != nullptr) gtk_widget_hide(graphicalButtons[index]);
         repositionGraphicalButtons();
+        if (index == 13) positionNCButtons();
         return;
     }
     createGraphicalButton(index);
-    if (graphicalButtons[index] != nullptr) { gtk_widget_show(graphicalButtons[index]); repositionGraphicalButtons(); }
+    if (graphicalButtons[index] != nullptr) { gtk_widget_show_all(graphicalButtons[index]); repositionGraphicalButtons(); }
+    if (index == 13) positionNCButtons();
 }
 
 void TRemoteFrame::applyOptionalTools() {
@@ -1980,6 +1999,7 @@ void TRemoteFrame::applyOptionalTools() {
     setOptionalButton(12, options.extensionsenabled);
     setOptionalButton(13, options.levellistenabled && isNCAuthenticated());
     setOptionalButton(14, options.syncenabled && connection != nullptr);
+    g_idle_add_full(G_PRIORITY_DEFAULT_IDLE, onGraphicalRepositionLater, new GraphicalRepositionRequest{this, callbackAlive, false}, +[](gpointer data) { delete static_cast<GraphicalRepositionRequest*>(data); });
 }
 
 void TRemoteFrame::applyOptions(const RC::RCOptions& previous) {
@@ -1999,6 +2019,7 @@ void TRemoteFrame::applyOptions(const RC::RCOptions& previous) {
     if (fileBrowser != nullptr && options.filebrowserhoverpreview != previous.filebrowserhoverpreview) fileBrowser->setHoverPreviews(options.filebrowserhoverpreview);
     if (fileBrowser != nullptr && options.filebrowserthumbnails != previous.filebrowserthumbnails) fileBrowser->setModernThumbnails(options.filebrowserthumbnails);
     if (options.extensionsenabled != previous.extensionsenabled || options.syncenabled != previous.syncenabled || options.levellistenabled != previous.levellistenabled) applyOptionalTools();
+    setOptionalButton(13, options.levellistenabled && isNCAuthenticated());
     if (options.background != previous.background) reloadBackground();
     if (options.backgroundtint != previous.backgroundtint && backgroundImage != nullptr) gtk_widget_queue_draw(backgroundImage);
     refreshTheme();
@@ -2256,9 +2277,9 @@ void TRemoteFrame::updateNCUi(bool connected) {
     for (int index = 8; index < 15; ++index) {
         if (index == 12) { setOptionalButton(index, options.extensionsenabled); continue; }
         if (index == 13) { setOptionalButton(index, options.levellistenabled && connected && isNCAuthenticated()); continue; }
-        if (index == 14) { setOptionalButton(index, options.syncenabled && connected && connection != nullptr); continue; }
+        if (index == 14) { setOptionalButton(index, options.syncenabled && connection != nullptr); continue; }
         if (graphicalButtons[index] == nullptr) continue;
-        if (!connected) gtk_widget_hide(graphicalButtons[index]); else gtk_widget_show(graphicalButtons[index]);
+        if (!connected) gtk_widget_hide(graphicalButtons[index]); else gtk_widget_show_all(graphicalButtons[index]);
     }
     if (npcServerLabel != nullptr) {
         if (connected) gtk_widget_show(npcServerLabel); else gtk_widget_hide(npcServerLabel);

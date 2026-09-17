@@ -192,6 +192,7 @@ private:
     int trayWindowY = 0;
     bool trayWindowPositionValid = false;
     bool trayWindowMaximized = false;
+    bool levelListButtonEnabled = false;
     std::vector<std::string> chatHistory;
     int chatHistoryIndex = -1;
     guint eventSource = 0;
