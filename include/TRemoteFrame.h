@@ -49,6 +49,7 @@ public:
     void setDownloadServer(const std::string& server);
     bool mcpOpenView(const std::string& view, std::string& error);
     bool mcpSendChat(const std::string& text, std::string& error);
+    void showDebugInfoPopup();
 
 private:
     static void onSend(GtkButton*, gpointer data);
@@ -91,9 +92,9 @@ private:
     static gboolean onConfigure(GtkWidget*, GdkEventConfigure*, gpointer data);
     static gboolean onWindowState(GtkWidget*, GdkEventWindowState*, gpointer data);
     static gboolean onGraphicalRepositionLater(gpointer data);
-      static gboolean onGraphicalDraw(GtkWidget*, cairo_t*, gpointer data);
-      static void onGraphicalAllocate(GtkWidget*, GdkRectangle*, gpointer data);
-      void repositionGraphicalButtons(int requestedWidth = 0);
+    static gboolean onGraphicalDraw(GtkWidget*, cairo_t*, gpointer data);
+    static void onGraphicalAllocate(GtkWidget*, GdkRectangle*, gpointer data);
+    void repositionGraphicalButtons(int requestedWidth = 0);
     static gboolean processEvents(gpointer data);
     static void onConnected(void* data);
     static void onDisconnected(const char* reason, void* data);
@@ -141,6 +142,8 @@ private:
     void handleDisconnected(void* disconnectedConnection, std::uint64_t generation, const char* reason);
     void addMenuItem(GtkWidget* menu, const char* label, GCallback callback = nullptr);
     void graphicalAction(int index);
+    std::string buildDebugInfoString();
+    void refreshDebugInfo();
 
     std::function<void()> onCloseCallback;
     std::function<void()> onListServerCallback;
@@ -235,4 +238,10 @@ private:
     std::string findResultBase;
     GtkWidget* findResultsField = nullptr;
     std::unordered_map<GtkTextBuffer*, ChatTags> chatTags;
+    GtkWidget* debugDialog = nullptr;
+    GtkTextBuffer* debugTextBuffer = nullptr;
+    GtkWidget* debugStatusLabel = nullptr;
+    std::string serverIp;
+    int serverPort = 0;
+    gint64 sessionConnectedTime = 0;
 };

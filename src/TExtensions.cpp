@@ -541,6 +541,21 @@ void TExtensionsManager::refresh() {
     GList* children = gtk_container_get_children(GTK_CONTAINER(list));
     for (GList* child = children; child != nullptr; child = child->next) gtk_widget_destroy(GTK_WIDGET(child->data));
     g_list_free(children);
+    if (extensions.empty()) {
+        GtkWidget* emptyRow = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+        gtk_container_set_border_width(GTK_CONTAINER(emptyRow), 16);
+        gtk_widget_set_halign(emptyRow, GTK_ALIGN_CENTER);
+        gtk_widget_set_valign(emptyRow, GTK_ALIGN_CENTER);
+        GtkWidget* icon = gtk_image_new_from_icon_name("dialog-information-symbolic", GTK_ICON_SIZE_BUTTON);
+        gtk_box_pack_start(GTK_BOX(emptyRow), icon, false, false, 0);
+        GtkWidget* emptyLabel = gtk_label_new("No extensions installed");
+        GtkStyleContext* labelContext = gtk_widget_get_style_context(emptyLabel);
+        gtk_style_context_add_class(labelContext, "dim-label");
+        gtk_box_pack_start(GTK_BOX(emptyRow), emptyLabel, false, false, 0);
+        gtk_box_pack_start(GTK_BOX(list), emptyRow, true, true, 0);
+        gtk_widget_show_all(emptyRow);
+        return;
+    }
     for (std::size_t index = 0; index < extensions.size(); ++index) {
         auto& extension = extensions[index];
         GtkWidget* row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);

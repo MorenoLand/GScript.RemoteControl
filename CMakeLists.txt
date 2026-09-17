@@ -146,13 +146,12 @@ else()
     target_link_libraries(RemoteControl PRIVATE remote_control_options grclib OpenSSL::Crypto OpenSSL::SSL PkgConfig::GTK3 PkgConfig::GTKSOURCEVIEW3 PkgConfig::WEBP PkgConfig::FONTCONFIG)
 endif()
 if(WIN32)
-    target_link_libraries(RemoteControl PRIVATE iphlpapi rpcrt4 shell32 ole32)
+    target_link_libraries(RemoteControl PRIVATE iphlpapi rpcrt4 shell32 ole32 psapi)
 elseif(X11_FOUND)
     target_link_libraries(RemoteControl PRIVATE X11::X11)
     target_compile_definitions(RemoteControl PRIVATE RC_HAVE_X11=1)
 endif()
 set_target_properties(RemoteControl PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/bin")
-
 foreach(configuration DEBUG RELEASE RELWITHDEBINFO MINSIZEREL)
     set_target_properties(RemoteControl PROPERTIES "RUNTIME_OUTPUT_DIRECTORY_${configuration}" "${CMAKE_SOURCE_DIR}/bin")
 endforeach()
@@ -188,6 +187,25 @@ endif()
 set(REMOTE_CONTROL_RUNTIME_SOURCE_DIR "${CMAKE_SOURCE_DIR}/assets/runtime" CACHE PATH "Path to Remote Control runtime assets")
 add_custom_command(TARGET RemoteControl POST_BUILD COMMAND ${CMAKE_COMMAND} "-DREMOTE_CONTROL_RUNTIME_SOURCE_DIRECTORY=${REMOTE_CONTROL_RUNTIME_SOURCE_DIR}" "-DREMOTE_CONTROL_OUTPUT_DIRECTORY=$<TARGET_FILE_DIR:RemoteControl>" -P "${CMAKE_SOURCE_DIR}/cmake/StageRuntimeAssets.cmake")
 add_custom_command(TARGET RemoteControl POST_BUILD COMMAND ${CMAKE_COMMAND} -E rm -f "$<TARGET_FILE_DIR:RemoteControl>/RemoteControl.ico")
+
+if(WIN32)
+    find_program(STRIP_EXECUTABLE NAMES strip strip.exe)
+    find_program(UPX_EXECUTABLE NAMES upx upx.exe)
+    if(UPX_EXECUTABLE)
+        if(STRIP_EXECUTABLE)
+            add_custom_command(TARGET RemoteControl POST_BUILD
+                COMMAND "${STRIP_EXECUTABLE}" "$<TARGET_FILE:RemoteControl>"
+                COMMAND "${UPX_EXECUTABLE}" --best --lzma -f "$<TARGET_FILE:RemoteControl>"
+                COMMENT "Stripping and compressing RemoteControl with UPX"
+            )
+        else()
+            add_custom_command(TARGET RemoteControl POST_BUILD
+                COMMAND "${UPX_EXECUTABLE}" --best --lzma -f "$<TARGET_FILE:RemoteControl>"
+                COMMENT "Compressing RemoteControl with UPX"
+            )
+        endif()
+    endif()
+endif()
 
 if(WIN32)
     find_program(REMOTE_CONTROL_7Z_EXECUTABLE NAMES 7z 7z.exe HINTS "C:/Program Files/7-Zip" "C:/Program Files (x86)/7-Zip")

@@ -6,6 +6,10 @@
 #ifdef _WIN32
 #include <gdk/gdkwin32.h>
 #include <windows.h>
+#include <psapi.h>
+#endif
+#ifdef __linux__
+#include <unistd.h>
 #endif
 #include "TGScriptEditor.h"
 #include "TEditorFind.h"
@@ -797,6 +801,10 @@ TRemoteFrame::~TRemoteFrame() {
     delete optionsWindow;
     delete npcList;
     delete levelList;
+    if (debugDialog != nullptr) {
+        gtk_widget_destroy(debugDialog);
+        debugDialog = nullptr;
+    }
 }
 
 void TRemoteFrame::open(void* nextConnection, int serverIndex, const std::string& serverName, const std::string& nickname, const std::string& accountName) {
@@ -818,6 +826,35 @@ void TRemoteFrame::open(void* nextConnection, int serverIndex, const std::string
     if (folderConfigEditor != nullptr) folderConfigEditor->setConnection(connection);
     currentServerIndex = serverIndex;
     this->serverName = serverName;
+    sessionConnectedTime = g_get_monotonic_time();
+    serverIp.clear();
+    serverPort = 0;
+    if (connection != nullptr && serverIndex >= 0) {
+        RCServer* servers = nullptr;
+        const int count = rc_get_servers(connection, &servers);
+        if (serverIndex < count && servers != nullptr) {
+            if (servers[serverIndex].ip != nullptr) serverIp = servers[serverIndex].ip;
+            serverPort = servers[serverIndex].port;
+        }
+    }
+    if (serverIp.empty()) {
+        const std::string directPrefix = "Direct - ";
+        if (serverName.rfind(directPrefix, 0) == 0) {
+            std::string target = serverName.substr(directPrefix.length());
+            auto colon = target.rfind(':');
+            if (colon != std::string::npos) {
+                serverIp = target.substr(0, colon);
+                try {
+                    serverPort = std::stoi(target.substr(colon + 1));
+                } catch (...) {
+                    serverPort = 0;
+                }
+            } else {
+                serverIp = target;
+                serverPort = 0;
+            }
+        }
+    }
     if (playerList != nullptr) playerList->setServerName(serverName);
     if (syncManager != nullptr) syncManager->setConnection(nextConnection, serverName);
     gtk_window_set_title(GTK_WINDOW(window), remoteControlTitle(serverName).c_str());
@@ -1218,6 +1255,10 @@ gboolean TRemoteFrame::onEditKey(GtkWidget*, GdkEventKey* event, gpointer data) 
         if (frame->onListServerCallback) frame->onListServerCallback();
         return true;
     }
+    if (event->keyval == GDK_KEY_F1) {
+        frame->showDebugInfoPopup();
+        return true;
+    }
     if (event->keyval == GDK_KEY_Tab || event->keyval == GDK_KEY_ISO_Left_Tab) {
         const gchar* currentText = gtk_entry_get_text(GTK_ENTRY(frame->editField));
         const gchar* storedBase = static_cast<const gchar*>(g_object_get_data(G_OBJECT(frame->editField), "rc-completion-cycle-base"));
@@ -1499,6 +1540,10 @@ gboolean TRemoteFrame::onWindowKey(GtkWidget*, GdkEventKey* event, gpointer data
     TRemoteFrame* frame = static_cast<TRemoteFrame*>(data);
     if (event->keyval == GDK_KEY_F8) {
         if (frame->onListServerCallback) frame->onListServerCallback();
+        return true;
+    }
+    if (event->keyval == GDK_KEY_F1) {
+        frame->showDebugInfoPopup();
         return true;
     }
     if ((event->state & GDK_CONTROL_MASK) == 0 || (event->keyval != GDK_KEY_f && event->keyval != GDK_KEY_F)) return false;
@@ -2770,4 +2815,297 @@ void TRemoteFrame::reconnectServer() {
         suppressReconnectDisconnect = false;
         appendChat(rc_last_error(connection));
     }
+}
+
+std::string TRemoteFrame::buildDebugInfoString() {
+    std::string ip = serverIp;
+    int port = serverPort;
+
+    if ((ip.empty() || port <= 0) && connection != nullptr) {
+        RCServer* servers = nullptr;
+        const int count = rc_get_servers(connection, &servers);
+        if (currentServerIndex >= 0 && currentServerIndex < count && servers != nullptr) {
+            if (servers[currentServerIndex].ip != nullptr) ip = servers[currentServerIndex].ip;
+            port = servers[currentServerIndex].port;
+        }
+        if (ip.empty() && servers != nullptr) {
+            for (int i = 0; i < count; ++i) {
+                if (servers[i].name != nullptr && (serverName == servers[i].name || serverName.find(servers[i].name) != std::string::npos)) {
+                    if (servers[i].ip != nullptr) ip = servers[i].ip;
+                    port = servers[i].port;
+                    break;
+                }
+            }
+        }
+    }
+    if (ip.empty() && serverName.rfind("Direct - ", 0) == 0) {
+        std::string target = serverName.substr(9);
+        auto colon = target.rfind(':');
+        if (colon != std::string::npos) {
+            ip = target.substr(0, colon);
+            try {
+                port = std::stoi(target.substr(colon + 1));
+            } catch (...) {
+                port = 0;
+            }
+        } else {
+            ip = target;
+            port = 0;
+        }
+    }
+
+    if (!ip.empty()) serverIp = ip;
+    if (port > 0) serverPort = port;
+
+    std::string mainStatus = "Disconnected";
+    if (connection != nullptr && rc_is_connected(connection)) {
+        if (rc_is_authenticated(connection)) {
+            mainStatus = "Connected (Authenticated)";
+        } else {
+            mainStatus = "Connected (Authenticating...)";
+        }
+    }
+
+    std::string ncStatus = "Disconnected";
+    if (connection != nullptr && rc_is_nc_connected(connection)) {
+        if (rc_is_nc_authenticated(connection)) {
+            ncStatus = "Connected (Authenticated)";
+        } else {
+            ncStatus = "Connected (Authenticating...)";
+        }
+    } else if (ncConnectionAttempted) {
+        ncStatus = "Connecting...";
+    }
+
+    std::string protocolStr = "Classic Protocol";
+    if (connection != nullptr && rc_is_new_protocol(connection)) {
+        protocolStr = "New Protocol (v2)";
+    }
+
+    std::string acc = accountName.empty() ? "(None)" : accountName;
+    std::string nick = nickname.empty() ? "(None)" : nickname;
+    std::string actStatus = awayNicknameApplied ? "Away" : "Active";
+
+    std::string onlinePlayers = "N/A";
+    if (connection != nullptr) {
+        RCPlayer* players = nullptr;
+        const int count = rc_get_players(connection, &players);
+        if (count >= 0) onlinePlayers = std::to_string(count);
+    } else if (trayPlayerCount >= 0) {
+        onlinePlayers = std::to_string(trayPlayerCount);
+    }
+
+    std::string uptimeStr = "0s";
+    if (sessionConnectedTime > 0) {
+        gint64 elapsedUs = g_get_monotonic_time() - sessionConnectedTime;
+        if (elapsedUs > 0) {
+            gint64 totalSec = elapsedUs / G_USEC_PER_SEC;
+            gint64 h = totalSec / 3600;
+            gint64 m = (totalSec % 3600) / 60;
+            gint64 s = totalSec % 60;
+            std::ostringstream ss;
+            if (h > 0) {
+                ss << h << "h " << m << "m " << s << "s";
+            } else if (m > 0) {
+                ss << m << "m " << s << "s";
+            } else {
+                ss << s << "s";
+            }
+            uptimeStr = ss.str();
+        }
+    }
+
+    struct MemoryUsage {
+        double workingSetMb = 0.0;
+        double peakWorkingSetMb = 0.0;
+        double privateCommitMb = 0.0;
+        bool available = false;
+    } mem;
+
+#ifdef _WIN32
+    PROCESS_MEMORY_COUNTERS_EX pmc{};
+    pmc.cb = sizeof(pmc);
+    if (GetProcessMemoryInfo(GetCurrentProcess(), reinterpret_cast<PROCESS_MEMORY_COUNTERS*>(&pmc), sizeof(pmc))) {
+        mem.workingSetMb = static_cast<double>(pmc.WorkingSetSize) / (1024.0 * 1024.0);
+        mem.peakWorkingSetMb = static_cast<double>(pmc.PeakWorkingSetSize) / (1024.0 * 1024.0);
+        mem.privateCommitMb = static_cast<double>(pmc.PrivateUsage) / (1024.0 * 1024.0);
+        mem.available = true;
+    }
+#elif defined(__linux__)
+    std::ifstream statm("/proc/self/statm");
+    if (statm.is_open()) {
+        long size = 0, resident = 0, share = 0;
+        if (statm >> size >> resident >> share) {
+            long pageSize = sysconf(_SC_PAGESIZE);
+            mem.workingSetMb = (resident * pageSize) / (1024.0 * 1024.0);
+            mem.peakWorkingSetMb = mem.workingSetMb;
+            mem.privateCommitMb = ((resident - share) * pageSize) / (1024.0 * 1024.0);
+            mem.available = true;
+        }
+    }
+#endif
+
+    int winW = 0, winH = 0;
+    bool isMaximized = false;
+    if (window != nullptr) {
+        gtk_window_get_size(GTK_WINDOW(window), &winW, &winH);
+        GdkWindow* nativeWin = gtk_widget_get_window(window);
+        isMaximized = nativeWin != nullptr && (gdk_window_get_state(nativeWin) & GDK_WINDOW_STATE_MAXIMIZED) != 0;
+    }
+
+    int activeTabs = 0;
+    if (notebook != nullptr) {
+        activeTabs = gtk_notebook_get_n_pages(GTK_NOTEBOOK(notebook));
+    }
+
+    std::ostringstream out;
+    out << "; ===================================================\n";
+    out << "; Remote Control Debug Information\n";
+    out << "; ===================================================\n\n";
+
+    out << "[Server]\n";
+    out << "Server Name = " << (serverName.empty() ? "(None)" : serverName) << "\n";
+    out << "IP = " << (ip.empty() ? "Unknown" : ip) << "\n";
+    out << "Port = " << (port > 0 ? std::to_string(port) : "Unknown") << "\n";
+    if (!ip.empty() && port > 0) {
+        out << "Address = " << ip << ":" << port << "\n";
+    }
+    out << "Main Connection = " << mainStatus << "\n";
+    out << "NPC Server = " << ncStatus << "\n";
+    out << "Protocol = " << protocolStr << "\n\n";
+
+    out << "[Session]\n";
+    out << "Account = " << acc << "\n";
+    out << "Nickname = " << nick << "\n";
+    out << "Activity Status = " << actStatus << "\n";
+    out << "Players Online = " << onlinePlayers << "\n";
+    out << "Session Uptime = " << uptimeStr << "\n\n";
+
+    out << "[Memory Usage]\n";
+    if (mem.available) {
+        out << std::fixed << std::setprecision(2);
+        out << "Working Set (RAM) = " << mem.workingSetMb << " MB\n";
+        out << "Peak Working Set = " << mem.peakWorkingSetMb << " MB\n";
+        out << "Private Commit = " << mem.privateCommitMb << " MB\n";
+    } else {
+        out << "Status = Unavailable on this platform\n";
+    }
+    out << "\n";
+
+    out << "[Client & Environment]\n";
+    out << "RC Version = " << REMOTE_CONTROL_BUILD_VERSION << "\n";
+    out << "Build Date = " << remoteControlBuildDate() << "\n";
+    out << "GTK Version = " << gtk_get_major_version() << "." << gtk_get_minor_version() << "." << gtk_get_micro_version() << "\n";
+    out << "Window Size = " << winW << "x" << winH << (isMaximized ? " (Maximized)" : " (Normal)") << "\n";
+    out << "Active Tabs = " << activeTabs << "\n";
+    out << "Joined IRC Channels = " << joinedIrcChannels.size() << "\n";
+    out << "Theme = " << options.theme << (options.darkmode ? " (Dark Mode)" : " (Light Mode)") << "\n";
+
+    return out.str();
+}
+
+void TRemoteFrame::refreshDebugInfo() {
+    if (debugTextBuffer == nullptr) return;
+    const std::string text = buildDebugInfoString();
+    gtk_text_buffer_set_text(debugTextBuffer, text.c_str(), -1);
+    if (debugStatusLabel != nullptr) {
+        gtk_label_set_text(GTK_LABEL(debugStatusLabel), "Debug stats refreshed.");
+    }
+}
+
+void TRemoteFrame::showDebugInfoPopup() {
+    if (debugDialog != nullptr) {
+        refreshDebugInfo();
+        gtk_window_present(GTK_WINDOW(debugDialog));
+        return;
+    }
+
+    std::string title = "Debug Information";
+    if (!serverName.empty()) {
+        title += " - " + serverName;
+    }
+
+    debugDialog = gtk_dialog_new_with_buttons(
+        title.c_str(),
+        GTK_WINDOW(window),
+        static_cast<GtkDialogFlags>(0),
+        "Refresh (F1)", 101,
+        "Copy to Clipboard", 102,
+        "Close (Esc)", GTK_RESPONSE_CLOSE,
+        nullptr
+    );
+    applyRemoteControlWindowChrome(debugDialog);
+    gtk_window_set_default_size(GTK_WINDOW(debugDialog), 560, 520);
+
+    GtkWidget* contentArea = gtk_dialog_get_content_area(GTK_DIALOG(debugDialog));
+    gtk_box_set_spacing(GTK_BOX(contentArea), 6);
+    gtk_container_set_border_width(GTK_CONTAINER(contentArea), 8);
+
+    GtkWidget* scrolled = gtk_scrolled_window_new(nullptr, nullptr);
+    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scrolled), GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
+    gtk_scrolled_window_set_shadow_type(GTK_SCROLLED_WINDOW(scrolled), GTK_SHADOW_IN);
+
+    GtkSourceLanguage* language = gtk_source_language_manager_get_language(gtk_source_language_manager_get_default(), "ini");
+    GtkSourceBuffer* sourceBuffer = language != nullptr ? gtk_source_buffer_new_with_language(language) : gtk_source_buffer_new(nullptr);
+    applyRemoteControlSourceStyle(sourceBuffer);
+    debugTextBuffer = GTK_TEXT_BUFFER(sourceBuffer);
+    GtkWidget* textView = gtk_source_view_new_with_buffer(sourceBuffer);
+    configureGScriptEditor(textView, false);
+    g_object_unref(sourceBuffer);
+
+    gtk_text_view_set_editable(GTK_TEXT_VIEW(textView), false);
+    gtk_text_view_set_cursor_visible(GTK_TEXT_VIEW(textView), false);
+    gtk_text_view_set_monospace(GTK_TEXT_VIEW(textView), true);
+    gtk_text_view_set_left_margin(GTK_TEXT_VIEW(textView), 14);
+    gtk_text_view_set_right_margin(GTK_TEXT_VIEW(textView), 14);
+    gtk_text_view_set_top_margin(GTK_TEXT_VIEW(textView), 12);
+    gtk_text_view_set_bottom_margin(GTK_TEXT_VIEW(textView), 12);
+    gtk_container_add(GTK_CONTAINER(scrolled), textView);
+
+    gtk_box_pack_start(GTK_BOX(contentArea), scrolled, true, true, 0);
+
+    debugStatusLabel = gtk_label_new("Press F1 to refresh stats, Esc to close.");
+    gtk_widget_set_halign(debugStatusLabel, GTK_ALIGN_START);
+    gtk_box_pack_start(GTK_BOX(contentArea), debugStatusLabel, false, false, 0);
+
+    const std::string initialText = buildDebugInfoString();
+    gtk_text_buffer_set_text(debugTextBuffer, initialText.c_str(), -1);
+
+    g_signal_connect(debugDialog, "response", G_CALLBACK(+[](GtkDialog* dialog, gint responseId, gpointer data) {
+        auto* frame = static_cast<TRemoteFrame*>(data);
+        if (responseId == 101) {
+            frame->refreshDebugInfo();
+        } else if (responseId == 102) {
+            const std::string info = frame->buildDebugInfoString();
+            GtkClipboard* clipboard = gtk_clipboard_get(GDK_SELECTION_CLIPBOARD);
+            gtk_clipboard_set_text(clipboard, info.c_str(), -1);
+            if (frame->debugStatusLabel != nullptr) {
+                gtk_label_set_text(GTK_LABEL(frame->debugStatusLabel), "Debug information copied to clipboard!");
+            }
+        } else {
+            gtk_widget_destroy(GTK_WIDGET(dialog));
+        }
+    }), this);
+
+    g_signal_connect(debugDialog, "key-press-event", G_CALLBACK(+[](GtkWidget*, GdkEventKey* event, gpointer data) -> gboolean {
+        auto* frame = static_cast<TRemoteFrame*>(data);
+        if (event->keyval == GDK_KEY_Escape) {
+            if (frame->debugDialog != nullptr) gtk_widget_destroy(frame->debugDialog);
+            return true;
+        }
+        if (event->keyval == GDK_KEY_F1) {
+            frame->refreshDebugInfo();
+            return true;
+        }
+        return false;
+    }), this);
+
+    g_signal_connect(debugDialog, "destroy", G_CALLBACK(+[](GtkWidget*, gpointer data) {
+        auto* frame = static_cast<TRemoteFrame*>(data);
+        frame->debugDialog = nullptr;
+        frame->debugTextBuffer = nullptr;
+        frame->debugStatusLabel = nullptr;
+    }), this);
+
+    gtk_widget_show_all(debugDialog);
 }
