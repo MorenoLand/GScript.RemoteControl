@@ -70,7 +70,6 @@ private:
     static void onEditAsText(GtkMenuItem*, gpointer data);
     static void onDeleteItem(GtkMenuItem*, gpointer data);
     static void onRename(GtkMenuItem*, gpointer data);
-    static void onFileNameEdited(GtkCellRendererText*, gchar* path, gchar* value, gpointer data);
     static void onMove(GtkMenuItem*, gpointer data);
     static void onUpload(GtkMenuItem*, gpointer data);
     static gboolean onDelete(GtkWidget*, GdkEvent*, gpointer data);
@@ -80,7 +79,6 @@ private:
     static void onMessage(const char* message, void* data);
     static void onFileReceived(const char* path, const void* content, int length, void* data);
     static gboolean watchExternalFile(gpointer data);
-    static gboolean beginInlineRename(gpointer data);
     void refresh();
     void resetState();
     void refreshFolders();
@@ -113,14 +111,18 @@ private:
     std::filesystem::path applicationDirectory;
     GtkWidget* folderPath = nullptr;
     GtkWidget* pathStack = nullptr;
+    GtkWidget* addressRow = nullptr;
     GtkWidget* addressEntry = nullptr;
     GtkTreeStore* folders = nullptr;
     GtkListStore* files = nullptr;
     GtkListStore* modernItems = nullptr;
     GtkWidget* folderView = nullptr;
+    GtkWidget* folderScrolled = nullptr;
     GtkWidget* fileView = nullptr;
+    GtkWidget* fileScrolled = nullptr;
     GtkWidget* fileViewStack = nullptr;
     GtkWidget* modernView = nullptr;
+    GtkWidget* modernScrolled = nullptr;
     GtkWidget* modernSearchPopover = nullptr;
     GtkWidget* modernSearchEntry = nullptr;
     GtkCellRenderer* fileNameRenderer = nullptr;
@@ -155,8 +157,6 @@ private:
     gint64 watchExternalModified = 0;
     bool watchExternalWritable = false;
     guint externalWatchId = 0;
-    std::string pendingInlineRenamePath;
-    guint inlineRenameId = 0;
     guint mutationRefreshId = 0;
     std::string downloadFolder;
     std::string downloadServer;
