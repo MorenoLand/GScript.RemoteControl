@@ -488,11 +488,11 @@ TRemoteFrame::TRemoteFrame(const RC::RCOptions& nextOptions, const std::filesyst
         gtk_widget_set_halign(graphicalBase, GTK_ALIGN_FILL);
         gtk_widget_set_valign(graphicalBase, GTK_ALIGN_FILL);
         gtk_container_add(GTK_CONTAINER(graphicalContainer), graphicalBase);
-        GtkWidget* header = gtk_fixed_new();
+        GtkWidget* header = gtk_overlay_new();
         gtk_widget_set_name(header, "GraphicalHeader");
         gtk_widget_set_size_request(header, 1, 180);
         gtk_widget_set_hexpand(header, true);
-        GtkWidget* fixed = header;
+        GtkWidget* fixed = gtk_fixed_new();
         gtk_widget_set_name(fixed, "GraphicalFixed");
         graphicalFixed = fixed;
         gtk_widget_set_size_request(fixed, 1, 180);
@@ -524,11 +524,15 @@ TRemoteFrame::TRemoteFrame(const RC::RCOptions& nextOptions, const std::filesyst
             remoteControlDebugLog("background load path=%s pixbuf=%p animation=%p error=%s", background.string().c_str(), backgroundPixbuf, backgroundAnimation, imageError == nullptr ? "" : imageError->message);
             if (imageError != nullptr) g_error_free(imageError);
         }
-        backgroundImage = header;
+        backgroundImage = gtk_drawing_area_new();
+        gtk_widget_set_name(backgroundImage, "GraphicalBackground");
+        gtk_widget_set_size_request(backgroundImage, 1, 180);
         gtk_widget_set_hexpand(backgroundImage, true);
         gtk_widget_set_vexpand(backgroundImage, false);
         gtk_widget_set_halign(backgroundImage, GTK_ALIGN_FILL);
         gtk_widget_set_valign(backgroundImage, GTK_ALIGN_FILL);
+        gtk_container_add(GTK_CONTAINER(header), backgroundImage);
+        gtk_overlay_add_overlay(GTK_OVERLAY(header), fixed);
         gtk_widget_set_hexpand(fixed, true);
         gtk_widget_set_halign(fixed, GTK_ALIGN_FILL);
         gtk_widget_set_valign(fixed, GTK_ALIGN_FILL);
@@ -601,7 +605,7 @@ TRemoteFrame::TRemoteFrame(const RC::RCOptions& nextOptions, const std::filesyst
         GtkWidget* filler = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
         gtk_box_pack_start(GTK_BOX(graphicalBase), filler, true, true, 0);
         gtk_box_pack_start(GTK_BOX(root), graphicalContainer, true, true, 0);
-        g_signal_connect(fixed, "size-allocate", G_CALLBACK(onGraphicalAllocate), this);
+        g_signal_connect(header, "size-allocate", G_CALLBACK(onGraphicalAllocate), this);
     }
 
     notebook = gtk_notebook_new();
@@ -878,6 +882,7 @@ void TRemoteFrame::open(void* nextConnection, int serverIndex, const std::string
     const int chatPage = chatScrolled == nullptr ? -1 : gtk_notebook_page_num(GTK_NOTEBOOK(notebook), chatScrolled);
     if (chatPage >= 0) gtk_notebook_set_current_page(GTK_NOTEBOOK(notebook), chatPage);
     gtk_window_present(GTK_WINDOW(window));
+    g_idle_add_full(G_PRIORITY_DEFAULT_IDLE, onGraphicalRepositionLater, new GraphicalRepositionRequest{this, callbackAlive, false}, +[](gpointer data) { delete static_cast<GraphicalRepositionRequest*>(data); });
     gtk_widget_grab_focus(editField);
 }
 
@@ -922,6 +927,7 @@ bool TRemoteFrame::isConnected() const { return connection != nullptr; }
 void TRemoteFrame::show() {
     gtk_widget_show_all(window);
     gtk_window_present(GTK_WINDOW(window));
+    g_idle_add_full(G_PRIORITY_DEFAULT_IDLE, onGraphicalRepositionLater, new GraphicalRepositionRequest{this, callbackAlive, false}, +[](gpointer data) { delete static_cast<GraphicalRepositionRequest*>(data); });
 }
 
 void TRemoteFrame::toggleVisibility() {
@@ -944,6 +950,7 @@ void TRemoteFrame::showFromTray() {
     if (trayWindowPositionValid && !trayWindowMaximized) gtk_window_move(GTK_WINDOW(window), trayWindowX, trayWindowY);
     if (trayWindowMaximized) gtk_window_maximize(GTK_WINDOW(window));
     gtk_window_present(GTK_WINDOW(window));
+    g_idle_add_full(G_PRIORITY_DEFAULT_IDLE, onGraphicalRepositionLater, new GraphicalRepositionRequest{this, callbackAlive, false}, +[](gpointer data) { delete static_cast<GraphicalRepositionRequest*>(data); });
 }
 
 bool TRemoteFrame::openLatestPrivateMessage() {
@@ -1516,11 +1523,7 @@ void TRemoteFrame::repositionGraphicalButtons(int requestedWidth) {
     if (graphicalFixed == nullptr) return;
     GtkAllocation allocation;
     gtk_widget_get_allocation(graphicalFixed, &allocation);
-    int width = requestedWidth > 0 ? requestedWidth : (allocation.width > 0 ? allocation.width : graphicalBackgroundWidth);
-    const int containerWidth = graphicalContainer == nullptr ? 0 : gtk_widget_get_allocated_width(graphicalContainer);
-    const int windowWidth = window == nullptr ? 0 : gtk_widget_get_allocated_width(window);
-    if (containerWidth > 0) width = std::min(width, containerWidth);
-    if (windowWidth > 0) width = std::min(width, windowWidth);
+    int width = requestedWidth > 0 ? requestedWidth : (graphicalBackgroundWidth > 0 ? graphicalBackgroundWidth : allocation.width);
     if (width <= 0) return;
     const int labelWidth = std::min(500, width);
     const int labelX = std::max(0, (width - labelWidth) / 2);
@@ -2259,6 +2262,7 @@ void TRemoteFrame::updateNCUi(bool connected) {
         for (GtkWidget* shadow : npcServerLabelShadows) if (shadow != nullptr) { if (connected) gtk_widget_show(shadow); else gtk_widget_hide(shadow); }
     }
     setNCChannelVisible(connected && options.separatenc);
+    repositionGraphicalButtons();
     if (!connected) {
         if (classList != nullptr) classList->hide();
         if (weaponList != nullptr) weaponList->hide();
