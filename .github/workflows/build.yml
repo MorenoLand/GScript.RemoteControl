@@ -122,7 +122,7 @@ jobs:
           install: >-
             mingw-w64-x86_64-gcc mingw-w64-x86_64-cmake mingw-w64-x86_64-ninja
             mingw-w64-x86_64-gtk3 mingw-w64-x86_64-gtksourceview3
-            mingw-w64-x86_64-openssl git
+            mingw-w64-x86_64-openssl mingw-w64-x86_64-upx git
       - name: Configure, build, test, and package
         shell: msys2 {0}
         run: |
@@ -130,6 +130,8 @@ jobs:
           cmake -S remotecontrol -B remotecontrol/build -G Ninja -DCMAKE_BUILD_TYPE=Release -DGRCLIB_SOURCE_DIR="$PWD/grclib"
           cmake --build remotecontrol/build --parallel
           strip remotecontrol/bin/RemoteControl.exe
+          upx --best --lzma remotecontrol/bin/RemoteControl.exe
+          upx -t remotecontrol/bin/RemoteControl.exe
           ctest --test-dir remotecontrol/build --output-on-failure
           targets="$(cmake --build remotecontrol/build --target help)"
           printf '%s\n' "$targets" | grep -q 'RemoteControlSingleFile' || { echo "7-Zip SFX target is unavailable."; exit 1; }
