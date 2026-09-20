@@ -1752,14 +1752,6 @@ void TRemoteFrame::handleDisconnected(void* disconnectedConnection, std::uint64_
     if (disconnectHandled) return;
     remoteControlDebugLog("connection disconnected: %s", reason == nullptr ? "You have been disconnected!" : reason);
     disconnectHandled = true;
-    const std::vector<std::string> unsaved = unsavedScriptEditors();
-    if (!unsaved.empty()) {
-        std::string message = "The following scripts have unsaved changes and remain open:\n";
-        for (const std::string& name : unsaved) message += "\n" + name;
-        GtkWidget* warning = gtk_message_dialog_new(nullptr, GTK_DIALOG_MODAL, GTK_MESSAGE_WARNING, GTK_BUTTONS_OK, "%s", message.c_str());
-        gtk_dialog_run(GTK_DIALOG(warning));
-        gtk_widget_destroy(warning);
-    }
     gtk_widget_hide(window);
     const std::shared_ptr<bool> alive = this->callbackAlive;
     const std::function<void()> reopenListServer = onCloseCallback;
@@ -2012,24 +2004,13 @@ void TRemoteFrame::createGraphicalButton(int index) {
 void TRemoteFrame::setOptionalButton(int index, bool enabled) {
     if (index < 0 || index >= static_cast<int>(graphicalButtons.size())) return;
     if (index == 13) levelListButtonEnabled = enabled;
-    const auto positionNCButtons = [this]() {
-        if (graphicalFixed == nullptr) return;
-        const int slots[] = {360, 394, 427, 460};
-        const int indices[] = {11, 10, 9};
-        const int width = graphicalBackgroundWidth > 0 ? graphicalBackgroundWidth : 500;
-        int slot = levelListButtonEnabled ? 0 : 1;
-        for (int buttonIndex : indices) if (graphicalButtons[buttonIndex] != nullptr) gtk_fixed_move(GTK_FIXED(graphicalFixed), graphicalButtons[buttonIndex], std::clamp(width - (500 - slots[slot++]), 0, std::max(0, width - 32)), 114);
-        if (levelListButtonEnabled && graphicalButtons[13] != nullptr) gtk_fixed_move(GTK_FIXED(graphicalFixed), graphicalButtons[13], std::clamp(width - (500 - slots[3]), 0, std::max(0, width - 32)), 114);
-    };
     if (!enabled) {
         if (graphicalButtons[index] != nullptr) gtk_widget_hide(graphicalButtons[index]);
         repositionGraphicalButtons();
-        if (index == 13) positionNCButtons();
         return;
     }
     createGraphicalButton(index);
     if (graphicalButtons[index] != nullptr) { gtk_widget_show_all(graphicalButtons[index]); repositionGraphicalButtons(); }
-    if (index == 13) positionNCButtons();
 }
 
 void TRemoteFrame::applyOptionalTools() {

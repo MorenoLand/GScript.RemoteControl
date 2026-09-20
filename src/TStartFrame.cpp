@@ -89,6 +89,9 @@ namespace {
             if (g_strcmp0(gtk_window_get_title(GTK_WINDOW(candidate)), "RC settings") != 0) continue;
             auto* closedState = new AccountServerSettingsClosedState{state->picker, state->picker->alive};
             g_signal_connect_data(candidate, "destroy", G_CALLBACK(onAccountServerSettingsClosed), closedState, destroyAccountServerSettingsClosedState, static_cast<GConnectFlags>(0));
+            gtk_window_set_transient_for(GTK_WINDOW(candidate), state->editDialog);
+            gtk_window_set_modal(GTK_WINDOW(candidate), true);
+            gtk_window_set_position(GTK_WINDOW(candidate), GTK_WIN_POS_CENTER_ON_PARENT);
             gtk_window_present(GTK_WINDOW(candidate));
             break;
         }
