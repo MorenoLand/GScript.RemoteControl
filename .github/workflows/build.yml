@@ -25,7 +25,7 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            setup: sudo apt-get update && sudo apt-get install -y cmake ninja-build pkg-config libgtk-3-dev libgtksourceview-3.0-dev libgdk-pixbuf2.0-bin libssl-dev pax-utils patchelf curl squashfs-tools
+            setup: sudo apt-get update && sudo apt-get install -y cmake ninja-build pkg-config libgtk-3-dev libgtksourceview-3.0-dev libssl-dev pax-utils patchelf curl squashfs-tools
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -87,7 +87,9 @@ jobs:
           find "$appdir/lib" -type f -name '*.so*' -exec patchelf --set-rpath '$ORIGIN' {} +
           loader_dir="$appdir/lib/gdk-pixbuf-2.0/2.10.0/loaders"
           loader_cache="$appdir/lib/gdk-pixbuf-2.0/2.10.0/loaders.cache"
-          gdk-pixbuf-query-loaders "$loader_dir"/*.so > "$loader_cache"
+          query_loader="$(pkg-config --variable=libdir gdk-pixbuf-2.0)/gdk-pixbuf-2.0/gdk-pixbuf-query-loaders"
+          test -x "$query_loader"
+          "$query_loader" "$loader_dir"/*.so > "$loader_cache"
           sed -i "s|$appdir|.|g" "$loader_cache"
           if find "$appdir/lib" -type f -name '*.so*' -exec sh -c 'ldd "$1" | grep -q "not found"' _ {} \; -print -quit | grep -q .; then
             echo "Bundled Linux dependency is unresolved."
