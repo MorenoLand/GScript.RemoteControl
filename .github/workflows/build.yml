@@ -25,7 +25,7 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            setup: sudo apt-get update && sudo apt-get install -y cmake ninja-build pkg-config libgtk-3-dev libgtksourceview-3.0-dev libssl-dev pax-utils patchelf curl squashfs-tools
+            setup: sudo apt-get update && sudo apt-get install -y cmake ninja-build pkg-config libgtk-3-dev libgtksourceview-3.0-dev libgdk-pixbuf2.0-bin libssl-dev pax-utils patchelf curl squashfs-tools
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
