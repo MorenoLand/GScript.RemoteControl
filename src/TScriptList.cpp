@@ -436,14 +436,25 @@ void TScriptList::onAdd(GtkButton*, gpointer data) {
     GtkWidget* dialog = gtk_dialog_new_with_buttons(isClass ? "Add Class" : "Add Weapon/GUI Script", nullptr, GTK_DIALOG_MODAL, "Cancel", GTK_RESPONSE_CANCEL, "Add", GTK_RESPONSE_ACCEPT, nullptr);
     applyRemoteControlWindowChrome(dialog);
     GtkWidget* grid = gtk_grid_new();
-    gtk_container_set_border_width(GTK_CONTAINER(grid), 8);
-    gtk_grid_set_row_spacing(GTK_GRID(grid), 5);
+    gtk_grid_set_row_spacing(GTK_GRID(grid), 8);
+    gtk_grid_set_column_spacing(GTK_GRID(grid), 8);
     GtkWidget* name = gtk_entry_new();
+    gtk_widget_set_hexpand(name, true);
+    gtk_widget_set_size_request(name, 240, -1);
+    gtk_container_set_border_width(GTK_CONTAINER(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), 10);
+    gtk_container_set_border_width(GTK_CONTAINER(gtk_dialog_get_action_area(GTK_DIALOG(dialog))), 10);
     GtkWidget* image = isClass ? nullptr : gtk_entry_new();
-    gtk_grid_attach(GTK_GRID(grid), gtk_label_new("Name:"), 0, 0, 1, 1);
+    GtkWidget* nameLabel = gtk_label_new("Name:");
+    gtk_widget_set_halign(nameLabel, GTK_ALIGN_START);
+    gtk_widget_set_valign(nameLabel, GTK_ALIGN_CENTER);
+    gtk_grid_attach(GTK_GRID(grid), nameLabel, 0, 0, 1, 1);
     gtk_grid_attach(GTK_GRID(grid), name, 1, 0, 1, 1);
     if (!isClass) {
-        gtk_grid_attach(GTK_GRID(grid), gtk_label_new("Icon:"), 0, 1, 1, 1);
+        GtkWidget* iconLabel = gtk_label_new("Icon:");
+        gtk_widget_set_halign(iconLabel, GTK_ALIGN_START);
+        gtk_widget_set_valign(iconLabel, GTK_ALIGN_CENTER);
+        gtk_widget_set_hexpand(image, true);
+        gtk_grid_attach(GTK_GRID(grid), iconLabel, 0, 1, 1, 1);
         gtk_grid_attach(GTK_GRID(grid), image, 1, 1, 1, 1);
     }
     gtk_box_pack_start(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(dialog))), grid, true, true, 0);
@@ -452,8 +463,11 @@ void TScriptList::onAdd(GtkButton*, gpointer data) {
         auto* values = static_cast<AddState*>(userData);
         if (response == GTK_RESPONSE_ACCEPT) {
             const char* name = gtk_entry_get_text(GTK_ENTRY(values->name));
-            if (values->list->connection != nullptr && name != nullptr && *name != '\0') {
-                const int result = values->list->type == "classes" ? rc_add_class(values->list->connection, name, "") : rc_add_weapon(values->list->connection, name, gtk_entry_get_text(GTK_ENTRY(values->image)), "");
+            if (values->list->connection != nullptr && name != nullptr && *name != '\0' && values->list->type == "classes") {
+                // The server deletes empty classes, so nothing is sent until the first save in the editor.
+                values->list->showEditor(name, "");
+            } else if (values->list->connection != nullptr && name != nullptr && *name != '\0') {
+                const int result = rc_add_weapon(values->list->connection, name, gtk_entry_get_text(GTK_ENTRY(values->image)), "");
                 remoteControlDebugLog("script create: type=%s name=%s result=%d", values->list->type.c_str(), name, result);
                 if (result > 0) {
                     values->list->pendingCreateName = name;
@@ -565,6 +579,13 @@ void TScriptList::onScript(const char* scriptType, const char* name, int id, con
     if (restoring) { ++list->pendingRestoreIndex; list->requestNextRestoredEditor(); }
 }
 
+static void saveClassScript(void* connection, const char* name, const char* text) {
+    RCClass* entries = nullptr;
+    const int count = rc_get_classes(connection, &entries);
+    for (int index = 0; index < count; ++index) if (entries[index].name != nullptr && std::strcmp(entries[index].name, name) == 0) { rc_update_class(connection, name, text); return; }
+    if (text != nullptr && text[0] != 0) rc_add_class(connection, name, text);
+}
+
 void TScriptList::showEditor(const char* name, const char* script) {
     const std::string scriptName = name == nullptr ? "" : name;
     remoteControlDebugLog("script editor: prepare type=%s name=%s bytes=%zu lines=%zu server=%s external_scope=%s", type.c_str(), scriptName.c_str(), scriptByteCount(script), scriptLineCount(script), serverName.c_str(), options == nullptr ? "" : options->externaleditorscope.c_str());
@@ -584,7 +605,7 @@ void TScriptList::showEditor(const char* name, const char* script) {
         externalEditor->open(serverName, type, scriptName, script == nullptr ? "" : script, [this, scriptName, weaponIcon](const std::string& updated) {
             backupEditorText(type == "weapons" ? "weapon" : "class", scriptName, updated, true);
             if (connection == nullptr) return;
-            if (type == "weapons") rc_update_weapon(connection, scriptName.c_str(), weaponIcon.c_str(), updated.c_str()); else rc_update_class(connection, scriptName.c_str(), updated.c_str());
+            if (type == "weapons") rc_update_weapon(connection, scriptName.c_str(), weaponIcon.c_str(), updated.c_str()); else saveClassScript(connection, scriptName.c_str(), updated.c_str());
         });
         remoteControlDebugLog("script editor: external open dispatched type=%s name=%s", type.c_str(), scriptName.c_str());
         return;
@@ -660,7 +681,7 @@ void TScriptList::showEditor(const char* name, const char* script) {
             void* currentConnection = scriptEditorConnection(editorBuffer);
             if (currentConnection != nullptr) {
                 if (editorState->weapon) rc_update_weapon(currentConnection, editorState->name.c_str(), editorState->icon == nullptr ? "" : gtk_entry_get_text(GTK_ENTRY(editorState->icon)), updated);
-                else rc_update_class(currentConnection, editorState->name.c_str(), updated);
+                else saveClassScript(currentConnection, editorState->name.c_str(), updated);
             }
             g_free(updated);
             markScriptEditorSaved(editorBuffer);

@@ -17,9 +17,44 @@ inline bool remoteControlRoundedCorners() {
     return GPOINTER_TO_INT(data) != 0;
 }
 
+inline void rcActivateEntriesByDefault(GtkWidget* widget) {
+    if (widget == nullptr) return;
+    if (GTK_IS_ENTRY(widget)) gtk_entry_set_activates_default(GTK_ENTRY(widget), true);
+    if (GTK_IS_CONTAINER(widget)) gtk_container_forall(GTK_CONTAINER(widget), +[](GtkWidget* child, gpointer) { rcActivateEntriesByDefault(child); }, nullptr);
+}
+
+inline void rcPolishDialogOnMap(GtkWidget* mapped, gpointer) {
+    GtkDialog* dialog = GTK_DIALOG(mapped);
+    struct ResponseIcon { int response; const char* icon; bool affirmative; };
+    const ResponseIcon responses[] = {
+        {GTK_RESPONSE_CANCEL, "window-close-symbolic", false}, {GTK_RESPONSE_CLOSE, "window-close-symbolic", false},
+        {GTK_RESPONSE_ACCEPT, "emblem-ok-symbolic", true}, {GTK_RESPONSE_OK, "emblem-ok-symbolic", true}, {GTK_RESPONSE_APPLY, "emblem-ok-symbolic", true}};
+    int defaultResponse = 0;
+    for (const ResponseIcon& entry : responses) {
+        GtkWidget* button = gtk_dialog_get_widget_for_response(dialog, entry.response);
+        if (button == nullptr || !GTK_IS_BUTTON(button)) continue;
+        if (gtk_button_get_image(GTK_BUTTON(button)) == nullptr) {
+            gtk_button_set_image(GTK_BUTTON(button), gtk_image_new_from_icon_name(entry.icon, GTK_ICON_SIZE_BUTTON));
+            gtk_button_set_always_show_image(GTK_BUTTON(button), true);
+        }
+        if (entry.affirmative && defaultResponse == 0) defaultResponse = entry.response;
+    }
+    if (defaultResponse != 0) {
+        if (gtk_window_get_default_widget(GTK_WINDOW(dialog)) == nullptr) gtk_dialog_set_default_response(dialog, defaultResponse);
+        rcActivateEntriesByDefault(gtk_dialog_get_content_area(dialog));
+    }
+}
+
+inline void rcPolishDialog(GtkWidget* dialogWidget) {
+    if (dialogWidget == nullptr || !GTK_IS_DIALOG(dialogWidget) || g_object_get_data(G_OBJECT(dialogWidget), "rc-dialog-polished") != nullptr) return;
+    g_object_set_data(G_OBJECT(dialogWidget), "rc-dialog-polished", GINT_TO_POINTER(1));
+    g_signal_connect(dialogWidget, "map", G_CALLBACK(rcPolishDialogOnMap), nullptr);
+}
+
 inline void applyRemoteControlWindowChrome(GtkWidget* widget) {
     if (widget == nullptr || !GTK_IS_WINDOW(widget)) return;
     GtkWindow* window = GTK_WINDOW(widget);
+    rcPolishDialog(widget);
     GtkSettings* settings = gtk_settings_get_default();
     GdkPixbuf* icon = settings == nullptr ? nullptr : static_cast<GdkPixbuf*>(g_object_get_data(G_OBJECT(settings), "remote-control-icon-pixbuf"));
     if (icon != nullptr) gtk_window_set_icon(window, icon);
