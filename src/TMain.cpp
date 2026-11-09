@@ -30,7 +30,6 @@ extern "C" GResource* gtksourceview_get_resource(void);
 
 #ifdef _WIN32
 #include <windows.h>
-#include <dwmapi.h>
 #include <gdk/gdkwin32.h>
 #elif defined(__APPLE__)
 #include <mach-o/dyld.h>
@@ -43,58 +42,9 @@ extern "C" GResource* gtksourceview_get_resource(void);
 #endif
 
 static std::string decorShadowLead(double alpha) {
-#ifdef _WIN32
-    (void)alpha;
-    return "";
-#else
     return "0 4px 16px 2px rgba(0, 0, 0, " + std::to_string(alpha).substr(0, 4) + "), ";
-#endif
 }
 
-#ifdef _WIN32
-static LRESULT CALLBACK nativeShadowProc(HWND handle, UINT message, WPARAM wParam, LPARAM lParam) {
-    const WNDPROC original = reinterpret_cast<WNDPROC>(GetPropW(handle, L"rc-shadow-proc"));
-    if (message == WM_NCCALCSIZE && wParam) return 0;
-    if (message == WM_WINDOWPOSCHANGING) {
-        // GDK pads every requested size by the thick-frame borders; the client area is the whole window here, so undo it.
-        WINDOWPOS* position = reinterpret_cast<WINDOWPOS*>(lParam);
-        RECT border = {0, 0, 0, 0};
-        AdjustWindowRectEx(&border, static_cast<DWORD>(GetWindowLongPtrW(handle, GWL_STYLE)), FALSE, static_cast<DWORD>(GetWindowLongPtrW(handle, GWL_EXSTYLE)));
-        if (!(position->flags & SWP_NOSIZE)) {
-            position->cx -= border.right - border.left;
-            position->cy -= border.bottom - border.top;
-        }
-        if (!(position->flags & SWP_NOMOVE)) {
-            position->x -= border.left;
-            position->y -= border.top;
-        }
-    }
-    if (message == WM_NCDESTROY) {
-        SetWindowLongPtrW(handle, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(original));
-        RemovePropW(handle, L"rc-shadow-proc");
-        RemovePropW(handle, L"rc-shadow-resizable");
-    }
-    const LRESULT result = CallWindowProcW(original, handle, message, wParam, lParam);
-    if (message == WM_NCHITTEST && result >= HTLEFT && result <= HTBOTTOMRIGHT && GetPropW(handle, L"rc-shadow-resizable") == nullptr) return HTCLIENT;
-    return result;
-}
-
-static void onNativeShadowMap(GtkWidget* widget, gpointer) {
-    GdkWindow* surface = gtk_widget_get_window(widget);
-    if (surface == nullptr) return;
-    HWND handle = reinterpret_cast<HWND>(GDK_WINDOW_HWND(surface));
-    if (GetPropW(handle, L"rc-shadow-proc") == nullptr) {
-        SetPropW(handle, L"rc-shadow-proc", reinterpret_cast<HANDLE>(SetWindowLongPtrW(handle, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(nativeShadowProc))));
-        SetPropW(handle, L"rc-shadow-resizable", reinterpret_cast<HANDLE>(static_cast<INT_PTR>(gtk_window_get_resizable(GTK_WINDOW(widget)) ? 1 : 0)));
-        SetWindowLongPtrW(handle, GWL_STYLE, GetWindowLongPtrW(handle, GWL_STYLE) | WS_THICKFRAME);
-    }
-    const MARGINS margins = {1, 1, 1, 1};
-    DwmExtendFrameIntoClientArea(handle, &margins);
-    const DWMNCRENDERINGPOLICY policy = DWMNCRP_ENABLED;
-    DwmSetWindowAttribute(handle, DWMWA_NCRENDERING_POLICY, &policy, sizeof(policy));
-    SetWindowPos(handle, nullptr, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
-}
-#endif
 
 void registerBundledFonts(const std::filesystem::path& applicationDirectory) {
     const auto font = applicationDirectory / "fonts" / "tempus-sans-itc.ttf";
@@ -626,14 +576,7 @@ void refreshGlobalVisibilityHotkey(const std::string& hotkey) {
 }
 
 void rcApplyNativeWindowShadow(GtkWidget* window) {
-#ifdef _WIN32
-    if (window == nullptr || g_object_get_data(G_OBJECT(window), "rc-native-shadow") != nullptr) return;
-    g_object_set_data(G_OBJECT(window), "rc-native-shadow", GINT_TO_POINTER(1));
-    if (gtk_widget_get_realized(window)) onNativeShadowMap(window, nullptr);
-    else g_signal_connect_after(window, "realize", G_CALLBACK(onNativeShadowMap), nullptr);
-#else
     (void)window;
-#endif
 }
 
 void applyRemoteControlTheme(const std::string& theme, bool darkMode, bool roundedCorners) {
