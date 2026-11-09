@@ -29,12 +29,21 @@ namespace {
             const std::string endpoint = profile.host + ":" + std::to_string(profile.port);
             if (association == profile.name || association == endpoint || association.find(endpoint) != std::string::npos) { name = profile.name; host = profile.host; port = profile.port; return true; }
         }
-        const std::size_t separator = association.rfind(':');
-        if (separator == std::string::npos) return false;
-        const int parsedPort = std::atoi(association.substr(separator + 1).c_str());
+        const std::string labelSeparator = " — ";
+        std::string associationName;
+        std::string endpointText = association;
+        const std::size_t label = association.find(labelSeparator);
+        if (label != std::string::npos) {
+            associationName = association.substr(0, label);
+            endpointText = association.substr(label + labelSeparator.size());
+            for (const SavedListServer& profile : profiles) if (profile.name == associationName) { name = profile.name; host = profile.host; port = profile.port; return true; }
+        }
+        const std::size_t separator = endpointText.rfind(':');
+        if (separator == std::string::npos || separator == 0) return false;
+        const int parsedPort = std::atoi(endpointText.substr(separator + 1).c_str());
         if (parsedPort <= 0 || parsedPort > 65535) return false;
-        name = association.substr(0, separator);
-        host = name;
+        host = endpointText.substr(0, separator);
+        name = associationName.empty() ? host : associationName;
         port = parsedPort;
         return true;
     }
