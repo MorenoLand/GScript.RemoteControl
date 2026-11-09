@@ -8,6 +8,7 @@
 #include <string>
 
 void applyRemoteControlTheme(const std::string& theme, bool darkMode, bool roundedCorners);
+void rcApplyNativeWindowShadow(GtkWidget* window);
 
 inline bool remoteControlRoundedCorners() {
     GtkSettings* settings = gtk_settings_get_default();
@@ -61,6 +62,7 @@ inline void applyRemoteControlWindowChrome(GtkWidget* widget) {
     if (gtk_window_get_type_hint(window) == GDK_WINDOW_TYPE_HINT_DROPDOWN_MENU || gtk_window_get_type_hint(window) == GDK_WINDOW_TYPE_HINT_POPUP_MENU) return;
     if (gtk_window_get_window_type(window) == GTK_WINDOW_POPUP) return;
 
+    rcApplyNativeWindowShadow(widget);
     GtkWidget* titlebar = gtk_window_get_titlebar(window);
     if (titlebar != nullptr && GTK_IS_HEADER_BAR(titlebar)) {
         if (icon != nullptr && g_object_get_data(G_OBJECT(titlebar), "remote-control-title-icon") == nullptr) {

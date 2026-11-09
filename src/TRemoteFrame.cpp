@@ -46,6 +46,7 @@
 extern void remote_control_begin_pm_tray_alert();
 extern void remote_control_clear_pm_tray_alert();
 extern void remote_control_set_tray_label(const char* serverName, int playerCount);
+extern void remote_control_unregister_frame(TRemoteFrame* frame);
 
 namespace {
 GdkPixbuf* loadBackgroundPng(const std::filesystem::path& path, GError** error) {
@@ -770,10 +771,16 @@ gboolean TRemoteFrame::onGraphicalDraw(GtkWidget* widget, cairo_t* context, gpoi
 
 TRemoteFrame::~TRemoteFrame() {
     *callbackAlive = false;
+    remote_control_unregister_frame(this);
     disconnect();
     if (eventSource != 0) g_source_remove(eventSource);
     if (emojiPopoverResizeSource != 0) g_source_remove(emojiPopoverResizeSource);
     if (backgroundAnimationSource != 0) g_source_remove(backgroundAnimationSource);
+    if (editField != nullptr) {
+        const guint completionSource = GPOINTER_TO_UINT(g_object_get_data(G_OBJECT(editField), "rc-completion-constraint-source"));
+        if (completionSource != 0) g_source_remove(completionSource);
+        g_object_set_data(G_OBJECT(editField), "rc-completion-constraint-source", nullptr);
+    }
     GList* toplevels = gtk_window_list_toplevels();
     for (GList* current = toplevels; current != nullptr; current = current->next) {
         GtkWidget* candidate = GTK_WIDGET(current->data);
@@ -1378,7 +1385,6 @@ gboolean TRemoteFrame::constrainMentionPopup(gpointer data) {
     ++commandStart;
     const bool commandContext = (start < cursor && text[start] == '/') || (commandStart <= commandEnd && text[commandStart] == '/');
     if (!commandContext) return G_SOURCE_REMOVE;
-    gtk_entry_completion_complete(request->completion);
     GList* windows = gtk_window_list_toplevels();
     bool found = false;
     for (GList* item = windows; item != nullptr; item = item->next) {

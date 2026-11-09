@@ -444,9 +444,14 @@ TFileBrowserTree::TFileBrowserTree(const std::filesystem::path& nextApplicationD
     gtk_tree_view_append_column(GTK_TREE_VIEW(folderView), folderColumn);
     image = gtk_cell_renderer_pixbuf_new();
     text = gtk_cell_renderer_text_new();
+    gtk_cell_renderer_set_padding(image, 0, 0);
+    gtk_cell_renderer_set_fixed_size(image, 16, 16);
+    g_object_set(image, "xalign", 0.0f, nullptr);
+    gtk_cell_renderer_set_padding(text, 0, 0);
     GtkTreeViewColumn* nameColumn = gtk_tree_view_column_new_with_attributes("Name", image, "pixbuf", FileIconColumn, nullptr);
     gtk_tree_view_column_pack_start(nameColumn, text, true);
     gtk_tree_view_column_add_attribute(nameColumn, text, "text", FilePathColumn);
+    gtk_tree_view_column_set_spacing(nameColumn, 0);
     fileNameRenderer = text;
     gtk_tree_view_column_set_resizable(nameColumn, true);
     gtk_tree_view_column_set_sizing(nameColumn, GTK_TREE_VIEW_COLUMN_FIXED);
