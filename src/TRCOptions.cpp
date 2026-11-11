@@ -163,7 +163,14 @@ namespace RC {
                 else if (key == "icon" + buttonImageNames[index] + "pressed") options.buttonimagefilespressed[index] = value;
             }
         }
-        if (configPath != writablePath) saveRCOptions(options, applicationDirectory);
+        const std::filesystem::path configuredBackground(options.background);
+        const std::filesystem::path backgroundFile = configuredBackground.is_absolute() ? configuredBackground : applicationDirectory / "images" / configuredBackground;
+        std::error_code backgroundError;
+        if (options.background.empty() || !std::filesystem::is_regular_file(backgroundFile, backgroundError)) {
+            options.background = RCOptions().background;
+            saveRCOptions(options, applicationDirectory);
+        }
+        else if (configPath != writablePath) saveRCOptions(options, applicationDirectory);
     }
 
     void saveRCOptions(const RCOptions& options, const std::filesystem::path& applicationDirectory) {

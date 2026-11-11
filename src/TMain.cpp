@@ -8,6 +8,7 @@
 #include "TStartFrame.h"
 #include "TMcpServer.h"
 #include "TCrashLogger.h"
+#include "TStatusNotifier.h"
 
 #include <algorithm>
 #include <array>
@@ -206,9 +207,16 @@ namespace {
     }
 #endif
 
+    bool trayAvailable() { return pmTrayIcon != nullptr || RC::StatusNotifier::active(); }
+
+    void setTrayIconFile(const std::string& path) {
+        if (RC::StatusNotifier::active()) RC::StatusNotifier::setIcon(path);
+        else if (pmTrayIcon != nullptr) gtk_status_icon_set_from_file(pmTrayIcon, path.c_str());
+    }
+
     gboolean onTrayPMBlink(gpointer) {
         pmTrayAlertVisible = !pmTrayAlertVisible;
-        gtk_status_icon_set_from_file(pmTrayIcon, (pmTrayAlertVisible ? pmTrayAlertIcon : pmTrayNormalIcon).c_str());
+        setTrayIconFile(pmTrayAlertVisible ? pmTrayAlertIcon : pmTrayNormalIcon);
         return G_SOURCE_CONTINUE;
     }
 
@@ -216,15 +224,16 @@ namespace {
         if (pmTrayBlinkSource != 0) g_source_remove(pmTrayBlinkSource);
         pmTrayBlinkSource = 0;
         pmTrayAlertVisible = false;
-        gtk_status_icon_set_from_file(pmTrayIcon, pmTrayNormalIcon.c_str());
+        setTrayIconFile(pmTrayNormalIcon);
     }
 
     void setTrayTooltip(const char* serverName, int playerCount) {
-        if (pmTrayIcon == nullptr) return;
+        if (!trayAvailable()) return;
         std::string tooltip = "Remote Control";
         if (serverName != nullptr && *serverName != '\0') tooltip = std::string(serverName) + ": " + std::to_string(playerCount) + (playerCount == 1 ? " player" : " players");
         if (tooltip.size() > 64) tooltip.resize(64);
-        gtk_status_icon_set_tooltip_text(pmTrayIcon, tooltip.c_str());
+        if (RC::StatusNotifier::active()) RC::StatusNotifier::setTooltip(tooltip);
+        else gtk_status_icon_set_tooltip_text(pmTrayIcon, tooltip.c_str());
     }
 
     void onTrayOpen(GtkMenuItem*, gpointer) {
@@ -365,6 +374,53 @@ namespace {
 #endif
     }
 
+    std::vector<TRemoteFrame*> trayNotifierFrames;
+
+    void onTrayNotifierActivate() {
+        if (traySingleClickSource != 0) {
+            g_source_remove(traySingleClickSource);
+            traySingleClickSource = 0;
+            trayDoubleClickUntil = g_get_monotonic_time() + 300000;
+            if (trayRemoteFrame != nullptr && trayRemoteFrame->openLatestPrivateMessage()) clearTrayPMAlert();
+            else onTrayOpen(nullptr, nullptr);
+            return;
+        }
+        traySingleClickSource = g_timeout_add(220, onTraySingleClick, nullptr);
+    }
+
+    std::vector<RC::StatusNotifier::MenuEntry> trayNotifierMenu() {
+        std::vector<RC::StatusNotifier::MenuEntry> entries;
+        trayNotifierFrames.clear();
+        entries.push_back({1, "Open", true, false});
+        if (trayRemoteFrame != nullptr && trayRemoteFrame->isNCAuthenticated()) entries.push_back({2, "Server List", true, false});
+        if (trayRemoteFrame != nullptr) entries.push_back({3, "Sign out", true, false});
+        int identifier = 100;
+        for (TRemoteFrame* frame : trayRemoteFrames) if (frame != nullptr && frame->isConnected()) {
+            if (trayNotifierFrames.empty()) entries.push_back({5, "", true, true});
+            trayNotifierFrames.push_back(frame);
+            entries.push_back({identifier++, frame->currentServerName(), true, false});
+            entries.push_back({identifier++, "Sign out " + frame->currentServerName(), true, false});
+        }
+        entries.push_back({6, "", true, true});
+        entries.push_back({4, "Quit", true, false});
+        return entries;
+    }
+
+    void onTrayNotifierMenu(int identifier) {
+        if (identifier == 1) onTrayOpen(nullptr, nullptr);
+        else if (identifier == 2) onTrayServerList(nullptr, nullptr);
+        else if (identifier == 3) onTraySignOut(nullptr, nullptr);
+        else if (identifier == 4) onTrayQuit(nullptr, nullptr);
+        else if (identifier >= 100) {
+            const std::size_t index = static_cast<std::size_t>(identifier - 100) / 2;
+            if (index >= trayNotifierFrames.size()) return;
+            TRemoteFrame* frame = trayNotifierFrames[index];
+            trayRemoteFrame = frame;
+            if ((identifier - 100) % 2 == 0) onTrayOpen(nullptr, nullptr);
+            else onTrayFrameSignOut(nullptr, frame);
+        }
+    }
+
     void copySyntaxFiles(const std::filesystem::path& applicationDirectory) {
         const auto languageSpecsDirectory = (applicationDirectory / "language-specs").string();
         gchar* searchPaths[] = {const_cast<gchar*>(languageSpecsDirectory.c_str()), nullptr};
@@ -452,9 +508,16 @@ namespace {
         const std::string bottomRadius = roundedCorners ? "border-bottom-left-radius: 8px; border-bottom-right-radius: 8px; border-top-left-radius: 0; border-top-right-radius: 0;" : "border-radius: 0;";
         const std::string topRadius = roundedCorners ? "border-top-left-radius: 8px; border-top-right-radius: 8px; border-bottom-left-radius: 0; border-bottom-right-radius: 0;" : "border-radius: 0;";
         const std::string decorRadius = roundedCorners ? "border-radius: 8px;" : "border-radius: 0;";
-        const std::string decorCss = " decoration { margin: 0; padding: 0; border: none; background: none; background-image: none; background-color: transparent; " + decorRadius + " box-shadow: " + decorShadowLead(0.45) + "0 0 0 1px rgba(0, 0, 0, 0.2); }"
-            + " decoration:backdrop { margin: 0; padding: 0; border: none; background: none; background-image: none; background-color: transparent; " + decorRadius + " box-shadow: " + decorShadowLead(0.28) + "0 0 0 1px rgba(0, 0, 0, 0.16); }"
-            + " decoration:disabled { margin: 0; padding: 0; border: none; background: none; background-image: none; background-color: transparent; " + decorRadius + " box-shadow: " + decorShadowLead(0.28) + "0 0 0 1px rgba(0, 0, 0, 0.16); }"
+#ifdef _WIN32
+        const std::string decorMargin = "margin: 0;";
+#else
+        // GTK takes the CSD resize border (and room for the shadow) from the decoration margin; at 0 there is nothing to grab.
+        const std::string decorMargin = "margin: 12px;";
+#endif
+        const std::string decorCss = " decoration { " + decorMargin + " padding: 0; border: none; background: none; background-image: none; background-color: transparent; " + decorRadius + " box-shadow: " + decorShadowLead(0.45) + "0 0 0 1px rgba(0, 0, 0, 0.2); }"
+            + " decoration:backdrop { " + decorMargin + " padding: 0; border: none; background: none; background-image: none; background-color: transparent; " + decorRadius + " box-shadow: " + decorShadowLead(0.28) + "0 0 0 1px rgba(0, 0, 0, 0.16); }"
+            + " decoration:disabled { " + decorMargin + " padding: 0; border: none; background: none; background-image: none; background-color: transparent; " + decorRadius + " box-shadow: " + decorShadowLead(0.28) + "0 0 0 1px rgba(0, 0, 0, 0.16); }"
+            + " window.maximized decoration, window.fullscreen decoration, window.tiled decoration { margin: 0; }"
             + " window.maximized, window.maximized decoration, window.maximized headerbar, window.maximized .titlebar { border-radius: 0; box-shadow: none; }";
         if (!enabled) {
             GtkCssProvider* provider = gtk_css_provider_new();
@@ -584,9 +647,9 @@ void applyRemoteControlTheme(const std::string& theme, bool darkMode, bool round
 }
 
 void remote_control_begin_pm_tray_alert() {
-    if (pmTrayIcon == nullptr || pmTrayBlinkSource != 0) return;
+    if (!trayAvailable() || pmTrayBlinkSource != 0) return;
     pmTrayAlertVisible = true;
-    gtk_status_icon_set_from_file(pmTrayIcon, pmTrayAlertIcon.c_str());
+    setTrayIconFile(pmTrayAlertIcon);
     pmTrayBlinkSource = g_timeout_add(500, onTrayPMBlink, nullptr);
 }
 
@@ -663,12 +726,15 @@ int main(int argc, char** argv) {
     setGScriptEditorOptions(options);
     applyRemoteControlTheme(options.theme, options.darkmode, options.roundedcorners);
     setRemoteControlSyntaxTheme(options.syntaxtheme);
-    GtkStatusIcon* trayIcon = gtk_status_icon_new_from_file((applicationDirectory / "images" / "rcicon.png").string().c_str());
-    pmTrayIcon = trayIcon;
     pmTrayNormalIcon = (applicationDirectory / "images" / "rcicon.png").string();
     pmTrayAlertIcon = (applicationDirectory / "images" / "pmicon_tray.png").string();
-    gtk_status_icon_set_tooltip_text(trayIcon, "Remote Control");
-    gtk_status_icon_set_visible(trayIcon, true);
+    const bool trayNotifierStarted = RC::StatusNotifier::start(pmTrayNormalIcon, "Remote Control", {onTrayNotifierActivate, trayNotifierMenu, onTrayNotifierMenu});
+    GtkStatusIcon* trayIcon = trayNotifierStarted ? nullptr : gtk_status_icon_new_from_file(pmTrayNormalIcon.c_str());
+    pmTrayIcon = trayIcon;
+    if (trayIcon != nullptr) {
+        gtk_status_icon_set_tooltip_text(trayIcon, "Remote Control");
+        gtk_status_icon_set_visible(trayIcon, true);
+    }
     trayMenu = gtk_menu_new();
     GtkWidget* openTrayItem = gtk_menu_item_new_with_label("Open");
     trayServerListItem = gtk_menu_item_new_with_label("Server List");
@@ -683,9 +749,11 @@ int main(int argc, char** argv) {
     g_signal_connect(traySignOutItem, "activate", G_CALLBACK(onTraySignOut), nullptr);
     g_signal_connect(quitTrayItem, "activate", G_CALLBACK(onTrayQuit), nullptr);
     gtk_widget_show_all(trayMenu);
-    g_signal_connect(trayIcon, "button-press-event", G_CALLBACK(onTrayButtonPress), nullptr);
-    g_signal_connect(trayIcon, "activate", G_CALLBACK(onTrayActivate), nullptr);
-    g_signal_connect(trayIcon, "popup-menu", G_CALLBACK(onTrayPopup), nullptr);
+    if (trayIcon != nullptr) {
+        g_signal_connect(trayIcon, "button-press-event", G_CALLBACK(onTrayButtonPress), nullptr);
+        g_signal_connect(trayIcon, "activate", G_CALLBACK(onTrayActivate), nullptr);
+        g_signal_connect(trayIcon, "popup-menu", G_CALLBACK(onTrayPopup), nullptr);
+    }
     TStartFrame* startFrame = nullptr;
     std::vector<std::unique_ptr<TRemoteFrame>> remoteFrames;
     std::function<void()> switchServer;
@@ -798,6 +866,7 @@ int main(int argc, char** argv) {
         gtk_widget_destroy(trayMenu);
         trayMenu = nullptr;
     }
+    RC::StatusNotifier::stop();
     if (trayIcon != nullptr) {
         gtk_status_icon_set_visible(trayIcon, false);
         g_object_unref(trayIcon);
