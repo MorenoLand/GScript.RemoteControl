@@ -91,11 +91,9 @@ inline void applyRemoteControlWindowChrome(GtkWidget* widget) {
         gtk_header_bar_pack_start(GTK_HEADER_BAR(header), titleIcon);
         g_object_set_data(G_OBJECT(header), "remote-control-title-icon", titleIcon);
     }
+    // GTK already keeps a header bar titlebar and its window's title in sync both ways. A notify::title handler of our own here
+    // feeds back into GTK's and, since "notify" restarts instead of recursing, spins forever inside gtk_window_set_title().
     gtk_window_set_titlebar(window, header);
-    g_signal_connect(window, "notify::title", G_CALLBACK(+[](GtkWindow* changedWindow, GParamSpec*, gpointer data) {
-        GtkWidget* changedTitlebar = GTK_WIDGET(data);
-        if (GTK_IS_HEADER_BAR(changedTitlebar)) gtk_header_bar_set_title(GTK_HEADER_BAR(changedTitlebar), gtk_window_get_title(changedWindow));
-    }), header);
 }
 
 inline void setRemoteControlSyntaxTheme(const std::string& theme) {

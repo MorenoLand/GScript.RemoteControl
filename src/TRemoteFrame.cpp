@@ -1416,7 +1416,9 @@ gboolean TRemoteFrame::constrainMentionPopup(gpointer data) {
             gtk_style_context_add_provider(gtk_widget_get_style_context(popup), GTK_STYLE_PROVIDER(popupProvider), GTK_STYLE_PROVIDER_PRIORITY_USER);
             g_object_set_data_full(G_OBJECT(popup), "rc-completion-border-provider", popupProvider, g_object_unref);
             GList* columns = gtk_tree_view_get_columns(GTK_TREE_VIEW(tree));
-            for (GList* column = columns; column != nullptr; column = column->next) gtk_tree_view_remove_column(GTK_TREE_VIEW(tree), GTK_TREE_VIEW_COLUMN(column->data));
+            // Hide GtkEntryCompletion's own column rather than removing it: the completion keeps a pointer to it without a reference and
+            // measures it on every popup resize, so removing it leaves that pointer dangling and the next keystroke crashes.
+            for (GList* column = columns; column != nullptr; column = column->next) gtk_tree_view_column_set_visible(GTK_TREE_VIEW_COLUMN(column->data), FALSE);
             g_list_free(columns);
             GtkTreeViewColumn* column = gtk_tree_view_column_new();
             GtkCellRenderer* iconRenderer = gtk_cell_renderer_pixbuf_new();
