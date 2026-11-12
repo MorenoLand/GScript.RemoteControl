@@ -508,15 +508,11 @@ namespace {
         const std::string bottomRadius = roundedCorners ? "border-bottom-left-radius: 8px; border-bottom-right-radius: 8px; border-top-left-radius: 0; border-top-right-radius: 0;" : "border-radius: 0;";
         const std::string topRadius = roundedCorners ? "border-top-left-radius: 8px; border-top-right-radius: 8px; border-bottom-left-radius: 0; border-bottom-right-radius: 0;" : "border-radius: 0;";
         const std::string decorRadius = roundedCorners ? "border-radius: 8px;" : "border-radius: 0;";
-#ifdef _WIN32
-        const std::string decorMargin = "margin: 0;";
-#else
         // GTK takes the CSD resize border (and room for the shadow) from the decoration margin; at 0 there is nothing to grab.
         const std::string decorMargin = "margin: 12px;";
-#endif
-        const std::string decorCss = " decoration { " + decorMargin + " padding: 0; border: none; background: none; background-image: none; background-color: transparent; " + decorRadius + " box-shadow: " + decorShadowLead(0.45) + "0 0 0 1px rgba(0, 0, 0, 0.2); }"
-            + " decoration:backdrop { " + decorMargin + " padding: 0; border: none; background: none; background-image: none; background-color: transparent; " + decorRadius + " box-shadow: " + decorShadowLead(0.28) + "0 0 0 1px rgba(0, 0, 0, 0.16); }"
-            + " decoration:disabled { " + decorMargin + " padding: 0; border: none; background: none; background-image: none; background-color: transparent; " + decorRadius + " box-shadow: " + decorShadowLead(0.28) + "0 0 0 1px rgba(0, 0, 0, 0.16); }"
+        const std::string decorCss = " decoration { " + decorMargin + " padding: 0; border: none; background: none; background-image: none; background-color: transparent; " + decorRadius + " box-shadow: " + decorShadowLead(0.80) + "0 0 0 1px rgba(0, 0, 0, 0.2); }"
+            + " decoration:backdrop { " + decorMargin + " padding: 0; border: none; background: none; background-image: none; background-color: transparent; " + decorRadius + " box-shadow: " + decorShadowLead(0.55) + "0 0 0 1px rgba(0, 0, 0, 0.16); }"
+            + " decoration:disabled { " + decorMargin + " padding: 0; border: none; background: none; background-image: none; background-color: transparent; " + decorRadius + " box-shadow: " + decorShadowLead(0.55) + "0 0 0 1px rgba(0, 0, 0, 0.16); }"
             + " window.maximized decoration, window.fullscreen decoration, window.tiled decoration { margin: 0; }"
             + " window.maximized, window.maximized decoration, window.maximized headerbar, window.maximized .titlebar { border-radius: 0; box-shadow: none; }";
         if (!enabled) {
