@@ -85,7 +85,7 @@ namespace {
     constexpr std::size_t bulkInsertLines = 128;
     constexpr std::size_t largeEditorBytes = 1024 * 1024;
     constexpr gint completionPopupMinWidth = 260;
-    constexpr gint completionPopupMaxWidth = 300;
+    constexpr gint completionPopupMaxWidth = 480;
     constexpr std::size_t completionMaxProposals = 16;
     constexpr unsigned int completionPopupClampAttempts = 8;
     std::unordered_map<std::string, GdkPixbuf*> completionIconCache;
@@ -945,7 +945,7 @@ namespace {
         }
         signature += ')';
         if (!definition.params.empty()) definition.completionLabel += ')';
-        if (definition.completionLabel.size() > 52) definition.completionLabel = definition.completionLabel.substr(0, 49) + "...";
+        if (definition.completionLabel.size() > 84) definition.completionLabel = definition.completionLabel.substr(0, 81) + "...";
         definition.completionInfo.clear();
         if (!definition.type.empty()) definition.completionInfo += definition.type;
         if (!definition.scope.empty()) definition.completionInfo += (definition.completionInfo.empty() ? "" : "  ") + upperCase(definition.scope);
@@ -954,9 +954,11 @@ namespace {
             for (std::size_t index = 0; index < definition.params.size(); ++index) { if (index != 0) definition.completionInfo += ", "; definition.completionInfo += definition.params[index]; }
         }
         if (!definition.returns.empty()) definition.completionInfo += (definition.completionInfo.empty() ? "" : "\n") + std::string("Returns: ") + definition.returns;
+        std::string detail = definition.description;
+        if (detail.rfind(definition.name + "(", 0) == 0) { const std::size_t dash = detail.find(" - "); if (dash != std::string::npos) detail.erase(0, dash + 3); }
         definition.completionSummary = signature;
-        if (!definition.returns.empty()) definition.completionSummary += " - returns " + definition.returns;
-        if (!definition.description.empty()) definition.completionSummary += " - " + definition.description;
+        if (!definition.returns.empty() && lowerText(detail).find("return") == std::string::npos) definition.completionSummary += "  \xe2\x86\x92  " + definition.returns;
+        if (!detail.empty()) definition.completionSummary += "\n" + detail;
         const std::string scope = lowerText(definition.scope);
         definition.completionScope = scope == "script" ? "GLOBAL" : scope == "client" ? "CLIENTSIDE" : scope == "server" ? "SERVERSIDE" : upperCase(definition.scope);
     }
@@ -1365,9 +1367,13 @@ namespace {
         gtk_style_context_add_class(gtk_widget_get_style_context(text), "remote-completion-preview-text");
         gtk_label_set_xalign(GTK_LABEL(kind), 0.0F);
         gtk_label_set_xalign(GTK_LABEL(text), 0.0F);
+        gtk_label_set_line_wrap(GTK_LABEL(text), true);
+        gtk_label_set_line_wrap_mode(GTK_LABEL(text), PANGO_WRAP_WORD_CHAR);
         gtk_label_set_ellipsize(GTK_LABEL(text), PANGO_ELLIPSIZE_END);
-        gtk_label_set_single_line_mode(GTK_LABEL(text), true);
-        gtk_label_set_max_width_chars(GTK_LABEL(text), 30);
+        gtk_label_set_lines(GTK_LABEL(text), 4);
+        gtk_label_set_max_width_chars(GTK_LABEL(text), 64);
+        gtk_widget_set_valign(kind, GTK_ALIGN_START);
+        gtk_widget_set_valign(text, GTK_ALIGN_START);
         gtk_widget_set_size_request(preview, completionPopupMaxWidth - 16, -1);
         gtk_widget_set_hexpand(preview, true);
         gtk_widget_set_hexpand(text, true);
@@ -1418,7 +1424,7 @@ namespace {
                 for (GList* cell = cells; cell != nullptr; cell = cell->next) {
                     if (!GTK_IS_CELL_RENDERER_TEXT(cell->data)) continue;
                     textRenderers.push_back({column, GTK_CELL_RENDERER(cell->data)});
-                    g_object_set(cell->data, "ellipsize", PANGO_ELLIPSIZE_END, "ellipsize-set", TRUE, "max-width-chars", 30, nullptr);
+                    g_object_set(cell->data, "ellipsize", PANGO_ELLIPSIZE_END, "ellipsize-set", TRUE, "max-width-chars", 52, nullptr);
                 }
                 g_list_free(cells);
             }
@@ -1429,7 +1435,7 @@ namespace {
                 scopeRenderer = textRenderers.back().renderer;
                 if (g_object_get_data(G_OBJECT(scopeRenderer), "remote-completion-scope-renderer") == nullptr) {
                     gtk_tree_view_column_set_cell_data_func(scopeColumn, scopeRenderer, renderCompletionScope, nullptr, nullptr);
-                    gtk_cell_renderer_set_fixed_size(scopeRenderer, 72, -1);
+                    gtk_cell_renderer_set_fixed_size(scopeRenderer, 84, -1);
                     g_object_set(scopeRenderer, "xalign", 1.0F, "ellipsize", PANGO_ELLIPSIZE_END, "ellipsize-set", TRUE, "max-width-chars", 14, nullptr);
                     g_object_set_data(G_OBJECT(scopeRenderer), "remote-completion-scope-renderer", GINT_TO_POINTER(1));
                 }
@@ -1440,7 +1446,7 @@ namespace {
                 for (const TextRenderer& entry : textRenderers) if (entry.column == column) ++textCount;
                 const bool scopeOnly = scopeColumn == column && textCount == 1;
                 gtk_tree_view_column_set_sizing(column, GTK_TREE_VIEW_COLUMN_FIXED);
-                gtk_tree_view_column_set_fixed_width(column, textCount == 0 ? 20 : (scopeOnly ? 70 : (scopeColumn == column ? 70 : 190)));
+                gtk_tree_view_column_set_fixed_width(column, textCount == 0 ? 20 : (scopeOnly ? 90 : (scopeColumn == column ? 90 : completionPopupMaxWidth - 20 - 20 - 90)));
                 gtk_tree_view_column_set_expand(column, false);
             }
             g_list_free(columns);
@@ -2336,7 +2342,7 @@ void configureGScriptEditor(GtkWidget* editor, bool script) {
         GtkWidget* signatureLabel = gtk_label_new(nullptr);
         gtk_label_set_line_wrap(GTK_LABEL(signatureLabel), true);
         gtk_label_set_line_wrap_mode(GTK_LABEL(signatureLabel), PANGO_WRAP_WORD_CHAR);
-        gtk_label_set_max_width_chars(GTK_LABEL(signatureLabel), 38);
+        gtk_label_set_max_width_chars(GTK_LABEL(signatureLabel), 60);
         gtk_widget_set_size_request(signatureLabel, completionPopupMaxWidth - 16, -1);
         gtk_widget_set_hexpand(signatureLabel, FALSE);
         gtk_label_set_xalign(GTK_LABEL(signatureLabel), 0.0F);
