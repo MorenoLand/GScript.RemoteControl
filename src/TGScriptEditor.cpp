@@ -67,7 +67,7 @@ namespace {
     }
     typedef struct _RemoteCompletionProvider { GObject parent; GtkWidget* editor; } RemoteCompletionProvider;
     typedef struct _RemoteCompletionProviderClass { GObjectClass parentClass; } RemoteCompletionProviderClass;
-    struct EditorCompletionState { GtkWidget* editor; RemoteCompletionProvider* provider; GtkWidget* signaturePopover; GtkWidget* signatureLabel; void* connection; bool connectionDetached = false; bool completionArmed = false; bool restoreSignature = false; guint restoreTimer = 0; guint signatureTimer = 0; guint symbolsTimer = 0; unsigned int symbolsRequest = 0; bool symbolsRunning = false; std::vector<ApiDefinition> localDefinitions; std::vector<std::string> localIdentifiers; };
+    struct EditorCompletionState { GtkWidget* editor; RemoteCompletionProvider* provider; GtkWidget* signaturePopover; GtkWidget* signatureLabel; void* connection; bool connectionDetached = false; bool completionArmed = false; bool restoreSignature = false; guint restoreTimer = 0; guint signatureTimer = 0; guint symbolsTimer = 0; unsigned int symbolsRequest = 0; bool symbolsRunning = false; std::vector<ApiDefinition> localDefinitions; std::vector<std::string> localIdentifiers; GtkWidget* hoverPopover = nullptr; GtkWidget* hoverLabel = nullptr; guint hoverTimer = 0; gint hoverOffset = -1; gint hoverIterOffset = 0; };
     std::vector<EditorCompletionState> editorCompletionStates;
     std::unordered_map<void*, std::unordered_map<int, std::string>> playerCommunityNames;
     struct EditorSelection { GtkTextMark* anchor; GtkTextMark* caret; };
@@ -233,9 +233,9 @@ namespace {
         scheduleBulkInsertResume(state);
     }
 
-    bool showDiagnosticTooltip(GtkWidget* editor, const GtkTextIter& iter, GtkTooltip* tooltip) {
+    std::string diagnosticMessagesAt(GtkWidget* editor, const GtkTextIter& iter) {
         EditorDiagnosticsState* state = diagnosticsState(editor);
-        if (state == nullptr || state->diagnostics.empty()) return false;
+        if (state == nullptr || state->diagnostics.empty()) return std::string();
         const gint offset = gtk_text_iter_get_offset(&iter);
         std::string messages;
         for (const GS2Diagnostic& diagnostic : state->diagnostics) {
@@ -246,9 +246,7 @@ namespace {
             messages += diagnostic.severity == GS2DiagnosticSeverity::Error ? "Script analysis — Error: " : diagnostic.severity == GS2DiagnosticSeverity::Warning ? "Script analysis — Warning: " : "Script analysis — Info: ";
             messages += diagnostic.message;
         }
-        if (messages.empty()) return false;
-        gtk_tooltip_set_text(tooltip, messages.c_str());
-        return true;
+        return messages;
     }
 
     gboolean requeryEditorTooltip(gpointer data) {
@@ -1690,25 +1688,122 @@ namespace {
         return result;
     }
 
-    gboolean editorQueryTooltip(GtkWidget* editor, gint x, gint y, gboolean, GtkTooltip* tooltip, gpointer) {
+    bool hoverWordRange(const GtkTextIter& iter, GtkTextIter& start, GtkTextIter& end) {
+        start = iter;
+        end = iter;
+        if (!identifierCharacter(gtk_text_iter_get_char(&iter))) {
+            if (gtk_text_iter_ends_line(&end)) return false;
+            gtk_text_iter_forward_char(&end);
+            return true;
+        }
+        while (!gtk_text_iter_starts_line(&start)) {
+            GtkTextIter previous = start;
+            if (!gtk_text_iter_backward_char(&previous) || !identifierCharacter(gtk_text_iter_get_char(&previous))) break;
+            start = previous;
+        }
+        while (!gtk_text_iter_ends_line(&end) && identifierCharacter(gtk_text_iter_get_char(&end))) gtk_text_iter_forward_char(&end);
+        return true;
+    }
+
+    EditorCompletionState* completionStateFor(GtkWidget* editor) {
+        const auto state = std::find_if(editorCompletionStates.begin(), editorCompletionStates.end(), [editor](const EditorCompletionState& value) { return value.editor == editor; });
+        return state == editorCompletionStates.end() ? nullptr : &*state;
+    }
+
+    void hideEditorHover(EditorCompletionState& state) {
+        if (state.hoverTimer != 0) { g_source_remove(state.hoverTimer); state.hoverTimer = 0; }
+        if (state.hoverPopover != nullptr) gtk_widget_hide(state.hoverPopover);
+        state.hoverOffset = -1;
+    }
+
+    std::string hoverMarkup(GtkWidget* editor, const GtkTextIter& iter, const GtkTextIter& wordStart, const GtkTextIter& wordEnd) {
+        const auto escape = [](const std::string& value) {
+            gchar* text = g_markup_escape_text(value.c_str(), -1);
+            std::string result = text == nullptr ? "" : text;
+            g_free(text);
+            return result;
+        };
+        std::string markup;
+        const std::string messages = diagnosticMessagesAt(editor, iter);
+        if (!messages.empty()) markup = "<b>" + escape(messages) + "</b>";
+        gchar* wordText = gtk_text_iter_get_text(&wordStart, &wordEnd);
+        const std::string word = wordText == nullptr ? "" : wordText;
+        g_free(wordText);
+        ApiDefinition definition;
+        if (!word.empty() && findEditorDefinition(editor, word, definition)) {
+            if (!markup.empty()) markup += "\n\n";
+            markup += "<b>" + escape(definitionSignature(definition)) + "</b>\n" + escape(definitionInfo(definition));
+        }
+        return markup;
+    }
+
+    gboolean showEditorHover(gpointer data) {
+        GtkWidget* editor = GTK_WIDGET(data);
+        EditorCompletionState* state = completionStateFor(editor);
+        if (state == nullptr) return G_SOURCE_REMOVE;
+        state->hoverTimer = 0;
+        if (state->hoverOffset < 0) return G_SOURCE_REMOVE;
+        GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(editor));
+        GtkTextIter iter;
+        gtk_text_buffer_get_iter_at_offset(buffer, &iter, state->hoverIterOffset);
+        GtkTextIter wordStart;
+        GtkTextIter wordEnd;
+        if (!hoverWordRange(iter, wordStart, wordEnd)) return G_SOURCE_REMOVE;
+        const std::string markup = hoverMarkup(editor, iter, wordStart, wordEnd);
+        if (markup.empty()) return G_SOURCE_REMOVE;
+        if (state->hoverPopover == nullptr) {
+            state->hoverPopover = gtk_popover_new(editor);
+            gtk_popover_set_modal(GTK_POPOVER(state->hoverPopover), false);
+            gtk_popover_set_constrain_to(GTK_POPOVER(state->hoverPopover), GTK_POPOVER_CONSTRAINT_WINDOW);
+            state->hoverLabel = gtk_label_new(nullptr);
+            gtk_label_set_line_wrap(GTK_LABEL(state->hoverLabel), true);
+            gtk_label_set_line_wrap_mode(GTK_LABEL(state->hoverLabel), PANGO_WRAP_WORD_CHAR);
+            gtk_label_set_max_width_chars(GTK_LABEL(state->hoverLabel), 64);
+            gtk_label_set_xalign(GTK_LABEL(state->hoverLabel), 0.0F);
+            gtk_label_set_selectable(GTK_LABEL(state->hoverLabel), false);
+            gtk_widget_set_margin_start(state->hoverLabel, 8);
+            gtk_widget_set_margin_end(state->hoverLabel, 8);
+            gtk_widget_set_margin_top(state->hoverLabel, 6);
+            gtk_widget_set_margin_bottom(state->hoverLabel, 6);
+            gtk_container_add(GTK_CONTAINER(state->hoverPopover), state->hoverLabel);
+        }
+        gtk_label_set_markup(GTK_LABEL(state->hoverLabel), markup.c_str());
+        GdkRectangle rect;
+        GdkRectangle endRect;
+        gtk_text_view_get_iter_location(GTK_TEXT_VIEW(editor), &wordStart, &rect);
+        gtk_text_view_get_iter_location(GTK_TEXT_VIEW(editor), &wordEnd, &endRect);
+        rect.width = endRect.y == rect.y ? std::max(1, endRect.x - rect.x) : std::max(1, rect.width);
+        gtk_text_view_buffer_to_window_coords(GTK_TEXT_VIEW(editor), GTK_TEXT_WINDOW_WIDGET, rect.x, rect.y, &rect.x, &rect.y);
+        gtk_popover_set_pointing_to(GTK_POPOVER(state->hoverPopover), &rect);
+        gtk_popover_set_position(GTK_POPOVER(state->hoverPopover), GTK_POS_TOP);
+        gtk_widget_show_all(state->hoverPopover);
+        return G_SOURCE_REMOVE;
+    }
+
+    gboolean onEditorHoverMotion(GtkWidget* editor, GdkEventMotion* event, gpointer) {
+        EditorCompletionState* state = completionStateFor(editor);
+        if (state == nullptr) return FALSE;
+        if ((event->state & (GDK_BUTTON1_MASK | GDK_BUTTON2_MASK | GDK_BUTTON3_MASK)) != 0 || event->window != gtk_text_view_get_window(GTK_TEXT_VIEW(editor), GTK_TEXT_WINDOW_TEXT)) { hideEditorHover(*state); return FALSE; }
         gint bufferX = 0;
         gint bufferY = 0;
-        gtk_text_view_window_to_buffer_coords(GTK_TEXT_VIEW(editor), GTK_TEXT_WINDOW_WIDGET, x, y, &bufferX, &bufferY);
+        gtk_text_view_window_to_buffer_coords(GTK_TEXT_VIEW(editor), GTK_TEXT_WINDOW_TEXT, static_cast<gint>(event->x), static_cast<gint>(event->y), &bufferX, &bufferY);
         GtkTextIter iter;
-        gtk_text_view_get_iter_at_location(GTK_TEXT_VIEW(editor), &iter, bufferX, bufferY);
-        if (showDiagnosticTooltip(editor, iter, tooltip)) return true;
-        ApiDefinition definition;
-        if (!findEditorDefinition(editor, wordAtIter(iter), definition)) return false;
-        const std::string signature = definitionSignature(definition);
-        const std::string info = definitionInfo(definition);
-        gchar* escapedSignature = g_markup_escape_text(signature.c_str(), -1);
-        gchar* escapedInfo = g_markup_escape_text(info.c_str(), -1);
-        gchar* markup = g_strdup_printf("<b>%s</b>\n%s", escapedSignature, escapedInfo == nullptr ? "" : escapedInfo);
-        gtk_tooltip_set_markup(tooltip, markup);
-        g_free(markup);
-        g_free(escapedSignature);
-        g_free(escapedInfo);
-        return true;
+        GtkTextIter wordStart;
+        GtkTextIter wordEnd;
+        if (!gtk_text_view_get_iter_at_position(GTK_TEXT_VIEW(editor), &iter, nullptr, bufferX, bufferY) || !hoverWordRange(iter, wordStart, wordEnd)) { hideEditorHover(*state); return FALSE; }
+        const gint offset = gtk_text_iter_get_offset(&wordStart);
+        if (offset == state->hoverOffset) return FALSE;
+        hideEditorHover(*state);
+        state->hoverOffset = offset;
+        state->hoverIterOffset = gtk_text_iter_get_offset(&iter);
+        state->hoverTimer = g_timeout_add(350, showEditorHover, editor);
+        return FALSE;
+    }
+
+    gboolean onEditorHoverLeave(GtkWidget* editor, GdkEventCrossing* event, gpointer) {
+        EditorCompletionState* state = completionStateFor(editor);
+        if (state != nullptr && event->detail != GDK_NOTIFY_INFERIOR) hideEditorHover(*state);
+        return FALSE;
     }
 
     gchar* remoteCompletionProviderGetName(GtkSourceCompletionProvider*) { return g_strdup(""); }
@@ -2365,6 +2460,8 @@ void configureGScriptEditor(GtkWidget* editor, bool script) {
                 if (state->restoreTimer != 0) g_source_remove(state->restoreTimer);
                 if (state->signatureTimer != 0) g_source_remove(state->signatureTimer);
                 if (state->symbolsTimer != 0) g_source_remove(state->symbolsTimer);
+                if (state->hoverTimer != 0) g_source_remove(state->hoverTimer);
+                if (state->hoverPopover != nullptr) gtk_widget_destroy(state->hoverPopover);
                 GtkSourceCompletion* completion = gtk_source_view_get_completion(GTK_SOURCE_VIEW(widget));
                 gtk_source_completion_remove_provider(completion, GTK_SOURCE_COMPLETION_PROVIDER(state->provider), nullptr);
                 gtk_widget_destroy(state->signaturePopover);
@@ -2401,8 +2498,13 @@ void configureGScriptEditor(GtkWidget* editor, bool script) {
     g_object_set(completion, "auto-complete-delay", 180, "show-headers", FALSE, nullptr);
     if (lspEnabled && script) setCompletionProvider(editor, true);
     scheduleCompletionIconWarmup();
-    gtk_widget_set_has_tooltip(editor, true);
-    g_signal_connect(editor, "query-tooltip", G_CALLBACK(editorQueryTooltip), nullptr);
+    gtk_widget_add_events(editor, GDK_POINTER_MOTION_MASK | GDK_LEAVE_NOTIFY_MASK);
+    g_signal_connect(editor, "motion-notify-event", G_CALLBACK(onEditorHoverMotion), nullptr);
+    g_signal_connect(editor, "leave-notify-event", G_CALLBACK(onEditorHoverLeave), nullptr);
+    g_signal_connect(editor, "button-press-event", G_CALLBACK(+[](GtkWidget* widget, GdkEventButton*, gpointer) -> gboolean {
+        if (EditorCompletionState* state = completionStateFor(widget)) hideEditorHover(*state);
+        return FALSE;
+    }), nullptr);
     GtkTextBuffer* completionBuffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(editor));
     g_signal_connect(completionBuffer, "changed", G_CALLBACK(+[](GtkTextBuffer*, gpointer data) {
         scheduleEditorSymbols(GTK_WIDGET(data));
@@ -2419,6 +2521,7 @@ void configureGScriptEditor(GtkWidget* editor, bool script) {
         const bool modified = (event->state & (GDK_CONTROL_MASK | GDK_MOD1_MASK | GDK_META_MASK | GDK_SUPER_MASK)) != 0;
         if (state != editorCompletionStates.end() && ((!modified && g_unichar_isprint(gdk_keyval_to_unicode(event->keyval))) || ((event->state & GDK_CONTROL_MASK) != 0 && event->keyval == GDK_KEY_space))) state->completionArmed = true;
         preserveEditorTooltip(widget);
+        if (state != editorCompletionStates.end()) hideEditorHover(*state);
         if ((event->state & GDK_CONTROL_MASK) == 0 || event->keyval != GDK_KEY_l) return static_cast<gboolean>(FALSE);
         GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(widget));
         GtkTextIter start;
@@ -2431,6 +2534,7 @@ void configureGScriptEditor(GtkWidget* editor, bool script) {
     }), nullptr);
     g_idle_add(watchEditorWindowLater, g_object_ref(editor));
     g_signal_connect(editor, "scroll-event", G_CALLBACK(+[](GtkWidget* widget, GdkEventScroll* event, gpointer) {
+        if (EditorCompletionState* state = completionStateFor(widget)) hideEditorHover(*state);
         if ((event->state & GDK_CONTROL_MASK) == 0) return static_cast<gboolean>(FALSE);
         int change = 0;
         if (event->direction == GDK_SCROLL_UP) change = 1;
