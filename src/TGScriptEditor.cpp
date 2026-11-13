@@ -1710,6 +1710,19 @@ namespace {
         return state == editorCompletionStates.end() ? nullptr : &*state;
     }
 
+    bool hoverKeyDismisses(const GdkEventKey* event) {
+        if ((event->state & (GDK_MOD1_MASK | GDK_SUPER_MASK | GDK_META_MASK)) != 0) return false;
+        switch (event->keyval) {
+        case GDK_KEY_Escape: case GDK_KEY_BackSpace: case GDK_KEY_Delete: case GDK_KEY_KP_Delete: case GDK_KEY_Return: case GDK_KEY_KP_Enter: case GDK_KEY_Tab: case GDK_KEY_ISO_Left_Tab:
+        case GDK_KEY_Left: case GDK_KEY_Right: case GDK_KEY_Up: case GDK_KEY_Down: case GDK_KEY_Home: case GDK_KEY_End: case GDK_KEY_Page_Up: case GDK_KEY_Page_Down:
+        case GDK_KEY_KP_Left: case GDK_KEY_KP_Right: case GDK_KEY_KP_Up: case GDK_KEY_KP_Down: case GDK_KEY_KP_Home: case GDK_KEY_KP_End: case GDK_KEY_KP_Page_Up: case GDK_KEY_KP_Page_Down:
+            return true;
+        default: break;
+        }
+        if ((event->state & GDK_CONTROL_MASK) != 0) return event->keyval == GDK_KEY_v || event->keyval == GDK_KEY_V || event->keyval == GDK_KEY_x || event->keyval == GDK_KEY_X || event->keyval == GDK_KEY_z || event->keyval == GDK_KEY_Z || event->keyval == GDK_KEY_y || event->keyval == GDK_KEY_Y;
+        return gdk_keyval_to_unicode(event->keyval) != 0;
+    }
+
     void hideEditorHover(EditorCompletionState& state) {
         if (state.hoverTimer != 0) { g_source_remove(state.hoverTimer); state.hoverTimer = 0; }
         if (state.hoverPopover != nullptr) gtk_widget_hide(state.hoverPopover);
@@ -1803,7 +1816,7 @@ namespace {
 
     gboolean onEditorHoverLeave(GtkWidget* editor, GdkEventCrossing* event, gpointer) {
         EditorCompletionState* state = completionStateFor(editor);
-        if (state != nullptr && event->detail != GDK_NOTIFY_INFERIOR) hideEditorHover(*state);
+        if (state != nullptr && event->detail != GDK_NOTIFY_INFERIOR && event->mode == GDK_CROSSING_NORMAL) hideEditorHover(*state);
         return FALSE;
     }
 
@@ -2523,7 +2536,7 @@ void configureGScriptEditor(GtkWidget* editor, bool script) {
         const bool modified = (event->state & (GDK_CONTROL_MASK | GDK_MOD1_MASK | GDK_META_MASK | GDK_SUPER_MASK)) != 0;
         if (state != editorCompletionStates.end() && ((!modified && g_unichar_isprint(gdk_keyval_to_unicode(event->keyval))) || ((event->state & GDK_CONTROL_MASK) != 0 && event->keyval == GDK_KEY_space))) state->completionArmed = true;
         preserveEditorTooltip(widget);
-        if (state != editorCompletionStates.end()) hideEditorHover(*state);
+        if (state != editorCompletionStates.end() && hoverKeyDismisses(event)) hideEditorHover(*state);
         if ((event->state & GDK_CONTROL_MASK) == 0 || event->keyval != GDK_KEY_l) return static_cast<gboolean>(FALSE);
         GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(widget));
         GtkTextIter start;
