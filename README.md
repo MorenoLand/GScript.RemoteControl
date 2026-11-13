@@ -1,5 +1,3 @@
-# GScript.RemoteControl
-
 GScript.RemoteControl is a C++20/GTK3 Remote Control client using [GRClib](https://github.com/MorenoLand/GScript.GRClib) for Graal server protocol support. It supports independent concurrent server sessions, script and server-text editing, file browsing, Git backups, and locally packaged extensions.
 
 The original RemoteControl was created by Stefan Knorr. This project is independent and unaffiliated.

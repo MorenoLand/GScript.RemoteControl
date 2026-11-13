@@ -1,5 +1,3 @@
-# Remote Control 3 Documentation
-
 Welcome to the Remote Control 3 (RC3) documentation directory.
 
 ## Guides & References
