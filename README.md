@@ -1,5 +1,3 @@
-# GScript.RemoteControl
-
 A GTK3 recreation of Remote Control, rebuilt in C++20 for Windows, Linux, and macOS with GRClib protocol integration.
 
 The original RemoteControl was created by Stefan Knorr. This project is independent and unaffiliated.
