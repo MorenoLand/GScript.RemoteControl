@@ -767,6 +767,26 @@ namespace {
         return "";
     }
 
+    bool httpResponseComplete(const std::string& response, std::size_t bodyStart, bool chunked, std::size_t contentLength) {
+        if (!chunked) return contentLength != std::string::npos && response.size() - bodyStart >= contentLength;
+        std::size_t position = bodyStart;
+        while (position < response.size()) {
+            const std::size_t lineEnd = response.find("\r\n", position);
+            if (lineEnd == std::string::npos) return false;
+            std::size_t length = 0;
+            for (std::size_t index = position; index < lineEnd && response[index] != ';'; ++index) {
+                const char character = response[index];
+                if (character >= '0' && character <= '9') length = length * 16 + static_cast<std::size_t>(character - '0');
+                else if (character >= 'a' && character <= 'f') length = length * 16 + static_cast<std::size_t>(character - 'a' + 10);
+                else if (character >= 'A' && character <= 'F') length = length * 16 + static_cast<std::size_t>(character - 'A' + 10);
+                else return false;
+            }
+            if (length == 0) return response.find("\r\n", lineEnd + 2) != std::string::npos;
+            position = lineEnd + 2 + length + 2;
+        }
+        return false;
+    }
+
     constexpr std::size_t maxCompletionSourceBytes = 8 * 1024 * 1024;
     constexpr int completionSourceTimeoutSeconds = 15;
     constexpr unsigned int completionSourcePollMilliseconds = 100;
@@ -818,39 +838,53 @@ namespace {
         SSL* ssl = nullptr;
         if (secure) {
             BIO_get_ssl(connection, &ssl);
-            if (ssl == nullptr || SSL_set_tlsext_host_name(ssl, host) != 1) return {};
+            if (ssl == nullptr || SSL_set_tlsext_host_name(ssl, host) != 1 || SSL_set1_host(ssl, host) != 1) return {};
         }
         BIO_set_nbio(connection, 1);
         if (BIO_do_connect_retry(connection, completionSourceTimeoutSeconds, completionSourcePollMilliseconds) != 1 || (secure && SSL_get_verify_result(ssl) != X509_V_OK)) return {};
-        const std::string request = "GET " + requestPath + " HTTP/1.1\r\nHost: " + host + "\r\nUser-Agent: RemoteControl/1.0\r\nAccept: application/json\r\nConnection: close\r\n\r\n";
+        const std::string request = "GET " + requestPath + " HTTP/1.1\r\nHost: " + host + "\r\nUser-Agent: RemoteControl/1.0\r\nAccept: application/json\r\nAccept-Encoding: identity\r\nConnection: close\r\n\r\n";
         const gint64 deadline = g_get_monotonic_time() + static_cast<gint64>(completionSourceTimeoutSeconds) * G_USEC_PER_SEC;
+        const auto pause = [&connection] { BIO_wait(connection, static_cast<time_t>(g_get_real_time() / G_USEC_PER_SEC) + 1, completionSourcePollMilliseconds); ERR_clear_error(); };
         std::size_t written = 0;
         while (written < request.size()) {
             const int count = BIO_write(connection, request.data() + written, static_cast<int>(request.size() - written));
             if (count > 0) { written += static_cast<std::size_t>(count); continue; }
             if (!BIO_should_retry(connection) || g_get_monotonic_time() >= deadline) return {};
-            BIO_wait(connection, 1, completionSourcePollMilliseconds);
+            pause();
         }
         std::string response;
         char buffer[8192];
+        std::size_t bodyStart = std::string::npos;
+        bool chunked = false;
+        std::size_t contentLength = std::string::npos;
         for (;;) {
             const int count = BIO_read(connection, buffer, sizeof(buffer));
-            if (count == 0 && !BIO_should_retry(connection)) break;
-            if (count <= 0) {
-                if (!BIO_should_retry(connection) || g_get_monotonic_time() >= deadline) return {};
-                BIO_wait(connection, 1, completionSourcePollMilliseconds);
+            if (count > 0) {
+                const std::size_t chunkSize = static_cast<std::size_t>(count);
+                if (chunkSize > maxCompletionSourceBytes || response.size() > maxCompletionSourceBytes - chunkSize) return {};
+                response.append(buffer, chunkSize);
+                if (bodyStart == std::string::npos) {
+                    const std::size_t headerEnd = response.find("\r\n\r\n");
+                    if (headerEnd != std::string::npos) {
+                        bodyStart = headerEnd + 4;
+                        std::string headerText = response.substr(0, headerEnd);
+                        std::transform(headerText.begin(), headerText.end(), headerText.begin(), [](unsigned char character) { return static_cast<char>(std::tolower(character)); });
+                        if (headerText.rfind("http/1.1 200", 0) != 0 && headerText.rfind("http/1.0 200", 0) != 0) return {};
+                        chunked = headerText.find("transfer-encoding: chunked") != std::string::npos;
+                        const std::size_t lengthField = headerText.find("content-length:");
+                        if (lengthField != std::string::npos) contentLength = static_cast<std::size_t>(std::strtoull(headerText.c_str() + lengthField + 15, nullptr, 10));
+                    }
+                }
+                if (bodyStart != std::string::npos && httpResponseComplete(response, bodyStart, chunked, contentLength)) break;
                 continue;
             }
-            const std::size_t chunkSize = static_cast<std::size_t>(count);
-            if (chunkSize > maxCompletionSourceBytes || response.size() > maxCompletionSourceBytes - chunkSize) return {};
-            response.append(buffer, chunkSize);
+            if (!BIO_should_retry(connection)) break;
+            if (g_get_monotonic_time() >= deadline) return {};
+            pause();
         }
-        const std::size_t body = response.find("\r\n\r\n");
-        if (body == std::string::npos) return {};
-        const std::string payload = response.substr(body + 4);
-        std::string headers = response.substr(0, body);
-        std::transform(headers.begin(), headers.end(), headers.begin(), [](unsigned char character) { return static_cast<char>(std::tolower(character)); });
-        const std::string json = headers.find("transfer-encoding: chunked") == std::string::npos ? payload : decodeChunkedBody(payload);
+        if (bodyStart == std::string::npos) return {};
+        const std::string payload = response.substr(bodyStart);
+        const std::string json = chunked ? decodeChunkedBody(payload) : payload;
         const auto result = completionDefinitions(json);
         if (!result.empty()) cacheCompletionDefinitions(json);
         return result;
