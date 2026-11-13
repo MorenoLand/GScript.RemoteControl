@@ -1,5 +1,3 @@
-# Remote Control 3 Extension Development Guide
-
 Remote Control 3 (RC3) supports external extensions that run as independent child processes communicating with the client over standard input and output (`stdio`). Extensions can add custom editor action buttons, register background utilities, stream messages to dedicated tabs, and integrate external tools (such as linters, formatters, code generators, and diagnostic analyzers) directly into the Remote Control interface.
 
 ---
