@@ -1,3 +1,4 @@
+#include "TFilesystem.h"
 #include "TSyncManager.h"
 #include "TEncryption.h"
 #include "TTheme.h"
@@ -660,11 +661,11 @@ void TSyncManager::syncEntry(Entry& entry, const std::string& script) {
         }
         document += "NPCSCRIPT\n" + script + "\nNPCSCRIPTEND\n";
     }
-    if (entry.serverModified > 0 && std::filesystem::exists(absolutePath(entry))) applyModifiedTime(absolutePath(entry), entry.serverModified);
-    if (entry.serverHash == hash && entry.localHash == contentHash(document) && std::filesystem::exists(absolutePath(entry))) return;
+    if (entry.serverModified > 0 && rcExists(absolutePath(entry))) applyModifiedTime(absolutePath(entry), entry.serverModified);
+    if (entry.serverHash == hash && entry.localHash == contentHash(document) && rcExists(absolutePath(entry))) return;
     const std::string local = readFile(absolutePath(entry));
     const std::size_t localHash = contentHash(local);
-    if (std::filesystem::exists(absolutePath(entry)) && entry.localHash != 0 && localHash != entry.localHash) return;
+    if (rcExists(absolutePath(entry)) && entry.localHash != 0 && localHash != entry.localHash) return;
     if (local != document && writeFile(absolutePath(entry), document)) {
         ++downloadedChanges;
         logEvent("Downloaded " + entry.relativePath.generic_string());
@@ -719,7 +720,7 @@ void TSyncManager::applyScriptMetadata(const std::string& folder, const void* ra
             if (!matches) continue;
             entry.serverModified = items[index].modified;
             const std::filesystem::path path = absolutePath(entry);
-            if (std::filesystem::exists(path)) applyModifiedTime(path, entry.serverModified);
+            if (rcExists(path)) applyModifiedTime(path, entry.serverModified);
             manifestDirty = true;
             break;
         }
@@ -734,7 +735,7 @@ void TSyncManager::scanLocalChanges() {
         auto& pair = *current;
         Entry& entry = pair.second;
         const std::filesystem::path path = absolutePath(entry);
-        if (!std::filesystem::exists(path)) {
+        if (!rcExists(path)) {
             if (allowRemoteDeletes && entry.localHash != 0 && deleteEntry(entry)) {
                 ++uploadedChanges;
                 setPhase("Deleted " + entry.relativePath.generic_string() + " from server");
@@ -1022,7 +1023,7 @@ void TSyncManager::onFileList(const char* folder, int count, void* data) {
             entry.relativePath = std::filesystem::path("files") / std::filesystem::path(remote);
             entry.localHash = contentHash(readFile(manager->workspace / entry.relativePath));
         }
-        const bool changed = entry.serverSize != items[index].size || entry.serverModified != items[index].modified || !std::filesystem::exists(manager->workspace / entry.relativePath);
+        const bool changed = entry.serverSize != items[index].size || entry.serverModified != items[index].modified || !rcExists(manager->workspace / entry.relativePath);
         entry.serverSize = items[index].size;
         entry.serverModified = items[index].modified;
         if (entry.pendingUploadUntil > g_get_monotonic_time()) continue;
@@ -1138,10 +1139,10 @@ void TSyncManager::syncConfigEntry(const std::string& type, const std::string& c
         entry.pendingUploadUntil = 0;
     }
     const std::filesystem::path path = workspace / entry.relativePath;
-    if (entry.serverHash == hash && entry.localHash == hash && std::filesystem::exists(path)) return;
+    if (entry.serverHash == hash && entry.localHash == hash && rcExists(path)) return;
     const std::string local = readFile(path);
     const std::size_t localHash = contentHash(local);
-    if (std::filesystem::exists(path) && entry.localHash != 0 && localHash != entry.localHash) return;
+    if (rcExists(path) && entry.localHash != 0 && localHash != entry.localHash) return;
     if (local != content && writeFile(path, content)) {
         ++downloadedChanges;
         logEvent("Downloaded " + entry.relativePath.generic_string());
@@ -1160,7 +1161,7 @@ void TSyncManager::scanLocalFiles() {
         FileEntry& entry = pair.second;
         if (isFileExcluded(entry.remotePath)) continue;
         const std::filesystem::path path = workspace / entry.relativePath;
-        if (!std::filesystem::exists(path)) {
+        if (!rcExists(path)) {
             if (allowRemoteDeletes && entry.localHash != 0 && rc_filebrowser_delete(connection, entry.remotePath.c_str())) {
                 ++uploadedChanges;
                 setPhase("Deleted " + entry.remotePath + " from server");
@@ -1201,7 +1202,7 @@ void TSyncManager::scanLocalConfig() {
     for (auto& pair : configEntries) {
         ConfigEntry& entry = pair.second;
         const std::filesystem::path path = workspace / entry.relativePath;
-        if (!std::filesystem::exists(path)) continue;
+        if (!rcExists(path)) continue;
         const std::string content = readFile(path);
         const std::size_t hash = contentHash(content);
         if (hash == entry.localHash) continue;
@@ -1666,10 +1667,10 @@ void TSyncManager::refreshWindow() {
     g_signal_handlers_unblock_by_func(gitRemoteField, reinterpret_cast<gpointer>(onGitRemoteChanged), this);
     auto credentialPath = configPath();
     credentialPath.replace_extension(".credentials");
-    gtk_label_set_text(GTK_LABEL(gitKeyLabel), std::filesystem::exists(credentialPath) ? "Encrypted SSH key stored" : "No SSH key stored");
+    gtk_label_set_text(GTK_LABEL(gitKeyLabel), rcExists(credentialPath) ? "Encrypted SSH key stored" : "No SSH key stored");
     auto tokenPath = configPath();
     tokenPath.replace_extension(".token");
-    gtk_entry_set_placeholder_text(GTK_ENTRY(gitTokenField), std::filesystem::exists(tokenPath) ? "Encrypted token stored" : "No token stored");
+    gtk_entry_set_placeholder_text(GTK_ENTRY(gitTokenField), rcExists(tokenPath) ? "Encrypted token stored" : "No token stored");
     g_signal_handlers_block_by_func(autoCommitCheck, reinterpret_cast<gpointer>(onAutoCommit), this);
     g_signal_handlers_block_by_func(autoPushCheck, reinterpret_cast<gpointer>(onAutoPush), this);
     g_signal_handlers_block_by_func(autoPullCheck, reinterpret_cast<gpointer>(onAutoPull), this);
@@ -1772,11 +1773,11 @@ bool TSyncManager::runGit(const std::vector<std::string>& arguments, std::string
             std::filesystem::path(g_getenv("ProgramFiles(x86)") == nullptr ? "" : g_getenv("ProgramFiles(x86)")) / "Git" / "cmd" / "git.exe",
             std::filesystem::path(g_getenv("LOCALAPPDATA") == nullptr ? "" : g_getenv("LOCALAPPDATA")) / "Programs" / "Git" / "cmd" / "git.exe"
         };
-        for (const auto& candidate : candidates) if (!candidate.empty() && std::filesystem::is_regular_file(candidate)) { gitExecutable = candidate; break; }
+        for (const auto& candidate : candidates) if (!candidate.empty() && rcIsRegularFile(candidate)) { gitExecutable = candidate; break; }
     }
 #else
-    if (gitExecutable.empty() && std::filesystem::is_regular_file("/usr/bin/git")) gitExecutable = "/usr/bin/git";
-    if (gitExecutable.empty() && std::filesystem::is_regular_file("/usr/local/bin/git")) gitExecutable = "/usr/local/bin/git";
+    if (gitExecutable.empty() && rcIsRegularFile("/usr/bin/git")) gitExecutable = "/usr/bin/git";
+    if (gitExecutable.empty() && rcIsRegularFile("/usr/local/bin/git")) gitExecutable = "/usr/local/bin/git";
 #endif
     if (gitExecutable.empty()) { output = "Git executable was not found."; return false; }
     std::vector<std::string> storage{gitExecutable.string(), "-C", workspace.string()};

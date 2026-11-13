@@ -1,3 +1,4 @@
+#include "TFilesystem.h"
 #include "TScriptList.h"
 #include "TExtensions.h"
 #include "TButtonIcons.h"
@@ -157,9 +158,9 @@ namespace {
         if (path.is_relative()) {
             const auto direct = action.extensionDirectory / path;
             const auto images = action.extensionDirectory / "images" / path;
-            path = std::filesystem::exists(direct) ? direct : images;
+            path = rcExists(direct) ? direct : images;
         }
-        if (!std::filesystem::exists(path)) return gtk_image_new_from_icon_name(specification.c_str(), GTK_ICON_SIZE_BUTTON);
+        if (!rcExists(path)) return gtk_image_new_from_icon_name(specification.c_str(), GTK_ICON_SIZE_BUTTON);
         GError* error = nullptr;
         GdkPixbuf* pixbuf = gdk_pixbuf_new_from_file_at_scale(path.string().c_str(), 18, 18, true, &error);
         if (error != nullptr) g_error_free(error);

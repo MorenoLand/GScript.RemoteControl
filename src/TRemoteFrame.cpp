@@ -1,3 +1,4 @@
+#include "TFilesystem.h"
 #include "TRemoteFrame.h"
 #include "TErrorWindow.h"
 #include "RemoteControlBuildDate.h"
@@ -1243,7 +1244,7 @@ gboolean TRemoteFrame::onGraphicalButton(GtkWidget* button, GdkEventButton* even
         const std::size_t suffix = imageName.rfind("_normal");
         if (suffix != std::string::npos) {
             const std::string pressedName = imageName.substr(0, suffix) + "_pressed" + imageName.substr(suffix + 7);
-            if (std::filesystem::exists(frame->applicationDirectory / "images" / pressedName)) imageName = pressedName;
+            if (rcExists(frame->applicationDirectory / "images" / pressedName)) imageName = pressedName;
         }
     }
     const std::filesystem::path imagePath = frame->applicationDirectory / "images" / imageName;

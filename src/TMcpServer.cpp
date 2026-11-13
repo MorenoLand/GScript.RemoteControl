@@ -1,3 +1,4 @@
+#include "TFilesystem.h"
 #include "TMcpServer.h"
 #include "TMcpProtocol.h"
 #include "TScriptEditorTracking.h"
@@ -369,10 +370,10 @@ namespace {
         close(socketHandle);
     }
     void socketLoop() {
-        std::filesystem::create_directories(socketDirectory());
+        rcCreateDirectories(socketDirectory());
         chmod(socketDirectory().c_str(), 0700);
         listenerPath = socketPath(static_cast<unsigned long>(getpid()));
-        std::filesystem::remove(listenerPath);
+        rcRemove(listenerPath);
         const std::string path = listenerPath.string();
         sockaddr_un address{};
         if (path.size() >= sizeof(address.sun_path)) return;
@@ -451,7 +452,7 @@ void stopMcpGuiBridge() {
     }
     for (std::thread& client : socketClients) if (client.joinable()) client.join();
     socketClients.clear();
-    if (!listenerPath.empty()) std::filesystem::remove(listenerPath);
+    if (!listenerPath.empty()) rcRemove(listenerPath);
 #endif
     bridgeOptionsReady = false;
 }

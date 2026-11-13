@@ -1,3 +1,4 @@
+#include "TFilesystem.h"
 #include "TRCOptions.h"
 #include "TBackup.h"
 #include "TDebug.h"
@@ -49,7 +50,7 @@ static std::string decorShadowLead(double alpha) {
 
 void registerBundledFonts(const std::filesystem::path& applicationDirectory) {
     const auto font = applicationDirectory / "fonts" / "tempus-sans-itc.ttf";
-    if (!std::filesystem::exists(font)) return;
+    if (!rcExists(font)) return;
 #ifdef _WIN32
     AddFontResourceExW(font.c_str(), FR_PRIVATE, nullptr);
     SendMessageTimeoutW(HWND_BROADCAST, WM_FONTCHANGE, 0, 0, SMTO_ABORTIFHUNG | SMTO_NORMAL, 100, nullptr);
@@ -444,7 +445,7 @@ namespace {
         const ssize_t length = readlink("/proc/self/exe", executablePath.data(), executablePath.size() - 1);
         if (length > 0 && static_cast<std::size_t>(length) < executablePath.size()) return std::filesystem::path(executablePath.data()).parent_path();
 #endif
-        return std::filesystem::current_path();
+        { std::error_code currentPathError; const std::filesystem::path current = std::filesystem::current_path(currentPathError); return current; }
     }
 
     void configureGtkRuntime(const std::filesystem::path& applicationDirectory) {
@@ -453,7 +454,7 @@ namespace {
         const std::string sharedData = (applicationDirectory / "share").string();
         g_setenv("XDG_DATA_DIRS", sharedData.c_str(), true);
         const auto staticLoaderCache = applicationDirectory / "cache" / "gdk-pixbuf-static.cache";
-        std::filesystem::create_directories(staticLoaderCache.parent_path());
+        rcCreateDirectories(staticLoaderCache.parent_path());
         std::ofstream(staticLoaderCache, std::ios::binary | std::ios::trunc);
         g_setenv("GDK_PIXBUF_MODULEDIR", (applicationDirectory / "lib" / "gdk-pixbuf-2.0" / "2.10.0" / "loaders").string().c_str(), true);
         g_setenv("GDK_PIXBUF_MODULE_FILE", staticLoaderCache.string().c_str(), true);
@@ -473,7 +474,7 @@ namespace {
         const std::string absolutePrefix = "\"" + applicationDirectory.generic_string() + "/";
         for (std::size_t offset = 0; (offset = loaderCacheContent.find("\"./", offset)) != std::string::npos; offset += absolutePrefix.size()) loaderCacheContent.replace(offset, 3, absolutePrefix);
         const auto runtimeCache = applicationDirectory / "cache" / "gdk-pixbuf-loaders.cache";
-        std::filesystem::create_directories(runtimeCache.parent_path());
+        rcCreateDirectories(runtimeCache.parent_path());
         std::ofstream(runtimeCache, std::ios::binary | std::ios::trunc) << loaderCacheContent;
         g_setenv("GDK_PIXBUF_MODULE_FILE", runtimeCache.string().c_str(), true);
         g_setenv("GSETTINGS_SCHEMA_DIR", (applicationDirectory / "share" / "glib-2.0" / "schemas").string().c_str(), true);
@@ -693,14 +694,14 @@ int main(int argc, char** argv) {
     const std::filesystem::path dataDirectory = std::filesystem::path(g_get_user_data_dir()) / "GScriptRC";
     const std::filesystem::path cacheDirectory = std::filesystem::path(g_get_user_cache_dir()) / "GScriptRC";
 #endif
-    std::filesystem::create_directories(configDirectory);
-    std::filesystem::create_directories(dataDirectory);
-    std::filesystem::create_directories(cacheDirectory);
+    rcCreateDirectories(configDirectory);
+    rcCreateDirectories(dataDirectory);
+    rcCreateDirectories(cacheDirectory);
     RC::setRCOptionsDirectory(configDirectory);
-    std::filesystem::current_path(dataDirectory);
+    { std::error_code currentPathError; std::filesystem::current_path(dataDirectory, currentPathError); }
     setBackupDataDirectory(dataDirectory);
     const std::filesystem::path certificateBundle = applicationDirectory / "certs" / "ca-bundle.crt";
-    if (std::filesystem::is_regular_file(certificateBundle)) g_setenv("SSL_CERT_FILE", certificateBundle.string().c_str(), true);
+    if (rcIsRegularFile(certificateBundle)) g_setenv("SSL_CERT_FILE", certificateBundle.string().c_str(), true);
     configureGtkRuntime(applicationDirectory);
     registerBundledFonts(applicationDirectory);
     gtk_init(&argc, &argv);

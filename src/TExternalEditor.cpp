@@ -1,3 +1,4 @@
+#include "TFilesystem.h"
 #include "TExternalEditor.h"
 
 #include <gio/gio.h>
@@ -53,7 +54,7 @@ void TExternalEditor::open(const std::string& server, const std::string& categor
         std::string invocation = command;
         const std::string quoted = "\"" + path.string() + "\"";
         const std::size_t marker = invocation.find("{file}");
-        if (marker == std::string::npos) invocation = std::filesystem::exists(command) ? "\"" + command + "\" " + quoted : invocation + " " + quoted; else invocation.replace(marker, 6, quoted);
+        if (marker == std::string::npos) invocation = rcExists(command) ? "\"" + command + "\" " + quoted : invocation + " " + quoted; else invocation.replace(marker, 6, quoted);
         g_spawn_command_line_async(invocation.c_str(), nullptr);
     }
 #else

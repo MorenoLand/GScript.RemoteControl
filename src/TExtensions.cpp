@@ -1,3 +1,4 @@
+#include "TFilesystem.h"
 #include "TExtensions.h"
 #include "TTheme.h"
 
@@ -357,14 +358,14 @@ bool loadExtensionManifest(const std::filesystem::path& path, ExtensionManifest&
 
 std::vector<ExtensionManifest> scanExtensionManifests(const std::filesystem::path& root) {
     std::vector<ExtensionManifest> result;
-    if (!std::filesystem::is_directory(root)) return result;
+    if (!rcIsDirectory(root)) return result;
     std::error_code error;
     for (const auto& entry : std::filesystem::directory_iterator(root, error)) {
         if (error || !entry.is_directory()) continue;
         for (const char* name : {"extension.json", "extension.ini", "manifest.ini"}) {
             ExtensionManifest manifest;
             const auto manifestPath = entry.path() / name;
-            if (!std::filesystem::exists(manifestPath)) continue;
+            if (!rcExists(manifestPath)) continue;
             if (!loadExtensionManifest(manifestPath, manifest)) { manifest.directory = entry.path(); if (manifest.id.empty()) manifest.id = entry.path().filename().string(); if (manifest.name.empty()) manifest.name = manifest.id; result.push_back(std::move(manifest)); }
             else result.push_back(std::move(manifest));
             break;
@@ -691,7 +692,7 @@ void TExtensionsManager::onOpen(GtkButton* button, gpointer data) {
         gtk_dialog_run(GTK_DIALOG(dialog));
         gtk_widget_destroy(dialog);
     };
-    if (!std::filesystem::exists(path)) { showFailure("The target path does not exist:"); return; }
+    if (!rcExists(path)) { showFailure("The target path does not exist:"); return; }
 #ifdef _WIN32
     if (reinterpret_cast<std::intptr_t>(ShellExecuteW(nullptr, L"open", path.wstring().c_str(), nullptr, nullptr, SW_SHOWNORMAL)) <= 32) showFailure("Windows could not open the target:");
 #else
@@ -718,7 +719,7 @@ void TExtensionsManager::setEnabled(std::size_t index, bool enabled) {
 }
 
 void TExtensionsManager::saveState() {
-    std::filesystem::create_directories(statePath().parent_path());
+    rcCreateDirectories(statePath().parent_path());
     std::ofstream state(statePath(), std::ios::trunc);
     for (const auto& extension : extensions) { state << extension.manifest.id << ' ' << (extension.enabled ? 1 : 0) << ' ' << (extension.outputToTab ? 1 : 0); for (const auto& capability : extension.approvedCapabilities) state << ' ' << capability; state << '\n'; }
 }
@@ -767,7 +768,7 @@ void TExtensionsManager::launch(std::size_t index) {
     extensions[index].runtimeError.clear();
     if (manifest.runtime == "gs2engine-stdio" && manifest.api != 1) { extensions[index].runtimeError = "Unsupported GS2 extension API: " + std::to_string(manifest.api); RC::appendExtensionLog(extensions[index].log, extensions[index].runtimeError); refresh(); return; }
     const auto entry = manifest.entry.empty() ? std::filesystem::path() : manifest.directory / manifest.entry;
-    if (!manifest.autoDiscover && !std::filesystem::exists(entry)) { extensions[index].runtimeError = "Entry not found: " + entry.string(); RC::appendExtensionLog(extensions[index].log, extensions[index].runtimeError); refresh(); return; }
+    if (!manifest.autoDiscover && !rcExists(entry)) { extensions[index].runtimeError = "Entry not found: " + entry.string(); RC::appendExtensionLog(extensions[index].log, extensions[index].runtimeError); refresh(); return; }
     std::vector<std::string> arguments;
     if (manifest.runtime == "gs2engine-stdio") {
 #ifdef _WIN32
@@ -775,7 +776,7 @@ void TExtensionsManager::launch(std::size_t index) {
 #else
         const auto host = manifest.directory / "GS2Engine";
 #endif
-        if (!std::filesystem::exists(host)) { extensions[index].runtimeError = "GS2Engine host not found: " + host.string(); RC::appendExtensionLog(extensions[index].log, extensions[index].runtimeError); refresh(); return; }
+        if (!rcExists(host)) { extensions[index].runtimeError = "GS2Engine host not found: " + host.string(); RC::appendExtensionLog(extensions[index].log, extensions[index].runtimeError); refresh(); return; }
         arguments.push_back(host.string());
         arguments.push_back("--extension-stdio");
     } else {

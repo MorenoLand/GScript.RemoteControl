@@ -1,3 +1,4 @@
+#include "TFilesystem.h"
 #include "TRCOptions.h"
 
 #include <algorithm>
@@ -57,8 +58,8 @@ namespace RC {
     void loadRCOptions(RCOptions& options, const std::filesystem::path& applicationDirectory) {
         const std::filesystem::path writablePath = rcOptionsDirectory(applicationDirectory) / "control2config.txt";
         const std::filesystem::path bundledPath = applicationDirectory / "control2config.txt";
-        const std::filesystem::path configPath = std::filesystem::exists(writablePath) ? writablePath : bundledPath;
-        if (!std::filesystem::exists(configPath)) { saveRCOptions(options, applicationDirectory); return; }
+        const std::filesystem::path configPath = rcExists(writablePath) ? writablePath : bundledPath;
+        if (!rcExists(configPath)) { saveRCOptions(options, applicationDirectory); return; }
         std::ifstream stream(configPath);
         for (std::string line; std::getline(stream, line);) {
             const auto separator = line.find('=');
@@ -175,7 +176,7 @@ namespace RC {
 
     void saveRCOptions(const RCOptions& options, const std::filesystem::path& applicationDirectory) {
         const std::filesystem::path directory = rcOptionsDirectory(applicationDirectory);
-        std::filesystem::create_directories(directory);
+        rcCreateDirectories(directory);
         std::ofstream stream(directory / "control2config.txt", std::ios::trunc);
         writeString(stream, "nickname", options.nickname);
         writeBool(stream, "nomassmessages", options.nomassmessages);

@@ -1,3 +1,4 @@
+#include "TFilesystem.h"
 #include "TPlayerList.h"
 #include "TButtonIcons.h"
 #include "TBackup.h"
@@ -242,7 +243,7 @@ namespace {
 
     void writePMHistory(const std::filesystem::path& directory, const std::string& account, const std::string& sender, const char* message) {
         if (account.empty() || sender.empty() || message == nullptr || *message == '\0') return;
-        std::filesystem::create_directories(directory);
+        rcCreateDirectories(directory);
         std::ofstream output(directory / (safePMHistoryFilename(account) + ".txt"), std::ios::app | std::ios::binary);
         output << sender << " (" << pmHistoryTimestamp() << "):\n" << stripPMLabel(message) << "\n\n";
     }
@@ -1458,7 +1459,7 @@ void TPlayerList::loadStatusIcons() {
         else if (fileName == "eating") fileName = "eating";
         else if (fileName == "no pms") fileName = "no pms";
         const std::filesystem::path path = applicationDirectory / "images" / ("plisticon" + fileName + ".png");
-        statusIcons.push_back(std::filesystem::exists(path) ? gdk_pixbuf_new_from_file(path.string().c_str(), nullptr) : nullptr);
+        statusIcons.push_back(rcExists(path) ? gdk_pixbuf_new_from_file(path.string().c_str(), nullptr) : nullptr);
     }
 }
 
