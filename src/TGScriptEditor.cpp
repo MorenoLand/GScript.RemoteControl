@@ -1753,6 +1753,7 @@ namespace {
         if (markup.empty()) return G_SOURCE_REMOVE;
         if (state->hoverPopover == nullptr) {
             state->hoverPopover = gtk_popover_new(editor);
+            gtk_style_context_add_class(gtk_widget_get_style_context(state->hoverPopover), "remote-hover-popover");
             gtk_popover_set_modal(GTK_POPOVER(state->hoverPopover), false);
             gtk_popover_set_constrain_to(GTK_POPOVER(state->hoverPopover), GTK_POPOVER_CONSTRAINT_WINDOW);
             state->hoverLabel = gtk_label_new(nullptr);
@@ -2435,6 +2436,7 @@ void configureGScriptEditor(GtkWidget* editor, bool script) {
         auto* provider = REMOTE_COMPLETION_PROVIDER(g_object_new(REMOTE_TYPE_COMPLETION_PROVIDER, nullptr));
         provider->editor = editor;
         GtkWidget* signaturePopover = gtk_popover_new(editor);
+        gtk_style_context_add_class(gtk_widget_get_style_context(signaturePopover), "remote-hover-popover");
         gtk_popover_set_position(GTK_POPOVER(signaturePopover), GTK_POS_TOP);
         gtk_popover_set_modal(GTK_POPOVER(signaturePopover), false);
         GtkWidget* signatureLabel = gtk_label_new(nullptr);
