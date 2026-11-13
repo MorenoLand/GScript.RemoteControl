@@ -1352,6 +1352,9 @@ namespace {
         if (details == nullptr) details = completionFirstButton(popup);
         GtkWidget* existing = GTK_WIDGET(g_object_get_data(G_OBJECT(popup), "remote-completion-preview"));
         if (tree == nullptr) return false;
+        gtk_style_context_add_class(gtk_widget_get_style_context(tree), "remote-completion-tree");
+        gtk_tree_view_set_hover_selection(GTK_TREE_VIEW(tree), true);
+        gtk_tree_view_set_activate_on_single_click(GTK_TREE_VIEW(tree), true);
         if (existing != nullptr) {
             if (details != nullptr) { gtk_widget_set_no_show_all(details, true); gtk_widget_hide(details); }
             updateCompletionPreview(gtk_tree_view_get_selection(GTK_TREE_VIEW(tree)), existing);
