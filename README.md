@@ -1,14 +1,14 @@
-A GTK3 recreation of Remote Control, rebuilt in C++20 for Windows, Linux, and macOS with GRClib protocol integration.
+A GTK3 recreation of Remote Control, rebuilt in C++20 for Windows, Linux, and macOS with RClib protocol integration.
 
 The original RemoteControl was created by Stefan Knorr. This project is independent and unaffiliated.
 
 ## Dependency
 
-Remote Control builds against [GRClib](https://github.com/MorenoLand/GScript.GRClib). Clone it beside this repository, or provide its location with `GRCLIB_SOURCE_DIR`.
+Remote Control builds against [RClib](https://github.com/MorenoLand/GScript.RClib). Clone it beside this repository, or provide its location with `GRCLIB_SOURCE_DIR`.
 
   ```sh
   git clone https://github.com/MorenoLand/GScript.RemoteControl.git RemoteControl
-  git clone https://github.com/MorenoLand/GScript.GRClib.git grclib
+  git clone https://github.com/MorenoLand/GScript.RClib.git grclib
 build.bat
 
 `build.bat` is the supported Windows build entry point. It requires MSYS2 MINGW64 at `D:\msys64`, stops only a running `RemoteControl.exe`, configures the RC tree with the adjacent `grclib` checkout, and builds `bin\RemoteControl.exe`.
@@ -21,7 +21,7 @@ cmake --build build-local-mingw-rc --parallel
 ctest --test-dir build-local-mingw-rc --output-on-failure
   ```
 
-On Windows with MSYS2 installed at `D:\msys64`, run `build.bat` from the repository root. It stops only a running `RemoteControl.exe`, configures `build-local` with the adjacent GRClib checkout, and builds the release executable.
+On Windows with MSYS2 installed at `D:\msys64`, run `build.bat` from the repository root. It stops only a running `RemoteControl.exe`, configures `build-local` with the adjacent RClib checkout, and builds the release executable.
 
 The runtime assets and Windows DLLs required by the checked-in build layout live in `bin/`. Executables are deliberately ignored and must be built locally or obtained from CI artifacts.
 

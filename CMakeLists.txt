@@ -31,9 +31,9 @@ if(MINGW)
 endif()
 find_package(OpenSSL REQUIRED)
 
-set(GRCLIB_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../grclib" CACHE PATH "Path to the GRClib source tree")
+set(GRCLIB_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../grclib" CACHE PATH "Path to the RClib source tree")
 if(NOT EXISTS "${GRCLIB_SOURCE_DIR}/CMakeLists.txt")
-    message(FATAL_ERROR "GRClib source tree not found. Set GRCLIB_SOURCE_DIR to a checkout of https://github.com/MorenoLand/GScript.GRClib")
+    message(FATAL_ERROR "RClib source tree not found. Set GRCLIB_SOURCE_DIR to a checkout of https://github.com/MorenoLand/GScript.RClib")
 endif()
 add_subdirectory("${GRCLIB_SOURCE_DIR}" "${CMAKE_BINARY_DIR}/grclib")
 
