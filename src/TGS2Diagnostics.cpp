@@ -94,20 +94,20 @@ namespace {
 
     std::vector<Call> collectCalls(const std::string& masked) {
         std::vector<Call> calls;
+        std::vector<std::size_t> matches(masked.size(), std::string::npos);
+        std::vector<std::size_t> opens;
+        for (std::size_t index = 0; index < masked.size(); ++index) {
+            if (masked[index] == '(') opens.push_back(index);
+            else if (masked[index] == ')' && !opens.empty()) { matches[opens.back()] = index; opens.pop_back(); }
+        }
         for (const Identifier& identifier : collectIdentifiers(masked)) {
             const std::size_t start = identifier.start;
             if (start > 0 && masked[start - 1] == '.') continue;
             std::size_t open = identifier.end;
             skipWhitespace(masked, open);
             if (open >= masked.size() || masked[open] != '(') continue;
-            int depth = 1;
-            std::size_t close = open + 1;
-            for (; close < masked.size() && depth > 0; ++close) {
-                if (masked[close] == '(') ++depth;
-                else if (masked[close] == ')') --depth;
-            }
-            if (depth != 0) continue;
-            --close;
+            std::size_t close = matches[open];
+            if (close == std::string::npos) continue;
             std::size_t previous = start;
             while (previous > 0 && std::isspace(static_cast<unsigned char>(masked[previous - 1])) != 0) --previous;
             const std::size_t tokenEnd = previous;

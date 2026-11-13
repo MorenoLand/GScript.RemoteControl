@@ -537,7 +537,8 @@ namespace {
         return false;
     }
 
-    bool skipValue(const std::string& text, std::size_t& position) {
+    bool skipValue(const std::string& text, std::size_t& position, int depth = 0) {
+        if (depth > 64) return false;
         skipWhitespace(text, position);
         if (position >= text.size()) return false;
         if (text[position] == '"') { std::string ignored; return readString(text, position, ignored); }
@@ -548,11 +549,13 @@ namespace {
         const char open = text[position++];
         const char close = open == '{' ? '}' : ']';
         while (position < text.size()) {
+            const std::size_t before = position;
             skipWhitespace(text, position);
             if (position < text.size() && text[position] == close) { ++position; return true; }
-            if (!skipValue(text, position)) return false;
+            if (!skipValue(text, position, depth + 1)) return false;
             skipWhitespace(text, position);
             if (position < text.size() && text[position] == ',') ++position;
+            if (position == before) return false;
         }
         return false;
     }
@@ -603,6 +606,7 @@ namespace {
         if (position >= text.size() || text[position++] != '[') return false;
         values.clear();
         while (position < text.size()) {
+            const std::size_t before = position;
             skipWhitespace(text, position);
             if (position < text.size() && text[position] == ']') { ++position; return true; }
             if (position < text.size() && text[position] == '"') {
@@ -638,6 +642,7 @@ namespace {
             } else if (!skipValue(text, position)) return false;
             skipWhitespace(text, position);
             if (position < text.size() && text[position] == ',') ++position;
+            if (position == before) return false;
         }
         return false;
     }
@@ -1667,8 +1672,6 @@ namespace {
 
     GtkSourceCompletionActivation remoteCompletionProviderGetActivation(GtkSourceCompletionProvider*) { return static_cast<GtkSourceCompletionActivation>(GTK_SOURCE_COMPLETION_ACTIVATION_INTERACTIVE | GTK_SOURCE_COMPLETION_ACTIVATION_USER_REQUESTED); }
 
-    bool hasActiveSignatureContext(GtkWidget* editor);
-
     gboolean remoteCompletionProviderGetStartIter(GtkSourceCompletionProvider*, GtkSourceCompletionContext* context, GtkSourceCompletionProposal*, GtkTextIter* iter) {
         if (!gtk_source_completion_context_get_iter(context, iter)) return false;
         while (!gtk_text_iter_starts_line(iter)) {
@@ -1682,7 +1685,6 @@ namespace {
     void remoteCompletionProviderPopulate(GtkSourceCompletionProvider* provider, GtkSourceCompletionContext* context) {
         auto* remote = REMOTE_COMPLETION_PROVIDER(provider);
         if (remote->editor == nullptr || !lspEnabled) { gtk_source_completion_context_add_proposals(context, provider, nullptr, true); return; }
-        if (hasActiveSignatureContext(remote->editor)) { gtk_source_completion_context_add_proposals(context, provider, nullptr, true); return; }
         GtkTextIter iter;
         if (!gtk_source_completion_context_get_iter(context, &iter)) { gtk_source_completion_context_add_proposals(context, provider, nullptr, true); return; }
         const std::string prefix = lowerText(completionPrefix(iter));
@@ -1906,26 +1908,9 @@ namespace {
         return !result.name.empty();
     }
 
-    bool hasActiveSignatureContext(GtkWidget* editor) {
-        if (editor == nullptr || !GTK_IS_TEXT_VIEW(editor)) return false;
-        GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(editor));
-        GtkTextIter iter;
-        gtk_text_buffer_get_iter_at_mark(buffer, &iter, gtk_text_buffer_get_insert(buffer));
-        GtkTextIter lineStart = iter;
-        gtk_text_iter_set_line_offset(&lineStart, 0);
-        gchar* lineValue = gtk_text_iter_get_text(&lineStart, &iter);
-        const std::string line = lineValue == nullptr ? "" : lineValue;
-        g_free(lineValue);
-        ActiveCallContext call;
-        if (!findActiveCallContext(line, call)) return false;
-        ApiDefinition definition;
-        return findEditorDefinition(editor, call.name, definition) && !(definition.params.empty() && definition.returns.empty() && definition.description.empty() && definition.example.empty());
-    }
-
     void updateSignatureHint(GtkWidget* editor) {
         const auto state = std::find_if(editorCompletionStates.begin(), editorCompletionStates.end(), [editor](const EditorCompletionState& value) { return value.editor == editor; });
         if (state == editorCompletionStates.end() || state->signaturePopover == nullptr || state->signatureLabel == nullptr || !lspEnabled || !state->completionArmed) return;
-        GtkSourceCompletion* completion = GTK_SOURCE_IS_VIEW(editor) ? gtk_source_view_get_completion(GTK_SOURCE_VIEW(editor)) : nullptr;
         GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(editor));
         GtkTextIter iter;
         gtk_text_buffer_get_iter_at_mark(buffer, &iter, gtk_text_buffer_get_insert(buffer));
@@ -1938,7 +1923,6 @@ namespace {
         if (!findActiveCallContext(line, call)) { gtk_widget_hide(state->signaturePopover); return; }
         ApiDefinition definition;
         if (!findEditorDefinition(editor, call.name, definition) || (definition.params.empty() && definition.returns.empty() && definition.description.empty() && definition.example.empty())) { gtk_widget_hide(state->signaturePopover); return; }
-        if (completion != nullptr) gtk_source_completion_hide(completion);
         const auto escaped = [](const std::string& value) {
             gchar* text = g_markup_escape_text(value.c_str(), -1);
             std::string result = text == nullptr ? "" : text;
@@ -2367,11 +2351,7 @@ void configureGScriptEditor(GtkWidget* editor, bool script) {
         else gtk_widget_set_size_request(GTK_WIDGET(infoWindow), completionPopupMaxWidth, -1);
     }
     g_signal_connect(completion, "show", G_CALLBACK(+[](GtkSourceCompletion* completion, gpointer data) {
-        if (hasActiveSignatureContext(GTK_WIDGET(data))) {
-            gtk_source_completion_hide(completion);
-            scheduleSignatureHint(GTK_WIDGET(data));
-            return;
-        }
+        scheduleSignatureHint(GTK_WIDGET(data));
         scheduleCompletionPopupClamp(completion);
     }), editor);
     g_signal_connect(completion, "hide", G_CALLBACK(+[](GtkSourceCompletion*, gpointer data) { scheduleSignatureHint(GTK_WIDGET(data)); }), editor);
